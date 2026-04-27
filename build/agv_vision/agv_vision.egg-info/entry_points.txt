@@ -1,0 +1,2 @@
+[console_scripts]
+detector = agv_vision.obstacle_detector:main

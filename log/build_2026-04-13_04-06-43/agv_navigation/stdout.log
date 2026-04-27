@@ -1,0 +1,28 @@
+running egg_info
+writing ../../build/agv_navigation/agv_navigation.egg-info/PKG-INFO
+writing dependency_links to ../../build/agv_navigation/agv_navigation.egg-info/dependency_links.txt
+writing entry points to ../../build/agv_navigation/agv_navigation.egg-info/entry_points.txt
+writing requirements to ../../build/agv_navigation/agv_navigation.egg-info/requires.txt
+writing top-level names to ../../build/agv_navigation/agv_navigation.egg-info/top_level.txt
+reading manifest file '../../build/agv_navigation/agv_navigation.egg-info/SOURCES.txt'
+writing manifest file '../../build/agv_navigation/agv_navigation.egg-info/SOURCES.txt'
+running build
+running build_py
+copying agv_navigation/graph_visualizer.py -> /home/usernamerahul/agv_ws/build/agv_navigation/build/lib/agv_navigation
+copying agv_navigation/route_runner.py -> /home/usernamerahul/agv_ws/build/agv_navigation/build/lib/agv_navigation
+running install
+running install_lib
+copying /home/usernamerahul/agv_ws/build/agv_navigation/build/lib/agv_navigation/graph_visualizer.py -> /home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation
+copying /home/usernamerahul/agv_ws/build/agv_navigation/build/lib/agv_navigation/route_runner.py -> /home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation
+byte-compiling /home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation/graph_visualizer.py to graph_visualizer.cpython-312.pyc
+byte-compiling /home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation/route_runner.py to route_runner.cpython-312.pyc
+running install_data
+running install_egg_info
+removing '/home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation-0.0.0-py3.12.egg-info' (and everything under it)
+Copying ../../build/agv_navigation/agv_navigation.egg-info to /home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation-0.0.0-py3.12.egg-info
+running install_scripts
+Installing graph_visualizer script to /home/usernamerahul/agv_ws/install/agv_navigation/lib/agv_navigation
+Installing map_builder script to /home/usernamerahul/agv_ws/install/agv_navigation/lib/agv_navigation
+Installing route_runner script to /home/usernamerahul/agv_ws/install/agv_navigation/lib/agv_navigation
+Installing tracer script to /home/usernamerahul/agv_ws/install/agv_navigation/lib/agv_navigation
+writing list of installed files to '/home/usernamerahul/agv_ws/build/agv_navigation/install.log'

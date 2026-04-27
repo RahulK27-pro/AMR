@@ -1,0 +1,24 @@
+[1.916s] Invoking command in '/home/usernamerahul/agv_ws/src/agv_navigation': PYTHONPATH=/home/usernamerahul/agv_ws/build/agv_navigation/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/agv_navigation build --build-base /home/usernamerahul/agv_ws/build/agv_navigation/build install --record /home/usernamerahul/agv_ws/build/agv_navigation/install.log --single-version-externally-managed install_data
+[2.266s] running egg_info
+[2.287s] writing ../../build/agv_navigation/agv_navigation.egg-info/PKG-INFO
+[2.287s] writing dependency_links to ../../build/agv_navigation/agv_navigation.egg-info/dependency_links.txt
+[2.287s] writing entry points to ../../build/agv_navigation/agv_navigation.egg-info/entry_points.txt
+[2.288s] writing requirements to ../../build/agv_navigation/agv_navigation.egg-info/requires.txt
+[2.288s] writing top-level names to ../../build/agv_navigation/agv_navigation.egg-info/top_level.txt
+[2.346s] reading manifest file '../../build/agv_navigation/agv_navigation.egg-info/SOURCES.txt'
+[2.348s] writing manifest file '../../build/agv_navigation/agv_navigation.egg-info/SOURCES.txt'
+[2.348s] running build
+[2.349s] running build_py
+[2.350s] running install
+[2.360s] running install_lib
+[2.385s] running install_data
+[2.385s] running install_egg_info
+[2.419s] removing '/home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation-0.0.0-py3.12.egg-info' (and everything under it)
+[2.420s] Copying ../../build/agv_navigation/agv_navigation.egg-info to /home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation-0.0.0-py3.12.egg-info
+[2.422s] running install_scripts
+[2.599s] Installing graph_visualizer script to /home/usernamerahul/agv_ws/install/agv_navigation/lib/agv_navigation
+[2.600s] Installing map_builder script to /home/usernamerahul/agv_ws/install/agv_navigation/lib/agv_navigation
+[2.600s] Installing route_runner script to /home/usernamerahul/agv_ws/install/agv_navigation/lib/agv_navigation
+[2.600s] Installing tracer script to /home/usernamerahul/agv_ws/install/agv_navigation/lib/agv_navigation
+[2.600s] writing list of installed files to '/home/usernamerahul/agv_ws/build/agv_navigation/install.log'
+[2.662s] Invoked command in '/home/usernamerahul/agv_ws/src/agv_navigation' returned '0': PYTHONPATH=/home/usernamerahul/agv_ws/build/agv_navigation/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/agv_navigation build --build-base /home/usernamerahul/agv_ws/build/agv_navigation/build install --record /home/usernamerahul/agv_ws/build/agv_navigation/install.log --single-version-externally-managed install_data
