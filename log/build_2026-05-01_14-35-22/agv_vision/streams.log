@@ -1,0 +1,21 @@
+[4.691s] Invoking command in '/home/usernamerahul/agv_ws/src/agv_vision': PYTHONPATH=/home/usernamerahul/agv_ws/build/agv_vision/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/usernamerahul/agv_ws/install/agv_vision/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/agv_vision build --build-base /home/usernamerahul/agv_ws/build/agv_vision/build install --record /home/usernamerahul/agv_ws/build/agv_vision/install.log --single-version-externally-managed install_data
+[6.278s] running egg_info
+[6.472s] writing ../../build/agv_vision/agv_vision.egg-info/PKG-INFO
+[6.477s] writing dependency_links to ../../build/agv_vision/agv_vision.egg-info/dependency_links.txt
+[6.478s] writing entry points to ../../build/agv_vision/agv_vision.egg-info/entry_points.txt
+[6.480s] writing requirements to ../../build/agv_vision/agv_vision.egg-info/requires.txt
+[6.480s] writing top-level names to ../../build/agv_vision/agv_vision.egg-info/top_level.txt
+[6.671s] reading manifest file '../../build/agv_vision/agv_vision.egg-info/SOURCES.txt'
+[6.683s] writing manifest file '../../build/agv_vision/agv_vision.egg-info/SOURCES.txt'
+[6.693s] running build
+[6.695s] running build_py
+[6.696s] running install
+[6.749s] running install_lib
+[6.857s] running install_data
+[6.860s] running install_egg_info
+[6.956s] removing '/home/usernamerahul/agv_ws/install/agv_vision/lib/python3.12/site-packages/agv_vision-0.0.0-py3.12.egg-info' (and everything under it)
+[6.957s] Copying ../../build/agv_vision/agv_vision.egg-info to /home/usernamerahul/agv_ws/install/agv_vision/lib/python3.12/site-packages/agv_vision-0.0.0-py3.12.egg-info
+[6.974s] running install_scripts
+[7.755s] Installing detector script to /home/usernamerahul/agv_ws/install/agv_vision/lib/agv_vision
+[7.756s] writing list of installed files to '/home/usernamerahul/agv_ws/build/agv_vision/install.log'
+[7.881s] Invoked command in '/home/usernamerahul/agv_ws/src/agv_vision' returned '0': PYTHONPATH=/home/usernamerahul/agv_ws/build/agv_vision/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/usernamerahul/agv_ws/install/agv_vision/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/agv_vision build --build-base /home/usernamerahul/agv_ws/build/agv_vision/build install --record /home/usernamerahul/agv_ws/build/agv_vision/install.log --single-version-externally-managed install_data
