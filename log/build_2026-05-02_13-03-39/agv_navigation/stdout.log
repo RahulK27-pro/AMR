@@ -8,11 +8,8 @@ reading manifest file '../../build/agv_navigation/agv_navigation.egg-info/SOURCE
 writing manifest file '../../build/agv_navigation/agv_navigation.egg-info/SOURCES.txt'
 running build
 running build_py
-copying agv_navigation/route_runner.py -> /home/usernamerahul/agv_ws/build/agv_navigation/build/lib/agv_navigation
 running install
 running install_lib
-copying /home/usernamerahul/agv_ws/build/agv_navigation/build/lib/agv_navigation/route_runner.py -> /home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation
-byte-compiling /home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation/route_runner.py to route_runner.cpython-312.pyc
 running install_data
 running install_egg_info
 removing '/home/usernamerahul/agv_ws/install/agv_navigation/lib/python3.12/site-packages/agv_navigation-0.0.0-py3.12.egg-info' (and everything under it)
