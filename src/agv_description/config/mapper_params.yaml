@@ -1,31 +1,56 @@
 slam_toolbox:
   ros__parameters:
-    # Frame Identifiers
-    odom_frame: odom
-    map_frame: map
-    base_frame: base_link  # <-- THIS IS THE FIX
-    scan_topic: /scan
-    
-    # Execution parameters
+
+    # Frame identifiers — must match your URDF exactly
+    odom_frame:      odom
+    map_frame:       map
+    base_frame:      base_link      # matches your URDF link name
+    scan_topic:      /scan          # matches your bridge + URDF sensor topic
+
+    # Use Gazebo simulation clock
     use_sim_time: true
+
+    # Mapping mode (change to localization once map is saved)
     mode: mapping
-    
-    # Minimum travel distances to trigger a map update
-    transform_publish_period: 0.05
+
+    # How often to publish the map→odom transform (seconds)
+    # Lower = smoother robot movement in RViz
+    transform_publish_period: 0.02
+
+    # How often to update the map (seconds)
+    # 1.0 = update every second while robot moves
     map_update_interval: 1.0
-    minimum_travel_distance: 0.1
-    minimum_travel_heading: 0.1
-    
-    # Matcher parameters (Tuning for your 12m LiDAR)
+
+    # Minimum motion required before triggering a map update
+    # Prevents map updates from sensor noise while robot is stationary
+    minimum_travel_distance: 0.1    # metres
+    minimum_travel_heading:  0.1    # radians (~6 degrees)
+
+    # LiDAR tuning — match your sensor's max range from URDF
     max_laser_range: 12.0
-    minimum_time_interval: 0.1
-    transform_timeout: 0.2
-    tf_buffer_duration: 5.0
-    
-    # Solver
-    solver_plugin: solver_plugins::CeresSolver
-    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
-    ceres_preconditioner: SCHUR_JACOBI
+
+    # Timing tolerances
+    minimum_time_interval:  0.1     # minimum seconds between scan processing
+    transform_timeout:      0.5     # how long to wait for a TF before giving up
+    tf_buffer_duration:    10.0     # how far back the TF buffer remembers
+
+    # Loop closure — detects when robot revisits a location
+    # and corrects accumulated drift
+    loop_search_maximum_distance: 3.0
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine:   0.45
+
+    # Correlation parameters (how scans are matched to the map)
+    correlation_search_space_dimension:   0.5
+    correlation_search_space_resolution:  0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # Solver (Ceres is the most accurate available)
+    solver_plugin:              solver_plugins::CeresSolver
+    ceres_linear_solver:        SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner:       SCHUR_JACOBI
     ceres_trust_region_strategy: LEVENBERG_MARQUARDT
-    ceres_dogleg_type: TRADITIONAL_DOGLEG
-    ceres_loss_function: None
+    ceres_dogleg_type:          TRADITIONAL_DOGLEG
+    ceres_loss_function:        None
