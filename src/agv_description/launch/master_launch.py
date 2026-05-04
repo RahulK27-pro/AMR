@@ -15,16 +15,13 @@ def generate_launch_description():
     with open(urdf_file, 'r') as f:
         robot_desc = f.read()
 
-    # A. Blueprint
+    # A. The Blueprint
     rsp_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        name='robot_state_publisher',
-        parameters=[{
-            'robot_description': robot_desc,
-            'use_sim_time': True,
-        }],
-        output='screen'
+        output='screen',
+        arguments=[urdf_file],
+        parameters=[{'use_sim_time': True}]  # <-- THE CRITICAL FIX
     )
 
     # B. Physics engine
@@ -53,13 +50,13 @@ def generate_launch_description():
         ]
     )
 
-    # D. Bridge
+    # D. The Wideband Bridge
     bridge_node = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
-        name='ros_gz_bridge',
+        output='screen',
         arguments=['--ros-args', '-p', f'config_file:={bridge_file}'],
-        output='screen'
+        parameters=[{'use_sim_time': True}]  # <-- ENSURES BRIDGE RESPECTS SIM CLOCK
     )
 
     # E. EKF — fuses /odom + /imu/data → /odometry/filtered
@@ -71,7 +68,7 @@ def generate_launch_description():
         name='ekf_filter_node',
         parameters=[
             ekf_file,
-            {'use_sim_time': True}
+            {'use_sim_time': True, 'frequency': 30.0}
         ],
         remappings=[
             # EKF publishes here — this becomes your clean odometry
