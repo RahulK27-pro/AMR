@@ -3,8 +3,6 @@
 
   <!-- ═══════════════════════════════════════
        BASE BODY  –  cylindrical disk
-       Spawn this robot at z=0.09 in your launch
-       file so wheels sit exactly on the ground.
   ═══════════════════════════════════════ -->
   <link name="base_link">
     <visual>
@@ -87,8 +85,6 @@
 
   <!-- ═══════════════════════════════════════
        RIGHT DRIVE WHEEL  –  green
-       (different colour from left so you can
-       tell them apart in RViz)
   ═══════════════════════════════════════ -->
   <link name="right_wheel">
     <visual>
@@ -125,17 +121,13 @@
   ═══════════════════════════════════════ -->
   <link name="front_caster">
     <visual>
-      <geometry>
-        <sphere radius="0.025"/>
-      </geometry>
+      <geometry><sphere radius="0.025"/></geometry>
       <material name="silver">
         <color rgba="0.8 0.8 0.8 1"/>
       </material>
     </visual>
     <collision>
-      <geometry>
-        <sphere radius="0.025"/>
-      </geometry>
+      <geometry><sphere radius="0.025"/></geometry>
     </collision>
     <inertial>
       <mass value="0.08"/>
@@ -156,17 +148,13 @@
   ═══════════════════════════════════════ -->
   <link name="rear_caster">
     <visual>
-      <geometry>
-        <sphere radius="0.025"/>
-      </geometry>
+      <geometry><sphere radius="0.025"/></geometry>
       <material name="silver">
         <color rgba="0.8 0.8 0.8 1"/>
       </material>
     </visual>
     <collision>
-      <geometry>
-        <sphere radius="0.025"/>
-      </geometry>
+      <geometry><sphere radius="0.025"/></geometry>
     </collision>
     <inertial>
       <mass value="0.08"/>
@@ -253,11 +241,10 @@
 
   <!-- ═══════════════════════════════════════
        GAZEBO PLUGINS
-       sensors-system is intentionally ABSENT
-       (world owns the render engine)
+       gz-sim-sensors-system intentionally ABSENT
+       (warehouse.sdf world owns the render engine)
   ═══════════════════════════════════════ -->
   <gazebo>
-    <!-- Differential drive + odometry -->
     <plugin filename="gz-sim-diff-drive-system"
             name="gz::sim::systems::DiffDrive">
       <left_joint>left_wheel_joint</left_joint>
@@ -274,13 +261,9 @@
       <tf_topic>/tf</tf_topic>
     </plugin>
 
-    <!-- IMU system -->
     <plugin filename="gz-sim-imu-system"
             name="gz::sim::systems::Imu"/>
 
-    <!-- Joint state publisher  ← THIS fixes wheel visibility in RViz.
-         Publishes wheel joint positions so robot_state_publisher
-         can compute and broadcast the wheel TF frames. -->
     <plugin filename="gz-sim-joint-state-publisher-system"
             name="gz::sim::systems::JointStatePublisher">
       <topic>/joint_states</topic>
@@ -308,13 +291,19 @@
     </sensor>
   </gazebo>
 
-  <!-- LiDAR sensor -->
+  <!-- ═══════════════════════════════════════
+       LiDAR SENSOR
+       gz_frame_id  ← THIS is the critical fix.
+       Without it Gazebo publishes the scan in
+       an unnamed frame and RViz cannot place it.
+  ═══════════════════════════════════════ -->
   <gazebo reference="lidar_link">
     <sensor name="agv_lidar" type="gpu_lidar">
       <always_on>1</always_on>
       <update_rate>10</update_rate>
       <visualize>true</visualize>
       <topic>/scan</topic>
+      <gz_frame_id>lidar_link</gz_frame_id>
       <lidar>
         <scan>
           <horizontal>
@@ -368,29 +357,38 @@
     </sensor>
   </gazebo>
 
-  <!-- Surface properties -->
+  <!-- ═══════════════════════════════════════
+       SURFACE PROPERTIES
+       slip1/slip2 removed — invalid in Gazebo
+       Harmonic SDF and cause console warnings.
+       Friction is handled via mu1/mu2 only.
+  ═══════════════════════════════════════ -->
   <gazebo reference="left_wheel">
-    <mu1>1.2</mu1><mu2>1.2</mu2>
-    <kp>1000000.0</kp><kd>1.0</kd>
-    <slip1>0.002</slip1><slip2>0.0</slip2>
-    <fdir1>0 0 1</fdir1>
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
   </gazebo>
 
   <gazebo reference="right_wheel">
-    <mu1>1.2</mu1><mu2>1.2</mu2>
-    <kp>1000000.0</kp><kd>1.0</kd>
-    <slip1>0.002</slip1><slip2>0.0</slip2>
-    <fdir1>0 0 1</fdir1>
+    <mu1>1.2</mu1>
+    <mu2>1.2</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
   </gazebo>
 
   <gazebo reference="front_caster">
-    <mu1>0.0</mu1><mu2>0.0</mu2>
-    <kp>1000000.0</kp><kd>1.0</kd>
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
   </gazebo>
 
   <gazebo reference="rear_caster">
-    <mu1>0.0</mu1><mu2>0.0</mu2>
-    <kp>1000000.0</kp><kd>1.0</kd>
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
   </gazebo>
 
 </robot>

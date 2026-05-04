@@ -1,79 +1,108 @@
 import os
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess
+from launch.actions import ExecuteProcess, TimerAction
 from launch_ros.actions import Node
 
 def generate_launch_description():
-    # 1. Dynamically find your home directory to build absolute paths
-    home_dir = os.environ['HOME']
-    pkg_path = os.path.join(home_dir, 'agv_ws', 'src', 'agv_description')
-    
-    # 2. Define exactly where our critical files live
-    urdf_file = os.path.join(pkg_path, 'urdf', 'agv.urdf')
+
+    home_dir    = os.environ['HOME']
+    pkg_path    = os.path.join(home_dir, 'agv_ws', 'src', 'agv_description')
+    urdf_file   = os.path.join(pkg_path, 'urdf',   'agv.urdf')
     bridge_file = os.path.join(pkg_path, 'config', 'bridge.yaml')
-    rviz_file = os.path.join(pkg_path, 'config', 'agv.rviz')
+    world_file  = os.path.join(pkg_path, 'worlds', 'warehouse.sdf')
+    ekf_file    = os.path.join(pkg_path, 'config', 'ekf.yaml')   # ← new
 
-    # 3. Create the RViz arguments list (Fail-safe: only load config if you saved it in Step 1)
-    rviz_args = ['-d', rviz_file] if os.path.exists(rviz_file) else []
+    with open(urdf_file, 'r') as f:
+        robot_desc = f.read()
 
-    # ==========================================
-    # NODE DEFINITIONS
-    # ==========================================
-
-    # A. The Blueprint
+    # A. Blueprint
     rsp_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        arguments=[urdf_file],
+        name='robot_state_publisher',
+        parameters=[{
+            'robot_description': robot_desc,
+            'use_sim_time': True,
+        }],
         output='screen'
     )
 
-    # B. The Physics Engine
-    world_file = os.path.join(pkg_path, 'worlds', 'warehouse.sdf')
+    # B. Physics engine
     gazebo = ExecuteProcess(
         cmd=['gz', 'sim', world_file],
         output='screen'
     )
 
-    # C. The Spawner (Injects URDF into Gazebo)
-    spawn_node = Node(
-        package='ros_gz_sim',
-        executable='create',
-        arguments=['-topic', 'robot_description', '-name', 'warehouse_agv', '-z', '0.09', '-x', '-2.0'],
-        output='screen'
+    # C. Spawner
+    spawn_node = TimerAction(
+        period=2.0,
+        actions=[
+            Node(
+                package='ros_gz_sim',
+                executable='create',
+                arguments=[
+                    '-topic', 'robot_description',
+                    '-name',  'warehouse_agv',
+                    '-x',     '-2.0',
+                    '-y',     '0.0',
+                    '-z',     '0.09',
+                    '-Y',     '0.0',
+                ],
+                output='screen'
+            )
+        ]
     )
 
-    # D. The Wideband Bridge
+    # D. Bridge
     bridge_node = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
+        name='ros_gz_bridge',
         arguments=['--ros-args', '-p', f'config_file:={bridge_file}'],
         output='screen'
     )
 
-    # E. The Brain (Your Custom Navigation Code)
+    # E. EKF — fuses /odom + /imu/data → /odometry/filtered
+    #    This is now the authoritative pose estimate for the robot.
+    #    Nav2 and SLAM will use /odometry/filtered, not raw /odom.
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        parameters=[
+            ekf_file,
+            {'use_sim_time': True}
+        ],
+        remappings=[
+            # EKF publishes here — this becomes your clean odometry
+            ('odometry/filtered', '/odometry/filtered'),
+        ],
+        output='screen'
+    )
+
+    # F. Static TF: map → odom (remove once SLAM is added)
+    static_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='static_tf_map_odom',
+        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
+        parameters=[{'use_sim_time': True}],
+        output='screen'
+    )
+
+    # G. Navigation
     tracer_node = Node(
         package='agv_navigation',
         executable='tracer',
         output='screen'
     )
 
-    # F. The Matrix Monitor
-    rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        arguments=rviz_args,
-        output='screen'
-    )
-
-    # ==========================================
-    # EXECUTION SEQUENCE
-    # ==========================================
     return LaunchDescription([
-        rsp_node,
         gazebo,
-        spawn_node,
+        rsp_node,
         bridge_node,
+        static_tf,
+        ekf_node,        # ← added
+        spawn_node,
         tracer_node,
-        rviz_node
     ])
