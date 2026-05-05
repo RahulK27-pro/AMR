@@ -1,22 +1,51 @@
+# ═══════════════════════════════════════════════════════════════
+# THE TWO RULES THAT WERE KILLING SLAM:
+#
+# RULE 1: /clock must have NO throttle.
+#   RSP starts with use_sim_time: true. If /clock arrives slowly
+#   or is missing, RSP initializes at wall-clock and stamps all
+#   TF at t=0. SLAM looks up TF at t=628s, finds t=0, drops scan.
+#   That is why the SLAM terminal showed NOTHING for hours.
+#
+# RULE 2: /tf must have NO throttle.
+#   SLAM does an exact-time TF lookup for every scan. Throttling
+#   creates gaps in TF history. Scan arrives at t=100ms, nearest
+#   TF is at t=90ms or t=133ms — lookup fails, scan is dropped.
+#   "Queue is full" was the symptom of this gap problem.
+# ═══════════════════════════════════════════════════════════════
+
 - ros_topic_name: /cmd_vel
   gz_topic_name: /cmd_vel
   ros_type_name: geometry_msgs/msg/Twist
   gz_type_name: gz.msgs.Twist
   direction: BIDIRECTIONAL
 
-- ros_topic_name: /odom
-  gz_topic_name: /odom
-  ros_type_name: nav_msgs/msg/Odometry
-  gz_type_name: gz.msgs.Odometry
+# NO throttle — RSP must get this immediately on startup
+- ros_topic_name: /clock
+  gz_topic_name: /clock
+  ros_type_name: rosgraph_msgs/msg/Clock
+  gz_type_name: gz.msgs.Clock
   direction: GZ_TO_ROS
-  throttle_hz: 30
 
+# NO throttle — SLAM exact-time TF lookups require continuous history
 - ros_topic_name: /tf
   gz_topic_name: /tf
   ros_type_name: tf2_msgs/msg/TFMessage
   gz_type_name: gz.msgs.Pose_V
   direction: GZ_TO_ROS
-  throttle_hz: 30
+
+# NO throttle — static, only publishes once when model spawns
+- ros_topic_name: /tf_static
+  gz_topic_name: /tf_static
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: gz.msgs.Pose_V
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /odom
+  gz_topic_name: /odom
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
+  direction: GZ_TO_ROS
 
 - ros_topic_name: /imu/data
   gz_topic_name: /imu/data
@@ -52,10 +81,3 @@
   gz_type_name: gz.msgs.Model
   direction: GZ_TO_ROS
   throttle_hz: 30
-
-- ros_topic_name: /clock
-  gz_topic_name: /clock
-  ros_type_name: rosgraph_msgs/msg/Clock
-  gz_type_name: gz.msgs.Clock
-  direction: GZ_TO_ROS
-  throttle_hz: 100    # ← this is the key fix for EKF rate

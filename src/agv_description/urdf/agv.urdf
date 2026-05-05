@@ -1,80 +1,60 @@
 <?xml version="1.0"?>
 <robot name="warehouse_agv">
 
-  <!-- ═══════════════════════════════════════
-       BASE BODY  –  cylindrical disk
-  ═══════════════════════════════════════ -->
+  <!-- ═══════════════════════════════════════════════════════════
+       TF OWNERSHIP — one publisher per transform, no exceptions
+       odom → base_link        : DiffDrive plugin via /tf bridge
+       base_link → all others  : robot_state_publisher
+       map → odom              : slam_toolbox (slam_launch.py)
+       NO EKF = no 3rd publisher conflict
+  ═══════════════════════════════════════════════════════════ -->
+
   <link name="base_link">
     <visual>
-      <geometry>
-        <cylinder radius="0.22" length="0.12"/>
-      </geometry>
-      <material name="steel_blue">
-        <color rgba="0.2 0.4 0.8 1"/>
-      </material>
+      <geometry><cylinder radius="0.22" length="0.12"/></geometry>
+      <material name="steel_blue"><color rgba="0.2 0.4 0.8 1"/></material>
     </visual>
     <collision>
-      <geometry>
-        <cylinder radius="0.22" length="0.12"/>
-      </geometry>
+      <geometry><cylinder radius="0.22" length="0.12"/></geometry>
     </collision>
     <inertial>
       <mass value="8.0"/>
       <inertia ixx="0.1078" ixy="0.0" ixz="0.0"
-               iyy="0.1078" iyz="0.0"
-               izz="0.1936"/>
+               iyy="0.1078" iyz="0.0" izz="0.1936"/>
     </inertial>
   </link>
 
-  <!-- TOP DECK -->
   <link name="top_deck">
     <visual>
-      <geometry>
-        <cylinder radius="0.21" length="0.008"/>
-      </geometry>
-      <material name="dark_slate">
-        <color rgba="0.12 0.12 0.18 1"/>
-      </material>
+      <geometry><cylinder radius="0.21" length="0.008"/></geometry>
+      <material name="dark_slate"><color rgba="0.12 0.12 0.18 1"/></material>
     </visual>
     <inertial>
       <mass value="0.1"/>
       <inertia ixx="0.0005" ixy="0.0" ixz="0.0"
-               iyy="0.0005" iyz="0.0"
-               izz="0.0009"/>
+               iyy="0.0005" iyz="0.0" izz="0.0009"/>
     </inertial>
   </link>
-
   <joint name="top_deck_joint" type="fixed">
     <parent link="base_link"/>
     <child link="top_deck"/>
     <origin xyz="0.0 0.0 0.064" rpy="0 0 0"/>
   </joint>
 
-  <!-- ═══════════════════════════════════════
-       LEFT DRIVE WHEEL  –  orange
-  ═══════════════════════════════════════ -->
   <link name="left_wheel">
     <visual>
-      <geometry>
-        <cylinder radius="0.05" length="0.04"/>
-      </geometry>
-      <material name="orange">
-        <color rgba="1.0 0.45 0.0 1"/>
-      </material>
+      <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+      <material name="orange"><color rgba="1.0 0.45 0.0 1"/></material>
     </visual>
     <collision>
-      <geometry>
-        <cylinder radius="0.05" length="0.04"/>
-      </geometry>
+      <geometry><cylinder radius="0.05" length="0.04"/></geometry>
     </collision>
     <inertial>
       <mass value="0.4"/>
       <inertia ixx="0.00043" ixy="0.0" ixz="0.0"
-               iyy="0.00043" iyz="0.0"
-               izz="0.00050"/>
+               iyy="0.00043" iyz="0.0" izz="0.00050"/>
     </inertial>
   </link>
-
   <joint name="left_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="left_wheel"/>
@@ -83,31 +63,20 @@
     <dynamics damping="0.01" friction="0.01"/>
   </joint>
 
-  <!-- ═══════════════════════════════════════
-       RIGHT DRIVE WHEEL  –  green
-  ═══════════════════════════════════════ -->
   <link name="right_wheel">
     <visual>
-      <geometry>
-        <cylinder radius="0.05" length="0.04"/>
-      </geometry>
-      <material name="green">
-        <color rgba="0.1 0.8 0.2 1"/>
-      </material>
+      <geometry><cylinder radius="0.05" length="0.04"/></geometry>
+      <material name="green"><color rgba="0.1 0.8 0.2 1"/></material>
     </visual>
     <collision>
-      <geometry>
-        <cylinder radius="0.05" length="0.04"/>
-      </geometry>
+      <geometry><cylinder radius="0.05" length="0.04"/></geometry>
     </collision>
     <inertial>
       <mass value="0.4"/>
       <inertia ixx="0.00043" ixy="0.0" ixz="0.0"
-               iyy="0.00043" iyz="0.0"
-               izz="0.00050"/>
+               iyy="0.00043" iyz="0.0" izz="0.00050"/>
     </inertial>
   </link>
-
   <joint name="right_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="right_wheel"/>
@@ -116,116 +85,72 @@
     <dynamics damping="0.01" friction="0.01"/>
   </joint>
 
-  <!-- ═══════════════════════════════════════
-       FRONT CASTER  –  silver
-  ═══════════════════════════════════════ -->
   <link name="front_caster">
     <visual>
       <geometry><sphere radius="0.025"/></geometry>
-      <material name="silver">
-        <color rgba="0.8 0.8 0.8 1"/>
-      </material>
+      <material name="silver"><color rgba="0.8 0.8 0.8 1"/></material>
     </visual>
-    <collision>
-      <geometry><sphere radius="0.025"/></geometry>
-    </collision>
+    <collision><geometry><sphere radius="0.025"/></geometry></collision>
     <inertial>
       <mass value="0.08"/>
       <inertia ixx="0.000008" ixy="0.0" ixz="0.0"
-               iyy="0.000008" iyz="0.0"
-               izz="0.000008"/>
+               iyy="0.000008" iyz="0.0" izz="0.000008"/>
     </inertial>
   </link>
-
   <joint name="front_caster_joint" type="fixed">
     <parent link="base_link"/>
     <child link="front_caster"/>
     <origin xyz="0.17 0.0 -0.06" rpy="0 0 0"/>
   </joint>
 
-  <!-- ═══════════════════════════════════════
-       REAR CASTER  –  silver
-  ═══════════════════════════════════════ -->
   <link name="rear_caster">
     <visual>
       <geometry><sphere radius="0.025"/></geometry>
-      <material name="silver">
-        <color rgba="0.8 0.8 0.8 1"/>
-      </material>
+      <material name="silver"><color rgba="0.8 0.8 0.8 1"/></material>
     </visual>
-    <collision>
-      <geometry><sphere radius="0.025"/></geometry>
-    </collision>
+    <collision><geometry><sphere radius="0.025"/></geometry></collision>
     <inertial>
       <mass value="0.08"/>
       <inertia ixx="0.000008" ixy="0.0" ixz="0.0"
-               iyy="0.000008" iyz="0.0"
-               izz="0.000008"/>
+               iyy="0.000008" iyz="0.0" izz="0.000008"/>
     </inertial>
   </link>
-
   <joint name="rear_caster_joint" type="fixed">
     <parent link="base_link"/>
     <child link="rear_caster"/>
     <origin xyz="-0.17 0.0 -0.06" rpy="0 0 0"/>
   </joint>
 
-  <!-- ═══════════════════════════════════════
-       LiDAR  –  cyan
-  ═══════════════════════════════════════ -->
   <link name="lidar_link">
     <visual>
-      <geometry>
-        <cylinder radius="0.04" length="0.06"/>
-      </geometry>
-      <material name="cyan">
-        <color rgba="0.0 0.85 0.9 1"/>
-      </material>
+      <geometry><cylinder radius="0.04" length="0.06"/></geometry>
+      <material name="cyan"><color rgba="0.0 0.85 0.9 1"/></material>
     </visual>
-    <collision>
-      <geometry>
-        <cylinder radius="0.04" length="0.06"/>
-      </geometry>
-    </collision>
+    <collision><geometry><cylinder radius="0.04" length="0.06"/></geometry></collision>
     <inertial>
       <mass value="0.18"/>
       <inertia ixx="0.00009" ixy="0.0" ixz="0.0"
-               iyy="0.00009" iyz="0.0"
-               izz="0.00014"/>
+               iyy="0.00009" iyz="0.0" izz="0.00014"/>
     </inertial>
   </link>
-
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
     <origin xyz="0.0 0.0 0.09" rpy="0 0 0"/>
   </joint>
 
-  <!-- ═══════════════════════════════════════
-       CAMERA  –  red
-  ═══════════════════════════════════════ -->
   <link name="camera_link">
     <visual>
-      <geometry>
-        <box size="0.02 0.06 0.025"/>
-      </geometry>
-      <material name="red">
-        <color rgba="0.9 0.1 0.1 1"/>
-      </material>
+      <geometry><box size="0.02 0.06 0.025"/></geometry>
+      <material name="red"><color rgba="0.9 0.1 0.1 1"/></material>
     </visual>
-    <collision>
-      <geometry>
-        <box size="0.02 0.06 0.025"/>
-      </geometry>
-    </collision>
+    <collision><geometry><box size="0.02 0.06 0.025"/></geometry></collision>
     <inertial>
       <mass value="0.05"/>
       <inertia ixx="0.000003" ixy="0.0" ixz="0.0"
-               iyy="0.000003" iyz="0.0"
-               izz="0.000003"/>
+               iyy="0.000003" iyz="0.0" izz="0.000003"/>
     </inertial>
   </link>
-
   <joint name="camera_joint" type="fixed">
     <parent link="base_link"/>
     <child link="camera_link"/>
@@ -241,10 +166,15 @@
 
   <!-- ═══════════════════════════════════════
        GAZEBO PLUGINS
-       gz-sim-sensors-system intentionally ABSENT
-       (warehouse.sdf world owns the render engine)
   ═══════════════════════════════════════ -->
   <gazebo>
+    <!--
+      <tf_topic>/tf</tf_topic> IS present intentionally.
+      DiffDrive publishes odom->base_link on Gazebo's /tf topic,
+      which bridge.yaml forwards to ROS 2 /tf.
+      This is the sole publisher of odom->base_link.
+      Do NOT add EKF without first setting publish_tf: false in ekf.yaml.
+    -->
     <plugin filename="gz-sim-diff-drive-system"
             name="gz::sim::systems::DiffDrive">
       <left_joint>left_wheel_joint</left_joint>
@@ -270,7 +200,6 @@
     </plugin>
   </gazebo>
 
-  <!-- IMU sensor -->
   <gazebo reference="base_link">
     <sensor name="agv_imu" type="imu">
       <always_on>1</always_on>
@@ -291,12 +220,6 @@
     </sensor>
   </gazebo>
 
-  <!-- ═══════════════════════════════════════
-       LiDAR SENSOR
-       gz_frame_id  ← THIS is the critical fix.
-       Without it Gazebo publishes the scan in
-       an unnamed frame and RViz cannot place it.
-  ═══════════════════════════════════════ -->
   <gazebo reference="lidar_link">
     <sensor name="agv_lidar" type="gpu_lidar">
       <always_on>1</always_on>
@@ -333,7 +256,6 @@
     </sensor>
   </gazebo>
 
-  <!-- Camera sensor -->
   <gazebo reference="camera_link">
     <sensor name="agv_camera" type="camera">
       <camera>
@@ -357,38 +279,21 @@
     </sensor>
   </gazebo>
 
-  <!-- ═══════════════════════════════════════
-       SURFACE PROPERTIES
-       slip1/slip2 removed — invalid in Gazebo
-       Harmonic SDF and cause console warnings.
-       Friction is handled via mu1/mu2 only.
-  ═══════════════════════════════════════ -->
   <gazebo reference="left_wheel">
-    <mu1>1.2</mu1>
-    <mu2>1.2</mu2>
-    <kp>1000000.0</kp>
-    <kd>1.0</kd>
+    <mu1>1.2</mu1><mu2>1.2</mu2>
+    <kp>1000000.0</kp><kd>1.0</kd>
   </gazebo>
-
   <gazebo reference="right_wheel">
-    <mu1>1.2</mu1>
-    <mu2>1.2</mu2>
-    <kp>1000000.0</kp>
-    <kd>1.0</kd>
+    <mu1>1.2</mu1><mu2>1.2</mu2>
+    <kp>1000000.0</kp><kd>1.0</kd>
   </gazebo>
-
   <gazebo reference="front_caster">
-    <mu1>0.0</mu1>
-    <mu2>0.0</mu2>
-    <kp>1000000.0</kp>
-    <kd>1.0</kd>
+    <mu1>0.0</mu1><mu2>0.0</mu2>
+    <kp>1000000.0</kp><kd>1.0</kd>
   </gazebo>
-
   <gazebo reference="rear_caster">
-    <mu1>0.0</mu1>
-    <mu2>0.0</mu2>
-    <kp>1000000.0</kp>
-    <kd>1.0</kd>
+    <mu1>0.0</mu1><mu2>0.0</mu2>
+    <kp>1000000.0</kp><kd>1.0</kd>
   </gazebo>
 
 </robot>
