@@ -1,1 +1,1 @@
-joint_state_publisher:joint_state_publisher_gui:nav2_map_server:robot_state_publisher:ros_gz_bridge:ros_gz_interfaces:ros_gz_sim:rviz2:slam_toolbox:xacro
+joint_state_publisher:joint_state_publisher_gui:nav2_map_server:robot_localization:robot_state_publisher:ros_gz_bridge:ros_gz_interfaces:ros_gz_sim:rviz2:slam_toolbox:xacro

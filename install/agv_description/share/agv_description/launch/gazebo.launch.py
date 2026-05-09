@@ -10,6 +10,7 @@ def generate_launch_description():
     urdf_file = os.path.join(pkg_path, 'urdf', 'warehouse_agv.urdf')
     world_file = os.path.join(pkg_path, 'worlds', 'warehouse.world')
     bridge_file = os.path.join(pkg_path, 'config', 'bridge.yaml')
+    ekf_file = os.path.join(pkg_path, 'config', 'ekf.yaml')
 
     with open(urdf_file, 'r') as infp:
         robot_desc = infp.read()
@@ -36,7 +37,16 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 4. Spawn Entity
+    # 4. EKF Node (Robot Localization)
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[ekf_file, {'use_sim_time': True}]
+    )
+
+    # 5. Spawn Entity
     spawn = Node(
         package='ros_gz_sim',
         executable='create',
@@ -52,5 +62,6 @@ def generate_launch_description():
         gazebo,
         bridge_node,
         rsp,
+        ekf_node,
         spawn
     ])
