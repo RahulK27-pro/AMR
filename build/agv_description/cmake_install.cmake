@@ -43,6 +43,15 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/agv_description" TYPE DIRECTORY FILES
+    "/home/usernamerahul/agv_ws/src/agv_description/launch"
+    "/home/usernamerahul/agv_ws/src/agv_description/urdf"
+    "/home/usernamerahul/agv_ws/src/agv_description/worlds"
+    "/home/usernamerahul/agv_ws/src/agv_description/config"
+    )
+endif()
+
+if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/ament_index/resource_index/package_run_dependencies" TYPE FILE FILES "/home/usernamerahul/agv_ws/build/agv_description/ament_cmake_index/share/ament_index/resource_index/package_run_dependencies/agv_description")
 endif()
 

@@ -1,0 +1,42 @@
+[0.098s] Invoking command in '/home/usernamerahul/agv_ws/build/agv_description': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy /usr/bin/cmake --build /home/usernamerahul/agv_ws/build/agv_description -- -j8 -l8
+[0.496s] -- Found ament_cmake: 2.5.4 (/opt/ros/jazzy/share/ament_cmake/cmake)
+[1.513s] -- Found ament_lint_auto: 0.17.3 (/opt/ros/jazzy/share/ament_lint_auto/cmake)
+[1.908s] -- Added test 'flake8' to check Python code syntax and style conventions
+[1.909s] -- Configured 'flake8' exclude dirs and/or files: 
+[1.910s] -- Added test 'lint_cmake' to check CMake code style
+[1.910s] -- Added test 'pep257' to check Python code against some of the docstring style conventions in PEP 257
+[1.921s] -- Added test 'xmllint' to check XML markup files
+[1.933s] -- Configuring done (1.5s)
+[1.965s] -- Generating done (0.0s)
+[1.990s] -- Build files have been written to: /home/usernamerahul/agv_ws/build/agv_description
+[2.110s] Invoked command in '/home/usernamerahul/agv_ws/build/agv_description' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy /usr/bin/cmake --build /home/usernamerahul/agv_ws/build/agv_description -- -j8 -l8
+[2.152s] Invoking command in '/home/usernamerahul/agv_ws/build/agv_description': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy /usr/bin/cmake --install /home/usernamerahul/agv_ws/build/agv_description
+[2.179s] -- Install configuration: ""
+[2.183s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch
+[2.183s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/__pycache__
+[2.183s] -- Installing: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/__pycache__/master_launch.cpython-312.pyc
+[2.189s] -- Installing: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/__pycache__/slam_launch.cpython-312.pyc
+[2.196s] -- Installing: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/gazebo.launch.py
+[2.196s] -- Installing: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/display.launch.py
+[2.197s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/urdf
+[2.197s] -- Installing: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/urdf/warehouse_agv.urdf
+[2.197s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/worlds
+[2.197s] -- Installing: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/worlds/warehouse.world
+[2.198s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config
+[2.198s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/agv.rviz
+[2.198s] -- Installing: /home/usernamerahul/agv_ws/install/agv_description/share/ament_index/resource_index/package_run_dependencies/agv_description
+[2.198s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/ament_index/resource_index/parent_prefix_path/agv_description
+[2.199s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/environment/ament_prefix_path.sh
+[2.199s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/environment/ament_prefix_path.dsv
+[2.199s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/environment/path.sh
+[2.199s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/environment/path.dsv
+[2.199s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/local_setup.bash
+[2.199s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/local_setup.sh
+[2.199s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/local_setup.zsh
+[2.200s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/local_setup.dsv
+[2.200s] -- Installing: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/package.dsv
+[2.200s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/ament_index/resource_index/packages/agv_description
+[2.200s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/cmake/agv_descriptionConfig.cmake
+[2.200s] -- Up-to-date: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/cmake/agv_descriptionConfig-version.cmake
+[2.200s] -- Installing: /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/package.xml
+[2.218s] Invoked command in '/home/usernamerahul/agv_ws/build/agv_description' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy /usr/bin/cmake --install /home/usernamerahul/agv_ws/build/agv_description

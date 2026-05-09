@@ -1,1 +1,1 @@
-ament_lint_auto;ament_lint_common
+robot_state_publisher;ros_gz_sim;ros_gz_bridge;ros_gz_interfaces;joint_state_publisher;joint_state_publisher_gui;rviz2;xacro;ament_lint_auto;ament_lint_common

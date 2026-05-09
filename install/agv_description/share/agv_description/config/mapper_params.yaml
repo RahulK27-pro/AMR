@@ -1,0 +1,67 @@
+slam_toolbox:
+  ros__parameters:
+
+    # ── Frame names — must match URDF link names exactly ─────────────
+    odom_frame:  odom
+    map_frame:   map
+    base_frame:  base_link
+    scan_topic:  /scan
+
+    # ── Simulation clock ─────────────────────────────────────────────
+    use_sim_time: true
+
+    # ── Mapping mode ─────────────────────────────────────────────────
+    mode: mapping
+
+    # ── Map publish period ───────────────────────────────────────────
+    # How often SLAM publishes the map→odom TF transform (seconds).
+    # 0.05 = 20 Hz — keeps the robot movement smooth in RViz.
+    transform_publish_period: 0.05
+
+    # How often the occupancy grid image is rebuilt (seconds).
+    map_update_interval: 1.0
+
+    # ── Motion thresholds ────────────────────────────────────────────
+    # SLAM only processes a new scan when the robot has moved at least
+    # this much since the last processed scan. Very low values ensure
+    # SLAM triggers immediately on the first tiny movement.
+    minimum_travel_distance: 0.01    # 1 cm — triggers almost immediately
+    minimum_travel_heading:  0.01    # ~0.6 degrees
+
+    # ── LiDAR range ──────────────────────────────────────────────────
+    # Must match the <max> value in the URDF lidar sensor block.
+    max_laser_range: 12.0
+
+    # ── Timing tolerances ────────────────────────────────────────────
+    # minimum_time_interval: minimum seconds between scan processing.
+    # transform_timeout: how long SLAM waits for a TF before giving up.
+    #   Raised to 2.0s to handle brief gaps when the TF buffer is
+    #   still filling up after startup.
+    # tf_buffer_duration: how far back TF history is kept (seconds).
+    #   30s is generous — handles sim-time bursts and pauses.
+    minimum_time_interval:  0.1
+    transform_timeout:      2.0
+    tf_buffer_duration:    30.0
+
+    # ── Loop closure ─────────────────────────────────────────────────
+    # Detects when the robot revisits a location and corrects drift.
+    loop_search_maximum_distance:       3.0
+    loop_match_minimum_chain_size:      10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine:   0.45
+
+    # ── Scan correlation ─────────────────────────────────────────────
+    # How new scans are matched to the existing map.
+    correlation_search_space_dimension:       0.5
+    correlation_search_space_resolution:      0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # ── Ceres solver ─────────────────────────────────────────────────
+    # Most accurate solver available. Handles warehouse-scale maps well.
+    solver_plugin:               solver_plugins::CeresSolver
+    ceres_linear_solver:         SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner:        SCHUR_JACOBI
+    ceres_trust_region_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type:           TRADITIONAL_DOGLEG
+    ceres_loss_function:         None
