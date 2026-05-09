@@ -65,31 +65,91 @@
     <!-- Wall -->
     <model name="wall1">
       <static>true</static>
-
       <link name="link">
-
         <collision name="collision">
-          <geometry>
-            <box>
-              <size>0.2 4 1</size>
-            </box>
-          </geometry>
+          <geometry><box><size>0.2 4 1</size></box></geometry>
         </collision>
-
         <visual name="visual">
-          <geometry>
-            <box>
-              <size>0.2 4 1</size>
-            </box>
-          </geometry>
+          <geometry><box><size>0.2 4 1</size></box></geometry>
         </visual>
-
       </link>
-
       <pose>2 0 0.5 0 0 0</pose>
+    </model>
 
+    <!-- Cargo Box 1 -->
+    <model name="cargo_box_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.8 0.8 0.8</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.8 0.8 0.8</size></box></geometry>
+          <material><ambient>0.6 0.4 0.2 1</ambient><diffuse>0.6 0.4 0.2 1</diffuse></material>
+        </visual>
+      </link>
+      <pose>1 2 0.4 0 0 0</pose>
+    </model>
+
+    <!-- Cargo Box 2 -->
+    <model name="cargo_box_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.6 1.0 0.6</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.6 1.0 0.6</size></box></geometry>
+          <material><ambient>0.5 0.5 0.6 1</ambient><diffuse>0.5 0.5 0.6 1</diffuse></material>
+        </visual>
+      </link>
+      <pose>-1.5 1.5 0.3 0 0 0.5</pose>
+    </model>
+
+    <!-- Pillar 1 -->
+    <model name="pillar_1">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.3</radius><length>2.0</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.3</radius><length>2.0</length></cylinder></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+        </visual>
+      </link>
+      <pose>0 -2 1.0 0 0 0</pose>
+    </model>
+
+    <!-- Pillar 2 -->
+    <model name="pillar_2">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><cylinder><radius>0.3</radius><length>2.0</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.3</radius><length>2.0</length></cylinder></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+        </visual>
+      </link>
+      <pose>3 -2 1.0 0 0 0</pose>
+    </model>
+
+    <!-- Sphere Obstacle -->
+    <model name="sphere_obs">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><sphere><radius>0.4</radius></sphere></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><sphere><radius>0.4</radius></sphere></geometry>
+          <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+        </visual>
+      </link>
+      <pose>-2 -1 0.4 0 0 0</pose>
     </model>
 
   </world>
-
 </sdf>

@@ -25,31 +25,31 @@
   <link name="base_link">
 
     <visual>
-      <origin xyz="0 0 0.05"/>
+      <origin xyz="0 0 0.06"/>
       <geometry>
-        <box size="0.50 0.40 0.10"/>
+        <cylinder radius="0.22" length="0.12"/>
       </geometry>
       <material name="blue"/>
     </visual>
 
     <collision>
-      <origin xyz="0 0 0.05"/>
+      <origin xyz="0 0 0.06"/>
       <geometry>
-        <box size="0.50 0.40 0.10"/>
+        <cylinder radius="0.22" length="0.12"/>
       </geometry>
     </collision>
 
     <inertial>
-      <origin xyz="0 0 0.05"/>
+      <origin xyz="0 0 0.06"/>
       <mass value="12.0"/>
 
       <inertia
-          ixx="0.6"
+          ixx="0.16"
           ixy="0.0"
           ixz="0.0"
-          iyy="0.6"
+          iyy="0.16"
           iyz="0.0"
-          izz="0.6"/>
+          izz="0.29"/>
     </inertial>
 
   </link>
@@ -162,14 +162,14 @@
 
     <visual>
       <geometry>
-        <sphere radius="0.03"/>
+        <sphere radius="0.025"/>
       </geometry>
       <material name="gray"/>
     </visual>
 
     <collision>
       <geometry>
-        <sphere radius="0.03"/>
+        <sphere radius="0.025"/>
       </geometry>
     </collision>
 
@@ -192,7 +192,7 @@
     <parent link="base_link"/>
     <child link="front_caster"/>
 
-    <origin xyz="0.18 0 0.03"/>
+    <origin xyz="0.18 0 0.025"/>
 
   </joint>
 
@@ -204,14 +204,14 @@
 
     <visual>
       <geometry>
-        <sphere radius="0.03"/>
+        <sphere radius="0.025"/>
       </geometry>
       <material name="gray"/>
     </visual>
 
     <collision>
       <geometry>
-        <sphere radius="0.03"/>
+        <sphere radius="0.025"/>
       </geometry>
     </collision>
 
@@ -234,7 +234,7 @@
     <parent link="base_link"/>
     <child link="rear_caster"/>
 
-    <origin xyz="-0.18 0 0.03"/>
+    <origin xyz="-0.18 0 0.025"/>
 
   </joint>
 
@@ -277,7 +277,7 @@
     <parent link="base_link"/>
     <child link="lidar_link"/>
 
-    <origin xyz="0 0 0.13"/>
+    <origin xyz="0 0 0.145"/>
 
   </joint>
 
@@ -295,7 +295,7 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <origin xyz="0 0 0.05"/>
+    <origin xyz="0 0 0.06"/>
   </joint>
 
   <gazebo reference="imu_link">
@@ -332,7 +332,7 @@
   <joint name="camera_joint" type="fixed">
     <parent link="base_link"/>
     <child link="camera_link"/>
-    <origin xyz="0.26 0 0.10"/>
+    <origin xyz="0.22 0 0.06"/>
   </joint>
 
   <gazebo reference="base_link">
