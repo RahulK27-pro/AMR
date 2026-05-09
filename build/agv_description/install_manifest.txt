@@ -1,11 +1,13 @@
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/__pycache__/master_launch.cpython-312.pyc
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/__pycache__/slam_launch.cpython-312.pyc
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/gazebo.launch.py
+/home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/slam_launch.py
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/display.launch.py
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/urdf/warehouse_agv.urdf
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/worlds/warehouse.world
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/bridge.yaml
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/agv.rviz
+/home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/mapper_params.yaml
 /home/usernamerahul/agv_ws/install/agv_description/share/ament_index/resource_index/package_run_dependencies/agv_description
 /home/usernamerahul/agv_ws/install/agv_description/share/ament_index/resource_index/parent_prefix_path/agv_description
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/environment/ament_prefix_path.sh
