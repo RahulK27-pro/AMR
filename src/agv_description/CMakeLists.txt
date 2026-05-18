@@ -28,7 +28,14 @@ install(DIRECTORY
   urdf
   worlds
   config
+  scripts
   DESTINATION share/${PROJECT_NAME}
+)
+
+# Make shell scripts executable after install
+install(PROGRAMS
+  scripts/save_map.sh
+  DESTINATION share/${PROJECT_NAME}/scripts
 )
 
 ament_package()

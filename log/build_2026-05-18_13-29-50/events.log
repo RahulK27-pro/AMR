@@ -1,0 +1,10 @@
+[0.000000] (-) TimerEvent: {}
+[0.000938] (-) JobUnselected: {'identifier': 'agv_description'}
+[0.001020] (-) JobUnselected: {'identifier': 'agv_navigation'}
+[0.001043] (-) JobUnselected: {'identifier': 'agv_vision'}
+[0.001076] (-) JobUnselected: {'identifier': 'explore_lite_msgs'}
+[0.001176] (-) JobUnselected: {'identifier': 'multirobot_map_merge'}
+[0.001218] (explore_lite) JobQueued: {'identifier': 'explore_lite', 'dependencies': OrderedDict({'explore_lite_msgs': '/home/usernamerahul/agv_ws/install/explore_lite_msgs'})}
+[0.001262] (explore_lite) JobStarted: {'identifier': 'explore_lite'}
+[0.029307] (explore_lite) JobEnded: {'identifier': 'explore_lite', 'rc': 1}
+[0.039815] (-) EventReactorShutdown: {}
