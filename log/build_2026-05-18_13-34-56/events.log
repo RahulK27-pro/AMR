@@ -1,0 +1,1048 @@
+[0.000000] (-) TimerEvent: {}
+[0.000844] (-) JobUnselected: {'identifier': 'agv_description'}
+[0.001348] (-) JobUnselected: {'identifier': 'agv_navigation'}
+[0.001420] (-) JobUnselected: {'identifier': 'agv_vision'}
+[0.001461] (-) JobUnselected: {'identifier': 'multirobot_map_merge'}
+[0.001506] (explore_lite_msgs) JobQueued: {'identifier': 'explore_lite_msgs', 'dependencies': OrderedDict()}
+[0.001552] (explore_lite) JobQueued: {'identifier': 'explore_lite', 'dependencies': OrderedDict({'explore_lite_msgs': '/home/usernamerahul/agv_ws/install/explore_lite_msgs'})}
+[0.001601] (explore_lite_msgs) JobStarted: {'identifier': 'explore_lite_msgs'}
+[0.012179] (explore_lite_msgs) JobProgress: {'identifier': 'explore_lite_msgs', 'progress': 'cmake'}
+[0.013918] (explore_lite_msgs) Command: {'cmd': ['/usr/bin/cmake', '/home/usernamerahul/agv_ws/src/m-explore-ros2/explore_lite_msgs', '-DCMAKE_INSTALL_PREFIX=/home/usernamerahul/agv_ws/install/explore_lite_msgs'], 'cwd': '/home/usernamerahul/agv_ws/build/explore_lite_msgs', 'env': OrderedDict({'LESSOPEN': '| /usr/bin/lesspipe %s', 'GZ_SIM_RESOURCE_PATH': '/opt/ros/jazzy/share', 'USER': 'usernamerahul', 'GZ_CONFIG_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor/share/gz:/opt/ros/jazzy/opt/sdformat_vendor/share/gz:/opt/ros/jazzy/opt/gz_gui_vendor/share/gz:/opt/ros/jazzy/opt/gz_transport_vendor/share/gz:/opt/ros/jazzy/opt/gz_rendering_vendor/share/gz:/opt/ros/jazzy/opt/gz_plugin_vendor/share/gz:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/share/gz:/opt/ros/jazzy/opt/gz_msgs_vendor/share/gz:/opt/ros/jazzy/opt/gz_common_vendor/share/gz', 'GIT_ASKPASS': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass.sh', 'SHLVL': '1', 'LIBGL_ALWAYS_SOFTWARE': '1', 'LD_LIBRARY_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor/lib:/opt/ros/jazzy/opt/gz_sensors_vendor/lib:/opt/ros/jazzy/opt/gz_physics_vendor/lib:/opt/ros/jazzy/opt/sdformat_vendor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_gui_vendor/lib:/opt/ros/jazzy/opt/gz_transport_vendor/lib:/opt/ros/jazzy/opt/gz_rendering_vendor/lib:/opt/ros/jazzy/opt/gz_plugin_vendor/lib:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/lib:/opt/ros/jazzy/opt/gz_msgs_vendor/lib:/opt/ros/jazzy/opt/gz_common_vendor/lib:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_tools_vendor/lib:/opt/ros/jazzy/opt/gz_ogre_next_vendor/lib:/opt/ros/jazzy/opt/gz_dartsim_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib', 'ANTIGRAVITY_CLI_ALIAS': 'agy', 'HOME': '/home/usernamerahul', 'TERM_PROGRAM_VERSION': '1.107.0', 'VSCODE_IPC_HOOK_CLI': '/run/user/1000/vscode-ipc-95f7af35-7163-41c4-b682-ec3dbec09ff8.sock', 'ROS_PYTHON_VERSION': '3', 'PAGER': 'cat', 'VSCODE_GIT_ASKPASS_MAIN': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass-main.js', 'VSCODE_GIT_ASKPASS_NODE': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/node', 'VSCODE_PYTHON_AUTOACTIVATE_GUARD': '1', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus', 'COLORTERM': 'truecolor', 'WSL_DISTRO_NAME': 'Ubuntu', 'ANTIGRAVITY_AGENT': '1', 'NVM_DIR': '/home/usernamerahul/.nvm', 'WAYLAND_DISPLAY': 'wayland-0', 'COLCON_PREFIX_PATH': '/home/usernamerahul/ros2_ws/install', 'ROS_DISTRO': 'jazzy', 'LOGNAME': 'usernamerahul', 'NAME': 'Rahul', 'WSL_INTEROP': '/run/WSL/347_interop', 'PULSE_SERVER': 'unix:/mnt/wslg/PulseServer', '_': '/usr/bin/colcon', 'ROS_VERSION': '2', 'TERM': 'xterm-256color', 'PATH': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/bin/remote-cli:/opt/ros/jazzy/opt/gz_msgs_vendor/bin:/opt/ros/jazzy/opt/gz_tools_vendor/bin:/opt/ros/jazzy/opt/gz_ogre_next_vendor/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/dotnet/:/mnt/c/ProgramData/chocolatey/bin:/mnt/d/Downloads/New folder/runtime/win64:/mnt/d/Downloads/New folder/bin:/mnt/d/Education/MPLab/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/d/Education/MatLab/MatLab/runtime/win64:/mnt/d/Education/MatLab/MatLab/bin:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Git LFS:/mnt/c/Program Files/MySQL/MySQL Server 9.3/bin:/mnt/d/Projects/indeedwebscrap/Indeed-Job-Scraper/edgedriver_win64/msedgedriver.exe:/mnt/c/Program Files/GitHub CLI/:/mnt/c/Program Files/Microsoft SQL Server/150/Tools/Binn/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Files/nodejs/:/mnt/c/Program Files/Go/bin:/mnt/c/Program Files/PuTTY/:/mnt/c/Users/Rahul/.local/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/Scripts/:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/:/mnt/c/Users/Rahul/AppData/Local/Microsoft/WindowsApps:/mnt/c/Program Files/CodeBlocks/MinGW/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Microsoft VS Code/bin:/mnt/c/Users/Rahul/anaconda3/condabin:/mnt/c/Users/Rahul/anaconda3:/mnt/c/Users/Rahul/AppData/Local/Programs/cursor/resources/app/bin:/mnt/c/Program Files/PostgreSQL/psqlODBC:/mnt/c/Program Files/PostgreSQL/17/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Windsurf/bin:/mnt/c/Users/Rahul/google-cloud-sdk/bin:/mnt/c/Users/Rahul/AppData/Roaming/npm:/mnt/c/Users/Rahul/AppData/Local/Programs/Ollama:/mnt/c/Users/Rahul/go/bin:/mnt/c/Program Files/Go/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Antigravity/bin:/snap/bin', 'XDG_RUNTIME_DIR': '/run/user/1000', 'DISPLAY': ':0', 'LANG': 'en_US.UTF-8', 'RMW_IMPLEMENTATION': 'rmw_cyclonedds_cpp', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'VSCODE_GIT_IPC_HANDLE': '/run/user/1000/vscode-git-bbea33e8b1.sock', 'TERM_PROGRAM': 'vscode', 'AMENT_PREFIX_PATH': '/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'SHELL': '/bin/bash', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'ROS_AUTOMATIC_DISCOVERY_RANGE': 'SUBNET', 'VSCODE_GIT_ASKPASS_EXTRA_ARGS': '', 'PWD': '/home/usernamerahul/agv_ws/build/explore_lite_msgs', 'TURTLEBOT3_MODEL': 'waffle_pi', 'NVM_CD_FLAGS': '', 'XDG_DATA_DIRS': '/usr/local/share:/usr/share:/var/lib/snapd/desktop', 'PYTHONPATH': '/home/usernamerahul/ros2_ws/install/my_robot_controller/lib/python3.12/site-packages:/opt/ros/jazzy/lib/python3.12/site-packages', 'COLCON': '1', 'WSL2_GUI_APPS_ENABLED': '1', 'HOSTTYPE': 'x86_64', 'NVM_RC_VERSION': '', 'CMAKE_PREFIX_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor:/opt/ros/jazzy/opt/gz_sensors_vendor:/opt/ros/jazzy/opt/gz_physics_vendor:/opt/ros/jazzy/opt/sdformat_vendor:/opt/ros/jazzy/opt/gz_gui_vendor:/opt/ros/jazzy/opt/gz_transport_vendor:/opt/ros/jazzy/opt/gz_rendering_vendor:/opt/ros/jazzy/opt/gz_plugin_vendor:/opt/ros/jazzy/opt/gz_fuel_tools_vendor:/opt/ros/jazzy/opt/gz_msgs_vendor:/opt/ros/jazzy/opt/gz_common_vendor:/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_tools_vendor:/opt/ros/jazzy/opt/gz_ogre_next_vendor:/opt/ros/jazzy/opt/gz_dartsim_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'WSLENV': ''}), 'shell': False}
+[0.099306] (-) TimerEvent: {}
+[0.199957] (-) TimerEvent: {}
+[0.300602] (-) TimerEvent: {}
+[0.401240] (-) TimerEvent: {}
+[0.502089] (-) TimerEvent: {}
+[0.599271] (explore_lite_msgs) StdoutLine: {'line': b'-- The C compiler identification is GNU 13.3.0\n'}
+[0.602198] (-) TimerEvent: {}
+[0.702726] (-) TimerEvent: {}
+[0.803357] (-) TimerEvent: {}
+[0.903931] (-) TimerEvent: {}
+[1.004360] (-) TimerEvent: {}
+[1.104719] (-) TimerEvent: {}
+[1.205219] (-) TimerEvent: {}
+[1.305902] (-) TimerEvent: {}
+[1.406334] (-) TimerEvent: {}
+[1.506709] (-) TimerEvent: {}
+[1.607114] (-) TimerEvent: {}
+[1.707511] (-) TimerEvent: {}
+[1.807893] (-) TimerEvent: {}
+[1.875665] (explore_lite_msgs) StdoutLine: {'line': b'-- The CXX compiler identification is GNU 13.3.0\n'}
+[1.908031] (-) TimerEvent: {}
+[2.008415] (-) TimerEvent: {}
+[2.108794] (-) TimerEvent: {}
+[2.209160] (-) TimerEvent: {}
+[2.309504] (-) TimerEvent: {}
+[2.409926] (-) TimerEvent: {}
+[2.510529] (-) TimerEvent: {}
+[2.610910] (-) TimerEvent: {}
+[2.711281] (-) TimerEvent: {}
+[2.811738] (-) TimerEvent: {}
+[2.843634] (explore_lite_msgs) StdoutLine: {'line': b'-- Detecting C compiler ABI info\n'}
+[2.911871] (-) TimerEvent: {}
+[3.012314] (-) TimerEvent: {}
+[3.112720] (-) TimerEvent: {}
+[3.213135] (-) TimerEvent: {}
+[3.313516] (-) TimerEvent: {}
+[3.413911] (-) TimerEvent: {}
+[3.463589] (explore_lite_msgs) StdoutLine: {'line': b'-- Detecting C compiler ABI info - done\n'}
+[3.480488] (explore_lite_msgs) StdoutLine: {'line': b'-- Check for working C compiler: /usr/bin/cc - skipped\n'}
+[3.481610] (explore_lite_msgs) StdoutLine: {'line': b'-- Detecting C compile features\n'}
+[3.483045] (explore_lite_msgs) StdoutLine: {'line': b'-- Detecting C compile features - done\n'}
+[3.514135] (-) TimerEvent: {}
+[3.614593] (-) TimerEvent: {}
+[3.715058] (-) TimerEvent: {}
+[3.815501] (-) TimerEvent: {}
+[3.838412] (explore_lite_msgs) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info\n'}
+[3.915612] (-) TimerEvent: {}
+[4.015937] (-) TimerEvent: {}
+[4.116373] (-) TimerEvent: {}
+[4.216881] (-) TimerEvent: {}
+[4.317293] (-) TimerEvent: {}
+[4.369126] (explore_lite_msgs) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info - done\n'}
+[4.380242] (explore_lite_msgs) StdoutLine: {'line': b'-- Check for working CXX compiler: /usr/bin/c++ - skipped\n'}
+[4.380724] (explore_lite_msgs) StdoutLine: {'line': b'-- Detecting CXX compile features\n'}
+[4.381386] (explore_lite_msgs) StdoutLine: {'line': b'-- Detecting CXX compile features - done\n'}
+[4.417463] (-) TimerEvent: {}
+[4.427103] (explore_lite_msgs) StdoutLine: {'line': b'-- Found ament_cmake: 2.5.6 (/opt/ros/jazzy/share/ament_cmake/cmake)\n'}
+[4.517603] (-) TimerEvent: {}
+[4.618024] (-) TimerEvent: {}
+[4.707491] (explore_lite_msgs) StdoutLine: {'line': b'-- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter \n'}
+[4.718171] (-) TimerEvent: {}
+[4.818635] (-) TimerEvent: {}
+[4.919127] (-) TimerEvent: {}
+[5.019662] (-) TimerEvent: {}
+[5.120247] (-) TimerEvent: {}
+[5.220268] (explore_lite_msgs) StdoutLine: {'line': b'-- Found rosidl_default_generators: 1.6.0 (/opt/ros/jazzy/share/rosidl_default_generators/cmake)\n'}
+[5.220664] (-) TimerEvent: {}
+[5.266208] (explore_lite_msgs) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c\n'}
+[5.320918] (-) TimerEvent: {}
+[5.421444] (-) TimerEvent: {}
+[5.522053] (-) TimerEvent: {}
+[5.622618] (-) TimerEvent: {}
+[5.723196] (-) TimerEvent: {}
+[5.823723] (-) TimerEvent: {}
+[5.900889] (explore_lite_msgs) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp\n'}
+[5.923898] (-) TimerEvent: {}
+[6.024518] (-) TimerEvent: {}
+[6.125293] (-) TimerEvent: {}
+[6.148007] (explore_lite_msgs) StdoutLine: {'line': b'-- Found rosidl_adapter: 4.6.7 (/opt/ros/jazzy/share/rosidl_adapter/cmake)\n'}
+[6.225465] (-) TimerEvent: {}
+[6.326457] (-) TimerEvent: {}
+[6.427000] (-) TimerEvent: {}
+[6.527564] (-) TimerEvent: {}
+[6.628120] (-) TimerEvent: {}
+[6.728693] (-) TimerEvent: {}
+[6.829155] (-) TimerEvent: {}
+[6.929777] (-) TimerEvent: {}
+[7.030388] (-) TimerEvent: {}
+[7.130934] (-) TimerEvent: {}
+[7.231393] (-) TimerEvent: {}
+[7.331846] (-) TimerEvent: {}
+[7.432484] (-) TimerEvent: {}
+[7.490934] (explore_lite_msgs) StdoutLine: {'line': b'-- Found ament_cmake_ros: 0.12.0 (/opt/ros/jazzy/share/ament_cmake_ros/cmake)\n'}
+[7.532691] (-) TimerEvent: {}
+[7.633284] (-) TimerEvent: {}
+[7.733865] (-) TimerEvent: {}
+[7.834388] (-) TimerEvent: {}
+[7.934809] (-) TimerEvent: {}
+[8.035337] (-) TimerEvent: {}
+[8.135873] (-) TimerEvent: {}
+[8.237180] (-) TimerEvent: {}
+[8.336352] (explore_lite_msgs) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c\n'}
+[8.337264] (-) TimerEvent: {}
+[8.437626] (-) TimerEvent: {}
+[8.538124] (-) TimerEvent: {}
+[8.638628] (-) TimerEvent: {}
+[8.739060] (-) TimerEvent: {}
+[8.839600] (-) TimerEvent: {}
+[8.940134] (-) TimerEvent: {}
+[9.040515] (-) TimerEvent: {}
+[9.140966] (-) TimerEvent: {}
+[9.241463] (-) TimerEvent: {}
+[9.319349] (explore_lite_msgs) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp\n'}
+[9.333890] (explore_lite_msgs) StdoutLine: {'line': b'-- Found python_cmake_module: 0.11.1 (/opt/ros/jazzy/share/python_cmake_module/cmake)\n'}
+[9.341665] (-) TimerEvent: {}
+[9.442180] (-) TimerEvent: {}
+[9.542663] (-) TimerEvent: {}
+[9.575925] (explore_lite_msgs) StdoutLine: {'line': b'-- Found PythonExtra: /usr/bin/python3  \n'}
+[9.642782] (-) TimerEvent: {}
+[9.743236] (-) TimerEvent: {}
+[9.844033] (-) TimerEvent: {}
+[9.944537] (-) TimerEvent: {}
+[10.045066] (-) TimerEvent: {}
+[10.146859] (-) TimerEvent: {}
+[10.247493] (-) TimerEvent: {}
+[10.347944] (-) TimerEvent: {}
+[10.448346] (-) TimerEvent: {}
+[10.488740] (explore_lite_msgs) StdoutLine: {'line': b'-- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter Development NumPy Development.Module Development.Embed \n'}
+[10.548504] (-) TimerEvent: {}
+[10.649084] (-) TimerEvent: {}
+[10.667336] (explore_lite_msgs) StdoutLine: {'line': b'-- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter \n'}
+[10.700216] (explore_lite_msgs) StdoutLine: {'line': b'-- Configuring done (10.6s)\n'}
+[10.749240] (-) TimerEvent: {}
+[10.814434] (explore_lite_msgs) StdoutLine: {'line': b'-- Generating done (0.1s)\n'}
+[10.840879] (explore_lite_msgs) StdoutLine: {'line': b'-- Build files have been written to: /home/usernamerahul/agv_ws/build/explore_lite_msgs\n'}
+[10.849480] (-) TimerEvent: {}
+[10.858045] (explore_lite_msgs) CommandEnded: {'returncode': 0}
+[10.865056] (explore_lite_msgs) JobProgress: {'identifier': 'explore_lite_msgs', 'progress': 'build'}
+[10.865170] (explore_lite_msgs) Command: {'cmd': ['/usr/bin/cmake', '--build', '/home/usernamerahul/agv_ws/build/explore_lite_msgs', '--', '-j8', '-l8'], 'cwd': '/home/usernamerahul/agv_ws/build/explore_lite_msgs', 'env': OrderedDict({'LESSOPEN': '| /usr/bin/lesspipe %s', 'GZ_SIM_RESOURCE_PATH': '/opt/ros/jazzy/share', 'USER': 'usernamerahul', 'GZ_CONFIG_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor/share/gz:/opt/ros/jazzy/opt/sdformat_vendor/share/gz:/opt/ros/jazzy/opt/gz_gui_vendor/share/gz:/opt/ros/jazzy/opt/gz_transport_vendor/share/gz:/opt/ros/jazzy/opt/gz_rendering_vendor/share/gz:/opt/ros/jazzy/opt/gz_plugin_vendor/share/gz:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/share/gz:/opt/ros/jazzy/opt/gz_msgs_vendor/share/gz:/opt/ros/jazzy/opt/gz_common_vendor/share/gz', 'GIT_ASKPASS': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass.sh', 'SHLVL': '1', 'LIBGL_ALWAYS_SOFTWARE': '1', 'LD_LIBRARY_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor/lib:/opt/ros/jazzy/opt/gz_sensors_vendor/lib:/opt/ros/jazzy/opt/gz_physics_vendor/lib:/opt/ros/jazzy/opt/sdformat_vendor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_gui_vendor/lib:/opt/ros/jazzy/opt/gz_transport_vendor/lib:/opt/ros/jazzy/opt/gz_rendering_vendor/lib:/opt/ros/jazzy/opt/gz_plugin_vendor/lib:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/lib:/opt/ros/jazzy/opt/gz_msgs_vendor/lib:/opt/ros/jazzy/opt/gz_common_vendor/lib:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_tools_vendor/lib:/opt/ros/jazzy/opt/gz_ogre_next_vendor/lib:/opt/ros/jazzy/opt/gz_dartsim_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib', 'ANTIGRAVITY_CLI_ALIAS': 'agy', 'HOME': '/home/usernamerahul', 'TERM_PROGRAM_VERSION': '1.107.0', 'VSCODE_IPC_HOOK_CLI': '/run/user/1000/vscode-ipc-95f7af35-7163-41c4-b682-ec3dbec09ff8.sock', 'ROS_PYTHON_VERSION': '3', 'PAGER': 'cat', 'VSCODE_GIT_ASKPASS_MAIN': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass-main.js', 'VSCODE_GIT_ASKPASS_NODE': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/node', 'VSCODE_PYTHON_AUTOACTIVATE_GUARD': '1', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus', 'COLORTERM': 'truecolor', 'WSL_DISTRO_NAME': 'Ubuntu', 'ANTIGRAVITY_AGENT': '1', 'NVM_DIR': '/home/usernamerahul/.nvm', 'WAYLAND_DISPLAY': 'wayland-0', 'COLCON_PREFIX_PATH': '/home/usernamerahul/ros2_ws/install', 'ROS_DISTRO': 'jazzy', 'LOGNAME': 'usernamerahul', 'NAME': 'Rahul', 'WSL_INTEROP': '/run/WSL/347_interop', 'PULSE_SERVER': 'unix:/mnt/wslg/PulseServer', '_': '/usr/bin/colcon', 'ROS_VERSION': '2', 'TERM': 'xterm-256color', 'PATH': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/bin/remote-cli:/opt/ros/jazzy/opt/gz_msgs_vendor/bin:/opt/ros/jazzy/opt/gz_tools_vendor/bin:/opt/ros/jazzy/opt/gz_ogre_next_vendor/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/dotnet/:/mnt/c/ProgramData/chocolatey/bin:/mnt/d/Downloads/New folder/runtime/win64:/mnt/d/Downloads/New folder/bin:/mnt/d/Education/MPLab/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/d/Education/MatLab/MatLab/runtime/win64:/mnt/d/Education/MatLab/MatLab/bin:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Git LFS:/mnt/c/Program Files/MySQL/MySQL Server 9.3/bin:/mnt/d/Projects/indeedwebscrap/Indeed-Job-Scraper/edgedriver_win64/msedgedriver.exe:/mnt/c/Program Files/GitHub CLI/:/mnt/c/Program Files/Microsoft SQL Server/150/Tools/Binn/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Files/nodejs/:/mnt/c/Program Files/Go/bin:/mnt/c/Program Files/PuTTY/:/mnt/c/Users/Rahul/.local/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/Scripts/:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/:/mnt/c/Users/Rahul/AppData/Local/Microsoft/WindowsApps:/mnt/c/Program Files/CodeBlocks/MinGW/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Microsoft VS Code/bin:/mnt/c/Users/Rahul/anaconda3/condabin:/mnt/c/Users/Rahul/anaconda3:/mnt/c/Users/Rahul/AppData/Local/Programs/cursor/resources/app/bin:/mnt/c/Program Files/PostgreSQL/psqlODBC:/mnt/c/Program Files/PostgreSQL/17/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Windsurf/bin:/mnt/c/Users/Rahul/google-cloud-sdk/bin:/mnt/c/Users/Rahul/AppData/Roaming/npm:/mnt/c/Users/Rahul/AppData/Local/Programs/Ollama:/mnt/c/Users/Rahul/go/bin:/mnt/c/Program Files/Go/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Antigravity/bin:/snap/bin', 'XDG_RUNTIME_DIR': '/run/user/1000', 'DISPLAY': ':0', 'LANG': 'en_US.UTF-8', 'RMW_IMPLEMENTATION': 'rmw_cyclonedds_cpp', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'VSCODE_GIT_IPC_HANDLE': '/run/user/1000/vscode-git-bbea33e8b1.sock', 'TERM_PROGRAM': 'vscode', 'AMENT_PREFIX_PATH': '/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'SHELL': '/bin/bash', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'ROS_AUTOMATIC_DISCOVERY_RANGE': 'SUBNET', 'VSCODE_GIT_ASKPASS_EXTRA_ARGS': '', 'PWD': '/home/usernamerahul/agv_ws/build/explore_lite_msgs', 'TURTLEBOT3_MODEL': 'waffle_pi', 'NVM_CD_FLAGS': '', 'XDG_DATA_DIRS': '/usr/local/share:/usr/share:/var/lib/snapd/desktop', 'PYTHONPATH': '/home/usernamerahul/ros2_ws/install/my_robot_controller/lib/python3.12/site-packages:/opt/ros/jazzy/lib/python3.12/site-packages', 'COLCON': '1', 'WSL2_GUI_APPS_ENABLED': '1', 'HOSTTYPE': 'x86_64', 'NVM_RC_VERSION': '', 'CMAKE_PREFIX_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor:/opt/ros/jazzy/opt/gz_sensors_vendor:/opt/ros/jazzy/opt/gz_physics_vendor:/opt/ros/jazzy/opt/sdformat_vendor:/opt/ros/jazzy/opt/gz_gui_vendor:/opt/ros/jazzy/opt/gz_transport_vendor:/opt/ros/jazzy/opt/gz_rendering_vendor:/opt/ros/jazzy/opt/gz_plugin_vendor:/opt/ros/jazzy/opt/gz_fuel_tools_vendor:/opt/ros/jazzy/opt/gz_msgs_vendor:/opt/ros/jazzy/opt/gz_common_vendor:/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_tools_vendor:/opt/ros/jazzy/opt/gz_ogre_next_vendor:/opt/ros/jazzy/opt/gz_dartsim_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'WSLENV': ''}), 'shell': False}
+[10.949139] (explore_lite_msgs) StdoutLine: {'line': b'[  2%] \x1b[34m\x1b[1mGenerating type hashes for ROS interfaces\x1b[0m\n'}
+[10.949665] (-) TimerEvent: {}
+[10.953456] (explore_lite_msgs) StdoutLine: {'line': b'[  5%] \x1b[34m\x1b[1mGenerating Rust code for ROS interfaces\x1b[0m\n'}
+[10.971523] (explore_lite_msgs) StdoutLine: {'line': b'[  5%] Built target ament_cmake_python_copy_explore_lite_msgs\n'}
+[11.049896] (-) TimerEvent: {}
+[11.150447] (-) TimerEvent: {}
+[11.250959] (-) TimerEvent: {}
+[11.351465] (-) TimerEvent: {}
+[11.451992] (-) TimerEvent: {}
+[11.544064] (explore_lite_msgs) StdoutLine: {'line': b'[  5%] Built target explore_lite_msgs__rosidl_generator_type_description\n'}
+[11.552166] (-) TimerEvent: {}
+[11.554380] (explore_lite_msgs) StdoutLine: {'line': b'running egg_info\n'}
+[11.556495] (explore_lite_msgs) StdoutLine: {'line': b'creating explore_lite_msgs.egg-info\n'}
+[11.570728] (explore_lite_msgs) StdoutLine: {'line': b'[  8%] \x1b[34m\x1b[1mGenerating C code for ROS interfaces\x1b[0m\n'}
+[11.596876] (explore_lite_msgs) StdoutLine: {'line': b'[ 11%] \x1b[34m\x1b[1mGenerating C++ code for ROS interfaces\x1b[0m\n'}
+[11.607140] (explore_lite_msgs) StdoutLine: {'line': b'[ 11%] Built target explore_lite_msgs__rs\n'}
+[11.608598] (explore_lite_msgs) StdoutLine: {'line': b'writing explore_lite_msgs.egg-info/PKG-INFO\n'}
+[11.609149] (explore_lite_msgs) StdoutLine: {'line': b'writing dependency_links to explore_lite_msgs.egg-info/dependency_links.txt\n'}
+[11.609653] (explore_lite_msgs) StdoutLine: {'line': b'writing top-level names to explore_lite_msgs.egg-info/top_level.txt\n'}
+[11.610204] (explore_lite_msgs) StdoutLine: {'line': b"writing manifest file 'explore_lite_msgs.egg-info/SOURCES.txt'\n"}
+[11.652436] (-) TimerEvent: {}
+[11.734210] (explore_lite_msgs) StdoutLine: {'line': b"reading manifest file 'explore_lite_msgs.egg-info/SOURCES.txt'\n"}
+[11.735932] (explore_lite_msgs) StdoutLine: {'line': b"writing manifest file 'explore_lite_msgs.egg-info/SOURCES.txt'\n"}
+[11.752631] (-) TimerEvent: {}
+[11.811956] (explore_lite_msgs) StdoutLine: {'line': b'[ 11%] Built target ament_cmake_python_build_explore_lite_msgs_egg\n'}
+[11.852979] (-) TimerEvent: {}
+[11.953526] (-) TimerEvent: {}
+[12.054136] (-) TimerEvent: {}
+[12.154707] (-) TimerEvent: {}
+[12.229721] (explore_lite_msgs) StdoutLine: {'line': b'[ 11%] Built target explore_lite_msgs__cpp\n'}
+[12.254848] (-) TimerEvent: {}
+[12.274203] (explore_lite_msgs) StdoutLine: {'line': b'[ 14%] \x1b[32mBuilding C object CMakeFiles/explore_lite_msgs__rosidl_generator_c.dir/rosidl_generator_c/explore_lite_msgs/msg/detail/explore_status__description.c.o\x1b[0m\n'}
+[12.275075] (explore_lite_msgs) StdoutLine: {'line': b'[ 20%] \x1b[32mBuilding C object CMakeFiles/explore_lite_msgs__rosidl_generator_c.dir/rosidl_generator_c/explore_lite_msgs/msg/detail/explore_status__type_support.c.o\x1b[0m\n'}
+[12.276219] (explore_lite_msgs) StdoutLine: {'line': b'[ 20%] \x1b[32mBuilding C object CMakeFiles/explore_lite_msgs__rosidl_generator_c.dir/rosidl_generator_c/explore_lite_msgs/msg/detail/explore_status__functions.c.o\x1b[0m\n'}
+[12.355035] (-) TimerEvent: {}
+[12.417906] (explore_lite_msgs) StdoutLine: {'line': b'[ 22%] \x1b[32m\x1b[1mLinking C shared library libexplore_lite_msgs__rosidl_generator_c.so\x1b[0m\n'}
+[12.455192] (-) TimerEvent: {}
+[12.555777] (-) TimerEvent: {}
+[12.656419] (-) TimerEvent: {}
+[12.757077] (-) TimerEvent: {}
+[12.846930] (explore_lite_msgs) StdoutLine: {'line': b'[ 22%] Built target explore_lite_msgs__rosidl_generator_c\n'}
+[12.857241] (-) TimerEvent: {}
+[12.869969] (explore_lite_msgs) StdoutLine: {'line': b'[ 25%] \x1b[34m\x1b[1mGenerating C++ introspection for ROS interfaces\x1b[0m\n'}
+[12.870354] (explore_lite_msgs) StdoutLine: {'line': b'[ 31%] \x1b[34m\x1b[1mGenerating C++ type support dispatch for ROS interfaces\x1b[0m\n'}
+[12.870582] (explore_lite_msgs) StdoutLine: {'line': b'[ 31%] \x1b[34m\x1b[1mGenerating C type support dispatch for ROS interfaces\x1b[0m\n'}
+[12.870787] (explore_lite_msgs) StdoutLine: {'line': b'[ 34%] \x1b[34m\x1b[1mGenerating C introspection for ROS interfaces\x1b[0m\n'}
+[12.959222] (-) TimerEvent: {}
+[13.059864] (-) TimerEvent: {}
+[13.160298] (-) TimerEvent: {}
+[13.260873] (-) TimerEvent: {}
+[13.361454] (-) TimerEvent: {}
+[13.462021] (-) TimerEvent: {}
+[13.495761] (explore_lite_msgs) StdoutLine: {'line': b'[ 37%] \x1b[32mBuilding CXX object CMakeFiles/explore_lite_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/explore_lite_msgs/msg/explore_status__type_support.cpp.o\x1b[0m\n'}
+[13.514390] (explore_lite_msgs) StdoutLine: {'line': b'[ 40%] \x1b[32mBuilding CXX object CMakeFiles/explore_lite_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/explore_lite_msgs/msg/explore_status__type_support.cpp.o\x1b[0m\n'}
+[13.523181] (explore_lite_msgs) StdoutLine: {'line': b'[ 42%] \x1b[32mBuilding CXX object CMakeFiles/explore_lite_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/explore_lite_msgs/msg/detail/explore_status__type_support.cpp.o\x1b[0m\n'}
+[13.556617] (explore_lite_msgs) StdoutLine: {'line': b'[ 45%] \x1b[32mBuilding C object CMakeFiles/explore_lite_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/explore_lite_msgs/msg/detail/explore_status__type_support.c.o\x1b[0m\n'}
+[13.562124] (-) TimerEvent: {}
+[13.616091] (explore_lite_msgs) StdoutLine: {'line': b'[ 48%] \x1b[32m\x1b[1mLinking CXX shared library libexplore_lite_msgs__rosidl_typesupport_c.so\x1b[0m\n'}
+[13.635506] (explore_lite_msgs) StdoutLine: {'line': b'[ 51%] \x1b[32m\x1b[1mLinking C shared library libexplore_lite_msgs__rosidl_typesupport_introspection_c.so\x1b[0m\n'}
+[13.662285] (-) TimerEvent: {}
+[13.762808] (-) TimerEvent: {}
+[13.863428] (-) TimerEvent: {}
+[13.964008] (-) TimerEvent: {}
+[14.037267] (explore_lite_msgs) StdoutLine: {'line': b'[ 51%] Built target explore_lite_msgs__rosidl_typesupport_introspection_c\n'}
+[14.053606] (explore_lite_msgs) StdoutLine: {'line': b'[ 51%] Built target explore_lite_msgs__rosidl_typesupport_c\n'}
+[14.062588] (explore_lite_msgs) StdoutLine: {'line': b'[ 57%] \x1b[34m\x1b[1mGenerating C++ type support for eProsima Fast-RTPS\x1b[0m\n'}
+[14.063746] (explore_lite_msgs) StdoutLine: {'line': b'[ 57%] \x1b[34m\x1b[1mGenerating C type support for eProsima Fast-RTPS\x1b[0m\n'}
+[14.063981] (-) TimerEvent: {}
+[14.164362] (-) TimerEvent: {}
+[14.264971] (-) TimerEvent: {}
+[14.365630] (-) TimerEvent: {}
+[14.447129] (explore_lite_msgs) StdoutLine: {'line': b'[ 60%] \x1b[32m\x1b[1mLinking CXX shared library libexplore_lite_msgs__rosidl_typesupport_cpp.so\x1b[0m\n'}
+[14.465836] (-) TimerEvent: {}
+[14.494317] (explore_lite_msgs) StdoutLine: {'line': b'[ 62%] \x1b[32m\x1b[1mLinking CXX shared library libexplore_lite_msgs__rosidl_typesupport_introspection_cpp.so\x1b[0m\n'}
+[14.566098] (-) TimerEvent: {}
+[14.666589] (-) TimerEvent: {}
+[14.767127] (-) TimerEvent: {}
+[14.867659] (-) TimerEvent: {}
+[14.872562] (explore_lite_msgs) StdoutLine: {'line': b'[ 65%] \x1b[32mBuilding CXX object CMakeFiles/explore_lite_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/explore_lite_msgs/msg/detail/explore_status__type_support_c.cpp.o\x1b[0m\n'}
+[14.886986] (explore_lite_msgs) StdoutLine: {'line': b'[ 68%] \x1b[32mBuilding CXX object CMakeFiles/explore_lite_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/explore_lite_msgs/msg/detail/dds_fastrtps/explore_status__type_support.cpp.o\x1b[0m\n'}
+[14.909562] (explore_lite_msgs) StdoutLine: {'line': b'[ 68%] Built target explore_lite_msgs__rosidl_typesupport_cpp\n'}
+[14.967841] (-) TimerEvent: {}
+[14.995779] (explore_lite_msgs) StdoutLine: {'line': b'[ 68%] Built target explore_lite_msgs__rosidl_typesupport_introspection_cpp\n'}
+[15.068024] (-) TimerEvent: {}
+[15.168647] (-) TimerEvent: {}
+[15.269300] (-) TimerEvent: {}
+[15.369896] (-) TimerEvent: {}
+[15.470496] (-) TimerEvent: {}
+[15.571037] (-) TimerEvent: {}
+[15.671629] (-) TimerEvent: {}
+[15.772417] (-) TimerEvent: {}
+[15.872980] (-) TimerEvent: {}
+[15.904501] (explore_lite_msgs) StdoutLine: {'line': b'[ 71%] \x1b[32m\x1b[1mLinking CXX shared library libexplore_lite_msgs__rosidl_typesupport_fastrtps_c.so\x1b[0m\n'}
+[15.940059] (explore_lite_msgs) StdoutLine: {'line': b'[ 74%] \x1b[32m\x1b[1mLinking CXX shared library libexplore_lite_msgs__rosidl_typesupport_fastrtps_cpp.so\x1b[0m\n'}
+[15.973172] (-) TimerEvent: {}
+[16.073802] (-) TimerEvent: {}
+[16.174358] (-) TimerEvent: {}
+[16.274835] (-) TimerEvent: {}
+[16.296794] (explore_lite_msgs) StdoutLine: {'line': b'[ 74%] Built target explore_lite_msgs__rosidl_typesupport_fastrtps_c\n'}
+[16.330386] (explore_lite_msgs) StdoutLine: {'line': b'[ 74%] Built target explore_lite_msgs__rosidl_typesupport_fastrtps_cpp\n'}
+[16.363710] (explore_lite_msgs) StdoutLine: {'line': b'[ 74%] Built target explore_lite_msgs\n'}
+[16.374967] (-) TimerEvent: {}
+[16.395931] (explore_lite_msgs) StdoutLine: {'line': b'[ 77%] \x1b[34m\x1b[1mGenerating Python code for ROS interfaces\x1b[0m\n'}
+[16.475206] (-) TimerEvent: {}
+[16.575698] (-) TimerEvent: {}
+[16.676211] (-) TimerEvent: {}
+[16.776638] (-) TimerEvent: {}
+[16.877050] (-) TimerEvent: {}
+[16.977570] (-) TimerEvent: {}
+[16.980439] (explore_lite_msgs) StdoutLine: {'line': b'[ 77%] Built target explore_lite_msgs__py\n'}
+[17.026603] (explore_lite_msgs) StdoutLine: {'line': b'[ 80%] \x1b[32mBuilding C object CMakeFiles/explore_lite_msgs__rosidl_generator_py.dir/rosidl_generator_py/explore_lite_msgs/msg/_explore_status_s.c.o\x1b[0m\n'}
+[17.077727] (-) TimerEvent: {}
+[17.178353] (-) TimerEvent: {}
+[17.278977] (-) TimerEvent: {}
+[17.316046] (explore_lite_msgs) StdoutLine: {'line': b'[ 82%] \x1b[32m\x1b[1mLinking C shared library libexplore_lite_msgs__rosidl_generator_py.so\x1b[0m\n'}
+[17.379143] (-) TimerEvent: {}
+[17.479661] (-) TimerEvent: {}
+[17.580095] (-) TimerEvent: {}
+[17.629126] (explore_lite_msgs) StdoutLine: {'line': b'[ 82%] Built target explore_lite_msgs__rosidl_generator_py\n'}
+[17.669860] (explore_lite_msgs) StdoutLine: {'line': b'[ 85%] \x1b[32mBuilding C object CMakeFiles/explore_lite_msgs_s__rosidl_typesupport_introspection_c.dir/rosidl_generator_py/explore_lite_msgs/_explore_lite_msgs_s.ep.rosidl_typesupport_introspection_c.c.o\x1b[0m\n'}
+[17.680320] (-) TimerEvent: {}
+[17.682245] (explore_lite_msgs) StdoutLine: {'line': b'[ 88%] \x1b[32mBuilding C object CMakeFiles/explore_lite_msgs_s__rosidl_typesupport_fastrtps_c.dir/rosidl_generator_py/explore_lite_msgs/_explore_lite_msgs_s.ep.rosidl_typesupport_fastrtps_c.c.o\x1b[0m\n'}
+[17.686995] (explore_lite_msgs) StdoutLine: {'line': b'[ 91%] \x1b[32mBuilding C object CMakeFiles/explore_lite_msgs_s__rosidl_typesupport_c.dir/rosidl_generator_py/explore_lite_msgs/_explore_lite_msgs_s.ep.rosidl_typesupport_c.c.o\x1b[0m\n'}
+[17.780510] (-) TimerEvent: {}
+[17.857563] (explore_lite_msgs) StdoutLine: {'line': b'[ 94%] \x1b[32m\x1b[1mLinking C shared module rosidl_generator_py/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_introspection_c.so\x1b[0m\n'}
+[17.876331] (explore_lite_msgs) StdoutLine: {'line': b'[ 97%] \x1b[32m\x1b[1mLinking C shared module rosidl_generator_py/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_fastrtps_c.so\x1b[0m\n'}
+[17.880685] (-) TimerEvent: {}
+[17.881787] (explore_lite_msgs) StdoutLine: {'line': b'[100%] \x1b[32m\x1b[1mLinking C shared module rosidl_generator_py/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_c.so\x1b[0m\n'}
+[17.980874] (-) TimerEvent: {}
+[18.081461] (-) TimerEvent: {}
+[18.118035] (explore_lite_msgs) StdoutLine: {'line': b'[100%] Built target explore_lite_msgs_s__rosidl_typesupport_fastrtps_c\n'}
+[18.121679] (explore_lite_msgs) StdoutLine: {'line': b'[100%] Built target explore_lite_msgs_s__rosidl_typesupport_introspection_c\n'}
+[18.181638] (-) TimerEvent: {}
+[18.240335] (explore_lite_msgs) StdoutLine: {'line': b'[100%] Built target explore_lite_msgs_s__rosidl_typesupport_c\n'}
+[18.263637] (explore_lite_msgs) CommandEnded: {'returncode': 0}
+[18.265573] (explore_lite_msgs) JobProgress: {'identifier': 'explore_lite_msgs', 'progress': 'install'}
+[18.282723] (-) TimerEvent: {}
+[18.286052] (explore_lite_msgs) Command: {'cmd': ['/usr/bin/cmake', '--install', '/home/usernamerahul/agv_ws/build/explore_lite_msgs'], 'cwd': '/home/usernamerahul/agv_ws/build/explore_lite_msgs', 'env': OrderedDict({'LESSOPEN': '| /usr/bin/lesspipe %s', 'GZ_SIM_RESOURCE_PATH': '/opt/ros/jazzy/share', 'USER': 'usernamerahul', 'GZ_CONFIG_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor/share/gz:/opt/ros/jazzy/opt/sdformat_vendor/share/gz:/opt/ros/jazzy/opt/gz_gui_vendor/share/gz:/opt/ros/jazzy/opt/gz_transport_vendor/share/gz:/opt/ros/jazzy/opt/gz_rendering_vendor/share/gz:/opt/ros/jazzy/opt/gz_plugin_vendor/share/gz:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/share/gz:/opt/ros/jazzy/opt/gz_msgs_vendor/share/gz:/opt/ros/jazzy/opt/gz_common_vendor/share/gz', 'GIT_ASKPASS': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass.sh', 'SHLVL': '1', 'LIBGL_ALWAYS_SOFTWARE': '1', 'LD_LIBRARY_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor/lib:/opt/ros/jazzy/opt/gz_sensors_vendor/lib:/opt/ros/jazzy/opt/gz_physics_vendor/lib:/opt/ros/jazzy/opt/sdformat_vendor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_gui_vendor/lib:/opt/ros/jazzy/opt/gz_transport_vendor/lib:/opt/ros/jazzy/opt/gz_rendering_vendor/lib:/opt/ros/jazzy/opt/gz_plugin_vendor/lib:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/lib:/opt/ros/jazzy/opt/gz_msgs_vendor/lib:/opt/ros/jazzy/opt/gz_common_vendor/lib:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_tools_vendor/lib:/opt/ros/jazzy/opt/gz_ogre_next_vendor/lib:/opt/ros/jazzy/opt/gz_dartsim_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib', 'ANTIGRAVITY_CLI_ALIAS': 'agy', 'HOME': '/home/usernamerahul', 'TERM_PROGRAM_VERSION': '1.107.0', 'VSCODE_IPC_HOOK_CLI': '/run/user/1000/vscode-ipc-95f7af35-7163-41c4-b682-ec3dbec09ff8.sock', 'ROS_PYTHON_VERSION': '3', 'PAGER': 'cat', 'VSCODE_GIT_ASKPASS_MAIN': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass-main.js', 'VSCODE_GIT_ASKPASS_NODE': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/node', 'VSCODE_PYTHON_AUTOACTIVATE_GUARD': '1', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus', 'COLORTERM': 'truecolor', 'WSL_DISTRO_NAME': 'Ubuntu', 'ANTIGRAVITY_AGENT': '1', 'NVM_DIR': '/home/usernamerahul/.nvm', 'WAYLAND_DISPLAY': 'wayland-0', 'COLCON_PREFIX_PATH': '/home/usernamerahul/ros2_ws/install', 'ROS_DISTRO': 'jazzy', 'LOGNAME': 'usernamerahul', 'NAME': 'Rahul', 'WSL_INTEROP': '/run/WSL/347_interop', 'PULSE_SERVER': 'unix:/mnt/wslg/PulseServer', '_': '/usr/bin/colcon', 'ROS_VERSION': '2', 'TERM': 'xterm-256color', 'PATH': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/bin/remote-cli:/opt/ros/jazzy/opt/gz_msgs_vendor/bin:/opt/ros/jazzy/opt/gz_tools_vendor/bin:/opt/ros/jazzy/opt/gz_ogre_next_vendor/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/dotnet/:/mnt/c/ProgramData/chocolatey/bin:/mnt/d/Downloads/New folder/runtime/win64:/mnt/d/Downloads/New folder/bin:/mnt/d/Education/MPLab/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/d/Education/MatLab/MatLab/runtime/win64:/mnt/d/Education/MatLab/MatLab/bin:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Git LFS:/mnt/c/Program Files/MySQL/MySQL Server 9.3/bin:/mnt/d/Projects/indeedwebscrap/Indeed-Job-Scraper/edgedriver_win64/msedgedriver.exe:/mnt/c/Program Files/GitHub CLI/:/mnt/c/Program Files/Microsoft SQL Server/150/Tools/Binn/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Files/nodejs/:/mnt/c/Program Files/Go/bin:/mnt/c/Program Files/PuTTY/:/mnt/c/Users/Rahul/.local/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/Scripts/:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/:/mnt/c/Users/Rahul/AppData/Local/Microsoft/WindowsApps:/mnt/c/Program Files/CodeBlocks/MinGW/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Microsoft VS Code/bin:/mnt/c/Users/Rahul/anaconda3/condabin:/mnt/c/Users/Rahul/anaconda3:/mnt/c/Users/Rahul/AppData/Local/Programs/cursor/resources/app/bin:/mnt/c/Program Files/PostgreSQL/psqlODBC:/mnt/c/Program Files/PostgreSQL/17/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Windsurf/bin:/mnt/c/Users/Rahul/google-cloud-sdk/bin:/mnt/c/Users/Rahul/AppData/Roaming/npm:/mnt/c/Users/Rahul/AppData/Local/Programs/Ollama:/mnt/c/Users/Rahul/go/bin:/mnt/c/Program Files/Go/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Antigravity/bin:/snap/bin', 'XDG_RUNTIME_DIR': '/run/user/1000', 'DISPLAY': ':0', 'LANG': 'en_US.UTF-8', 'RMW_IMPLEMENTATION': 'rmw_cyclonedds_cpp', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'VSCODE_GIT_IPC_HANDLE': '/run/user/1000/vscode-git-bbea33e8b1.sock', 'TERM_PROGRAM': 'vscode', 'AMENT_PREFIX_PATH': '/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'SHELL': '/bin/bash', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'ROS_AUTOMATIC_DISCOVERY_RANGE': 'SUBNET', 'VSCODE_GIT_ASKPASS_EXTRA_ARGS': '', 'PWD': '/home/usernamerahul/agv_ws/build/explore_lite_msgs', 'TURTLEBOT3_MODEL': 'waffle_pi', 'NVM_CD_FLAGS': '', 'XDG_DATA_DIRS': '/usr/local/share:/usr/share:/var/lib/snapd/desktop', 'PYTHONPATH': '/home/usernamerahul/ros2_ws/install/my_robot_controller/lib/python3.12/site-packages:/opt/ros/jazzy/lib/python3.12/site-packages', 'COLCON': '1', 'WSL2_GUI_APPS_ENABLED': '1', 'HOSTTYPE': 'x86_64', 'NVM_RC_VERSION': '', 'CMAKE_PREFIX_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor:/opt/ros/jazzy/opt/gz_sensors_vendor:/opt/ros/jazzy/opt/gz_physics_vendor:/opt/ros/jazzy/opt/sdformat_vendor:/opt/ros/jazzy/opt/gz_gui_vendor:/opt/ros/jazzy/opt/gz_transport_vendor:/opt/ros/jazzy/opt/gz_rendering_vendor:/opt/ros/jazzy/opt/gz_plugin_vendor:/opt/ros/jazzy/opt/gz_fuel_tools_vendor:/opt/ros/jazzy/opt/gz_msgs_vendor:/opt/ros/jazzy/opt/gz_common_vendor:/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_tools_vendor:/opt/ros/jazzy/opt/gz_ogre_next_vendor:/opt/ros/jazzy/opt/gz_dartsim_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'WSLENV': ''}), 'shell': False}
+[18.299819] (explore_lite_msgs) StdoutLine: {'line': b'-- Install configuration: ""\n'}
+[18.303258] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/ament_index/resource_index/rosidl_interfaces/explore_lite_msgs\n'}
+[18.304689] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/msg/ExploreStatus.json\n'}
+[18.305031] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs\n'}
+[18.306218] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg\n'}
+[18.306664] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/rosidl_generator_c__visibility_control.h\n'}
+[18.306901] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/explore_status.h\n'}
+[18.307154] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail\n'}
+[18.307772] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__description.c\n'}
+[18.308194] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__type_support.h\n'}
+[18.308656] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__functions.c\n'}
+[18.309014] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__functions.h\n'}
+[18.309503] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__struct.h\n'}
+[18.309736] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__type_support.c\n'}
+[18.310507] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/environment/library_path.sh\n'}
+[18.310897] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/environment/library_path.dsv\n'}
+[18.311967] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_generator_c.so\n'}
+[18.312631] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_generator_c.so" to ""\n'}
+[18.313053] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs\n'}
+[18.313680] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg\n'}
+[18.313830] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/rosidl_typesupport_fastrtps_c__visibility_control.h\n'}
+[18.313961] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail\n'}
+[18.314122] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__rosidl_typesupport_fastrtps_c.h\n'}
+[18.314214] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_fastrtps_c.so\n'}
+[18.314611] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_fastrtps_c.so" to ""\n'}
+[18.314828] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs\n'}
+[18.314917] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg\n'}
+[18.315116] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail\n'}
+[18.315403] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__rosidl_typesupport_introspection_c.h\n'}
+[18.315724] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__type_support.c\n'}
+[18.315816] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/rosidl_typesupport_introspection_c__visibility_control.h\n'}
+[18.315911] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_introspection_c.so\n'}
+[18.316181] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_introspection_c.so" to ""\n'}
+[18.316290] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_c.so\n'}
+[18.316630] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_c.so" to ""\n'}
+[18.317051] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs\n'}
+[18.317594] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg\n'}
+[18.318053] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/rosidl_generator_cpp__visibility_control.hpp\n'}
+[18.318466] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail\n'}
+[18.318806] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__builder.hpp\n'}
+[18.319134] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__type_support.hpp\n'}
+[18.319454] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__struct.hpp\n'}
+[18.319755] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__traits.hpp\n'}
+[18.320092] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/explore_status.hpp\n'}
+[18.320697] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs\n'}
+[18.321127] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg\n'}
+[18.321457] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail\n'}
+[18.321806] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__rosidl_typesupport_fastrtps_cpp.hpp\n'}
+[18.322205] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/dds_fastrtps\n'}
+[18.322548] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/rosidl_typesupport_fastrtps_cpp__visibility_control.h\n'}
+[18.322893] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_fastrtps_cpp.so\n'}
+[18.323542] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_fastrtps_cpp.so" to ""\n'}
+[18.323715] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs\n'}
+[18.323873] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg\n'}
+[18.324021] (explore_lite_msgs) StdoutLine: {'line': b'-- Up-to-date: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail\n'}
+[18.324174] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__type_support.cpp\n'}
+[18.324612] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/include/explore_lite_msgs/explore_lite_msgs/msg/detail/explore_status__rosidl_typesupport_introspection_cpp.hpp\n'}
+[18.324972] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_introspection_cpp.so\n'}
+[18.325336] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_introspection_cpp.so" to ""\n'}
+[18.325713] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_cpp.so\n'}
+[18.326374] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_typesupport_cpp.so" to ""\n'}
+[18.326648] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/environment/pythonpath.sh\n'}
+[18.326952] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/environment/pythonpath.dsv\n'}
+[18.327264] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs-1.0.0-py3.12.egg-info\n'}
+[18.327595] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs-1.0.0-py3.12.egg-info/dependency_links.txt\n'}
+[18.327892] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs-1.0.0-py3.12.egg-info/PKG-INFO\n'}
+[18.328189] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs-1.0.0-py3.12.egg-info/SOURCES.txt\n'}
+[18.328442] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs-1.0.0-py3.12.egg-info/top_level.txt\n'}
+[18.328670] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs\n'}
+[18.328972] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/_explore_lite_msgs_s.ep.rosidl_typesupport_introspection_c.c\n'}
+[18.329568] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_fastrtps_c.so\n'}
+[18.329864] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/msg\n'}
+[18.330111] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/msg/_explore_status.py\n'}
+[18.330261] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/msg/__init__.py\n'}
+[18.330397] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/msg/_explore_status_s.c\n'}
+[18.330532] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/_explore_lite_msgs_s.ep.rosidl_typesupport_fastrtps_c.c\n'}
+[18.330678] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/__init__.py\n'}
+[18.330836] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/_explore_lite_msgs_s.ep.rosidl_typesupport_c.c\n'}
+[18.330991] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_c.so\n'}
+[18.331172] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_introspection_c.so\n'}
+[18.382901] (-) TimerEvent: {}
+[18.435762] (explore_lite_msgs) StdoutLine: {'line': b"Listing '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs'...\n"}
+[18.436127] (explore_lite_msgs) StdoutLine: {'line': b"Compiling '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/__init__.py'...\n"}
+[18.436281] (explore_lite_msgs) StdoutLine: {'line': b"Listing '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/msg'...\n"}
+[18.436424] (explore_lite_msgs) StdoutLine: {'line': b"Compiling '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/msg/__init__.py'...\n"}
+[18.436607] (explore_lite_msgs) StdoutLine: {'line': b"Compiling '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/msg/_explore_status.py'...\n"}
+[18.446534] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_fastrtps_c.so\n'}
+[18.447162] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_fastrtps_c.so" to ""\n'}
+[18.447562] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_introspection_c.so\n'}
+[18.447925] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_introspection_c.so" to ""\n'}
+[18.448272] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_c.so\n'}
+[18.448834] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages/explore_lite_msgs/explore_lite_msgs_s__rosidl_typesupport_c.so" to ""\n'}
+[18.449421] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_generator_py.so\n'}
+[18.449790] (explore_lite_msgs) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/libexplore_lite_msgs__rosidl_generator_py.so" to ""\n'}
+[18.450563] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/ament_index/resource_index/rust_packages/explore_lite_msgs\n'}
+[18.450897] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/rust\n'}
+[18.451247] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/rust/build.rs\n'}
+[18.451447] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/rust/Cargo.toml\n'}
+[18.451685] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/rust/src\n'}
+[18.452078] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/rust/src/msg\n'}
+[18.452372] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/rust/src/msg/rmw.rs\n'}
+[18.452565] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/rust/src/msg.rs\n'}
+[18.452801] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/rust/src/lib.rs\n'}
+[18.453114] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/msg/ExploreStatus.idl\n'}
+[18.453519] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/msg/ExploreStatus.msg\n'}
+[18.454176] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/ament_index/resource_index/package_run_dependencies/explore_lite_msgs\n'}
+[18.454804] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/ament_index/resource_index/parent_prefix_path/explore_lite_msgs\n'}
+[18.455083] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/environment/ament_prefix_path.sh\n'}
+[18.455516] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/environment/ament_prefix_path.dsv\n'}
+[18.456037] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/environment/path.sh\n'}
+[18.456311] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/environment/path.dsv\n'}
+[18.456799] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/local_setup.bash\n'}
+[18.457267] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/local_setup.sh\n'}
+[18.457674] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/local_setup.zsh\n'}
+[18.458237] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/local_setup.dsv\n'}
+[18.458650] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/package.dsv\n'}
+[18.459529] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/ament_index/resource_index/packages/explore_lite_msgs\n'}
+[18.460408] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/export_explore_lite_msgs__rosidl_generator_cExport.cmake\n'}
+[18.460713] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/export_explore_lite_msgs__rosidl_generator_cExport-noconfig.cmake\n'}
+[18.461022] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/export_explore_lite_msgs__rosidl_typesupport_fastrtps_cExport.cmake\n'}
+[18.461406] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/export_explore_lite_msgs__rosidl_typesupport_fastrtps_cExport-noconfig.cmake\n'}
+[18.461683] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgs__rosidl_typesupport_introspection_cExport.cmake\n'}
+[18.461963] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgs__rosidl_typesupport_introspection_cExport-noconfig.cmake\n'}
+[18.462390] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgs__rosidl_typesupport_cExport.cmake\n'}
+[18.462771] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgs__rosidl_typesupport_cExport-noconfig.cmake\n'}
+[18.463096] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/export_explore_lite_msgs__rosidl_generator_cppExport.cmake\n'}
+[18.463451] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/export_explore_lite_msgs__rosidl_typesupport_fastrtps_cppExport.cmake\n'}
+[18.464048] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/export_explore_lite_msgs__rosidl_typesupport_fastrtps_cppExport-noconfig.cmake\n'}
+[18.464476] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgs__rosidl_typesupport_introspection_cppExport.cmake\n'}
+[18.464830] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgs__rosidl_typesupport_introspection_cppExport-noconfig.cmake\n'}
+[18.465136] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgs__rosidl_typesupport_cppExport.cmake\n'}
+[18.465436] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgs__rosidl_typesupport_cppExport-noconfig.cmake\n'}
+[18.465737] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/export_explore_lite_msgs__rosidl_generator_pyExport.cmake\n'}
+[18.466078] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/export_explore_lite_msgs__rosidl_generator_pyExport-noconfig.cmake\n'}
+[18.466379] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/rosidl_cmake-extras.cmake\n'}
+[18.466607] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/ament_cmake_export_include_directories-extras.cmake\n'}
+[18.466835] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/ament_cmake_export_libraries-extras.cmake\n'}
+[18.467111] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/ament_cmake_export_targets-extras.cmake\n'}
+[18.467551] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/rosidl_cmake_export_typesupport_targets-extras.cmake\n'}
+[18.467771] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/ament_cmake_export_dependencies-extras.cmake\n'}
+[18.468175] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/rosidl_cmake_export_typesupport_libraries-extras.cmake\n'}
+[18.468367] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgsConfig.cmake\n'}
+[18.468641] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake/explore_lite_msgsConfig-version.cmake\n'}
+[18.469058] (explore_lite_msgs) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/package.xml\n'}
+[18.472739] (explore_lite_msgs) CommandEnded: {'returncode': 0}
+[18.484055] (-) TimerEvent: {}
+[18.518479] (explore_lite_msgs) JobEnded: {'identifier': 'explore_lite_msgs', 'rc': 0}
+[18.520560] (explore_lite) JobStarted: {'identifier': 'explore_lite'}
+[18.584281] (-) TimerEvent: {}
+[18.684844] (-) TimerEvent: {}
+[18.785483] (-) TimerEvent: {}
+[18.885951] (-) TimerEvent: {}
+[18.986491] (-) TimerEvent: {}
+[19.053147] (explore_lite) JobProgress: {'identifier': 'explore_lite', 'progress': 'cmake'}
+[19.055649] (explore_lite) Command: {'cmd': ['/usr/bin/cmake', '/home/usernamerahul/agv_ws/src/m-explore-ros2/explore', '-DCMAKE_INSTALL_PREFIX=/home/usernamerahul/agv_ws/install/explore_lite'], 'cwd': '/home/usernamerahul/agv_ws/build/explore_lite', 'env': OrderedDict({'LESSOPEN': '| /usr/bin/lesspipe %s', 'GZ_SIM_RESOURCE_PATH': '/opt/ros/jazzy/share', 'USER': 'usernamerahul', 'GZ_CONFIG_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor/share/gz:/opt/ros/jazzy/opt/sdformat_vendor/share/gz:/opt/ros/jazzy/opt/gz_gui_vendor/share/gz:/opt/ros/jazzy/opt/gz_transport_vendor/share/gz:/opt/ros/jazzy/opt/gz_rendering_vendor/share/gz:/opt/ros/jazzy/opt/gz_plugin_vendor/share/gz:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/share/gz:/opt/ros/jazzy/opt/gz_msgs_vendor/share/gz:/opt/ros/jazzy/opt/gz_common_vendor/share/gz', 'GIT_ASKPASS': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass.sh', 'SHLVL': '1', 'LIBGL_ALWAYS_SOFTWARE': '1', 'LD_LIBRARY_PATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib:/opt/ros/jazzy/opt/gz_sim_vendor/lib:/opt/ros/jazzy/opt/gz_sensors_vendor/lib:/opt/ros/jazzy/opt/gz_physics_vendor/lib:/opt/ros/jazzy/opt/sdformat_vendor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_gui_vendor/lib:/opt/ros/jazzy/opt/gz_transport_vendor/lib:/opt/ros/jazzy/opt/gz_rendering_vendor/lib:/opt/ros/jazzy/opt/gz_plugin_vendor/lib:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/lib:/opt/ros/jazzy/opt/gz_msgs_vendor/lib:/opt/ros/jazzy/opt/gz_common_vendor/lib:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_tools_vendor/lib:/opt/ros/jazzy/opt/gz_ogre_next_vendor/lib:/opt/ros/jazzy/opt/gz_dartsim_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib', 'ANTIGRAVITY_CLI_ALIAS': 'agy', 'HOME': '/home/usernamerahul', 'TERM_PROGRAM_VERSION': '1.107.0', 'VSCODE_IPC_HOOK_CLI': '/run/user/1000/vscode-ipc-95f7af35-7163-41c4-b682-ec3dbec09ff8.sock', 'ROS_PYTHON_VERSION': '3', 'PAGER': 'cat', 'VSCODE_GIT_ASKPASS_MAIN': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass-main.js', 'VSCODE_GIT_ASKPASS_NODE': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/node', 'VSCODE_PYTHON_AUTOACTIVATE_GUARD': '1', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus', 'COLORTERM': 'truecolor', 'WSL_DISTRO_NAME': 'Ubuntu', 'ANTIGRAVITY_AGENT': '1', 'NVM_DIR': '/home/usernamerahul/.nvm', 'WAYLAND_DISPLAY': 'wayland-0', 'COLCON_PREFIX_PATH': '/home/usernamerahul/ros2_ws/install', 'ROS_DISTRO': 'jazzy', 'LOGNAME': 'usernamerahul', 'NAME': 'Rahul', 'WSL_INTEROP': '/run/WSL/347_interop', 'PULSE_SERVER': 'unix:/mnt/wslg/PulseServer', '_': '/usr/bin/colcon', 'ROS_VERSION': '2', 'TERM': 'xterm-256color', 'PATH': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/bin/remote-cli:/opt/ros/jazzy/opt/gz_msgs_vendor/bin:/opt/ros/jazzy/opt/gz_tools_vendor/bin:/opt/ros/jazzy/opt/gz_ogre_next_vendor/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/dotnet/:/mnt/c/ProgramData/chocolatey/bin:/mnt/d/Downloads/New folder/runtime/win64:/mnt/d/Downloads/New folder/bin:/mnt/d/Education/MPLab/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/d/Education/MatLab/MatLab/runtime/win64:/mnt/d/Education/MatLab/MatLab/bin:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Git LFS:/mnt/c/Program Files/MySQL/MySQL Server 9.3/bin:/mnt/d/Projects/indeedwebscrap/Indeed-Job-Scraper/edgedriver_win64/msedgedriver.exe:/mnt/c/Program Files/GitHub CLI/:/mnt/c/Program Files/Microsoft SQL Server/150/Tools/Binn/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Files/nodejs/:/mnt/c/Program Files/Go/bin:/mnt/c/Program Files/PuTTY/:/mnt/c/Users/Rahul/.local/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/Scripts/:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/:/mnt/c/Users/Rahul/AppData/Local/Microsoft/WindowsApps:/mnt/c/Program Files/CodeBlocks/MinGW/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Microsoft VS Code/bin:/mnt/c/Users/Rahul/anaconda3/condabin:/mnt/c/Users/Rahul/anaconda3:/mnt/c/Users/Rahul/AppData/Local/Programs/cursor/resources/app/bin:/mnt/c/Program Files/PostgreSQL/psqlODBC:/mnt/c/Program Files/PostgreSQL/17/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Windsurf/bin:/mnt/c/Users/Rahul/google-cloud-sdk/bin:/mnt/c/Users/Rahul/AppData/Roaming/npm:/mnt/c/Users/Rahul/AppData/Local/Programs/Ollama:/mnt/c/Users/Rahul/go/bin:/mnt/c/Program Files/Go/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Antigravity/bin:/snap/bin', 'XDG_RUNTIME_DIR': '/run/user/1000', 'DISPLAY': ':0', 'LANG': 'en_US.UTF-8', 'RMW_IMPLEMENTATION': 'rmw_cyclonedds_cpp', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'VSCODE_GIT_IPC_HANDLE': '/run/user/1000/vscode-git-bbea33e8b1.sock', 'TERM_PROGRAM': 'vscode', 'AMENT_PREFIX_PATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'SHELL': '/bin/bash', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'ROS_AUTOMATIC_DISCOVERY_RANGE': 'SUBNET', 'VSCODE_GIT_ASKPASS_EXTRA_ARGS': '', 'PWD': '/home/usernamerahul/agv_ws/build/explore_lite', 'TURTLEBOT3_MODEL': 'waffle_pi', 'NVM_CD_FLAGS': '', 'XDG_DATA_DIRS': '/usr/local/share:/usr/share:/var/lib/snapd/desktop', 'PYTHONPATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages:/home/usernamerahul/ros2_ws/install/my_robot_controller/lib/python3.12/site-packages:/opt/ros/jazzy/lib/python3.12/site-packages', 'COLCON': '1', 'WSL2_GUI_APPS_ENABLED': '1', 'HOSTTYPE': 'x86_64', 'NVM_RC_VERSION': '', 'CMAKE_PREFIX_PATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs:/opt/ros/jazzy/opt/gz_sim_vendor:/opt/ros/jazzy/opt/gz_sensors_vendor:/opt/ros/jazzy/opt/gz_physics_vendor:/opt/ros/jazzy/opt/sdformat_vendor:/opt/ros/jazzy/opt/gz_gui_vendor:/opt/ros/jazzy/opt/gz_transport_vendor:/opt/ros/jazzy/opt/gz_rendering_vendor:/opt/ros/jazzy/opt/gz_plugin_vendor:/opt/ros/jazzy/opt/gz_fuel_tools_vendor:/opt/ros/jazzy/opt/gz_msgs_vendor:/opt/ros/jazzy/opt/gz_common_vendor:/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_tools_vendor:/opt/ros/jazzy/opt/gz_ogre_next_vendor:/opt/ros/jazzy/opt/gz_dartsim_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'WSLENV': ''}), 'shell': False}
+[19.086658] (-) TimerEvent: {}
+[19.187115] (-) TimerEvent: {}
+[19.287618] (-) TimerEvent: {}
+[19.388086] (-) TimerEvent: {}
+[19.411510] (explore_lite) StdoutLine: {'line': b'-- The C compiler identification is GNU 13.3.0\n'}
+[19.488298] (-) TimerEvent: {}
+[19.588793] (-) TimerEvent: {}
+[19.689241] (-) TimerEvent: {}
+[19.789741] (-) TimerEvent: {}
+[19.890264] (-) TimerEvent: {}
+[19.990743] (-) TimerEvent: {}
+[20.091340] (-) TimerEvent: {}
+[20.191791] (-) TimerEvent: {}
+[20.292287] (-) TimerEvent: {}
+[20.392710] (-) TimerEvent: {}
+[20.493148] (-) TimerEvent: {}
+[20.593522] (-) TimerEvent: {}
+[20.693976] (-) TimerEvent: {}
+[20.794460] (-) TimerEvent: {}
+[20.801646] (explore_lite) StdoutLine: {'line': b'-- The CXX compiler identification is GNU 13.3.0\n'}
+[20.894609] (-) TimerEvent: {}
+[20.995103] (-) TimerEvent: {}
+[21.095690] (-) TimerEvent: {}
+[21.196248] (-) TimerEvent: {}
+[21.296740] (-) TimerEvent: {}
+[21.397292] (-) TimerEvent: {}
+[21.497874] (-) TimerEvent: {}
+[21.598447] (-) TimerEvent: {}
+[21.698850] (-) TimerEvent: {}
+[21.799413] (-) TimerEvent: {}
+[21.899912] (-) TimerEvent: {}
+[22.000363] (-) TimerEvent: {}
+[22.100899] (-) TimerEvent: {}
+[22.182728] (explore_lite) StdoutLine: {'line': b'-- Detecting C compiler ABI info\n'}
+[22.201071] (-) TimerEvent: {}
+[22.301504] (-) TimerEvent: {}
+[22.401922] (-) TimerEvent: {}
+[22.502477] (-) TimerEvent: {}
+[22.603136] (-) TimerEvent: {}
+[22.703628] (-) TimerEvent: {}
+[22.804169] (-) TimerEvent: {}
+[22.848503] (explore_lite) StdoutLine: {'line': b'-- Detecting C compiler ABI info - done\n'}
+[22.864043] (explore_lite) StdoutLine: {'line': b'-- Check for working C compiler: /usr/bin/cc - skipped\n'}
+[22.864716] (explore_lite) StdoutLine: {'line': b'-- Detecting C compile features\n'}
+[22.865315] (explore_lite) StdoutLine: {'line': b'-- Detecting C compile features - done\n'}
+[22.904357] (-) TimerEvent: {}
+[23.004912] (-) TimerEvent: {}
+[23.105635] (-) TimerEvent: {}
+[23.159834] (explore_lite) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info\n'}
+[23.205790] (-) TimerEvent: {}
+[23.306288] (-) TimerEvent: {}
+[23.406750] (-) TimerEvent: {}
+[23.507226] (-) TimerEvent: {}
+[23.607692] (-) TimerEvent: {}
+[23.708179] (-) TimerEvent: {}
+[23.808712] (-) TimerEvent: {}
+[23.835261] (explore_lite) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info - done\n'}
+[23.847337] (explore_lite) StdoutLine: {'line': b'-- Check for working CXX compiler: /usr/bin/c++ - skipped\n'}
+[23.847811] (explore_lite) StdoutLine: {'line': b'-- Detecting CXX compile features\n'}
+[23.848961] (explore_lite) StdoutLine: {'line': b'-- Detecting CXX compile features - done\n'}
+[23.849911] (explore_lite) StdoutLine: {'line': b'-- BuilD for ROS2: jazzy\n'}
+[23.854767] (explore_lite) StdoutLine: {'line': b'-- Found ament_cmake: 2.5.6 (/opt/ros/jazzy/share/ament_cmake/cmake)\n'}
+[23.908923] (-) TimerEvent: {}
+[24.009391] (-) TimerEvent: {}
+[24.102921] (explore_lite) StdoutLine: {'line': b'-- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter \n'}
+[24.109575] (-) TimerEvent: {}
+[24.210103] (-) TimerEvent: {}
+[24.296392] (explore_lite) StdoutLine: {'line': b'-- Found rclcpp: 28.1.18 (/opt/ros/jazzy/share/rclcpp/cmake)\n'}
+[24.310251] (-) TimerEvent: {}
+[24.410677] (-) TimerEvent: {}
+[24.511123] (-) TimerEvent: {}
+[24.611587] (-) TimerEvent: {}
+[24.712022] (-) TimerEvent: {}
+[24.757621] (explore_lite) StdoutLine: {'line': b'-- Found rosidl_generator_c: 4.6.7 (/opt/ros/jazzy/share/rosidl_generator_c/cmake)\n'}
+[24.785317] (explore_lite) StdoutLine: {'line': b'-- Found rosidl_generator_cpp: 4.6.7 (/opt/ros/jazzy/share/rosidl_generator_cpp/cmake)\n'}
+[24.812148] (-) TimerEvent: {}
+[24.813157] (explore_lite) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c\n'}
+[24.846236] (explore_lite) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp\n'}
+[24.912300] (-) TimerEvent: {}
+[25.012741] (-) TimerEvent: {}
+[25.061060] (explore_lite) StdoutLine: {'line': b'-- Found rmw_implementation_cmake: 7.3.3 (/opt/ros/jazzy/share/rmw_implementation_cmake/cmake)\n'}
+[25.072680] (explore_lite) StdoutLine: {'line': b'-- Found rmw_cyclonedds_cpp: 2.2.3 (/opt/ros/jazzy/share/rmw_cyclonedds_cpp/cmake)\n'}
+[25.112834] (-) TimerEvent: {}
+[25.213340] (-) TimerEvent: {}
+[25.313949] (-) TimerEvent: {}
+[25.414445] (-) TimerEvent: {}
+[25.458983] (explore_lite) StdoutLine: {'line': b"-- Using RMW implementation 'rmw_cyclonedds_cpp' as default\n"}
+[25.514613] (-) TimerEvent: {}
+[25.615144] (-) TimerEvent: {}
+[25.657624] (explore_lite) StdoutLine: {'line': b'-- Found std_msgs: 5.3.7 (/opt/ros/jazzy/share/std_msgs/cmake)\n'}
+[25.698480] (explore_lite) StdoutLine: {'line': b'-- Found sensor_msgs: 5.3.7 (/opt/ros/jazzy/share/sensor_msgs/cmake)\n'}
+[25.715252] (-) TimerEvent: {}
+[25.815631] (-) TimerEvent: {}
+[25.817630] (explore_lite) StdoutLine: {'line': b'-- Found tf2_ros: 0.36.20 (/opt/ros/jazzy/share/tf2_ros/cmake)\n'}
+[25.915732] (-) TimerEvent: {}
+[26.016221] (-) TimerEvent: {}
+[26.116598] (-) TimerEvent: {}
+[26.173931] (explore_lite) StdoutLine: {'line': b'-- Found tf2_geometry_msgs: 0.36.20 (/opt/ros/jazzy/share/tf2_geometry_msgs/cmake)\n'}
+[26.216719] (-) TimerEvent: {}
+[26.310060] (explore_lite) StdoutLine: {'line': b'-- Found eigen3_cmake_module: 0.3.0 (/opt/ros/jazzy/share/eigen3_cmake_module/cmake)\n'}
+[26.313670] (explore_lite) StdoutLine: {'line': b'-- Found Eigen3: TRUE (found version "3.4.0") \n'}
+[26.313922] (explore_lite) StdoutLine: {'line': b'-- Ensuring Eigen3 include directory is part of orocos-kdl CMake target\n'}
+[26.316805] (-) TimerEvent: {}
+[26.323757] (explore_lite) StdoutLine: {'line': b'-- Found nav2_msgs: 1.3.11 (/opt/ros/jazzy/share/nav2_msgs/cmake)\n'}
+[26.417006] (-) TimerEvent: {}
+[26.517420] (-) TimerEvent: {}
+[26.596442] (explore_lite) StdoutLine: {'line': b'-- Found map_msgs: 2.4.1 (/opt/ros/jazzy/share/map_msgs/cmake)\n'}
+[26.617655] (-) TimerEvent: {}
+[26.671221] (explore_lite) StdoutLine: {'line': b'-- Found visualization_msgs: 5.3.7 (/opt/ros/jazzy/share/visualization_msgs/cmake)\n'}
+[26.717862] (-) TimerEvent: {}
+[26.742553] (explore_lite) StdoutLine: {'line': b'-- Found nav2_costmap_2d: 1.3.11 (/opt/ros/jazzy/share/nav2_costmap_2d/cmake)\n'}
+[26.818155] (-) TimerEvent: {}
+[26.918682] (-) TimerEvent: {}
+[27.019088] (-) TimerEvent: {}
+[27.067856] (explore_lite) StdoutLine: {'line': b'-- Found TinyXML2 via Config file: /usr/lib/x86_64-linux-gnu/cmake/tinyxml2\n'}
+[27.119253] (-) TimerEvent: {}
+[27.164797] (explore_lite) StdoutLine: {'line': b'-- Found explore_lite_msgs: 1.0.0 (/home/usernamerahul/agv_ws/install/explore_lite_msgs/share/explore_lite_msgs/cmake)\n'}
+[27.190465] (explore_lite) StdoutLine: {'line': b'-- Found ament_lint_auto: 0.17.5 (/opt/ros/jazzy/share/ament_lint_auto/cmake)\n'}
+[27.219448] (-) TimerEvent: {}
+[27.319855] (-) TimerEvent: {}
+[27.403433] (explore_lite) StdoutLine: {'line': b'-- Found ament_cmake_gtest: 2.5.6 (/opt/ros/jazzy/share/ament_cmake_gtest/cmake)\n'}
+[27.417673] (explore_lite) StdoutLine: {'line': b"-- Found gtest sources under '/opt/ros/jazzy/src/gtest_vendor': C++ tests using 'Google Test' will be built\n"}
+[27.419933] (-) TimerEvent: {}
+[27.428237] (explore_lite) StdoutLine: {'line': b'-- Performing Test CMAKE_HAVE_LIBC_PTHREAD\n'}
+[27.520114] (-) TimerEvent: {}
+[27.620615] (-) TimerEvent: {}
+[27.721099] (-) TimerEvent: {}
+[27.821592] (-) TimerEvent: {}
+[27.847389] (explore_lite) StdoutLine: {'line': b'-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success\n'}
+[27.848601] (explore_lite) StdoutLine: {'line': b'-- Found Threads: TRUE  \n'}
+[27.861771] (explore_lite) StdoutLine: {'line': b"-- Added test 'cppcheck' to perform static code analysis on C / C++ code\n"}
+[27.862371] (explore_lite) StdoutLine: {'line': b'-- Configured cppcheck include dirs: /home/usernamerahul/agv_ws/src/m-explore-ros2/explore/include;$<BUILD_INTERFACE:/home/usernamerahul/agv_ws/src/m-explore-ros2/explore/include>\n'}
+[27.862582] (explore_lite) StdoutLine: {'line': b'-- Configured cppcheck exclude dirs and/or files: \n'}
+[27.865871] (explore_lite) StdoutLine: {'line': b"-- Added test 'flake8' to check Python code syntax and style conventions\n"}
+[27.866214] (explore_lite) StdoutLine: {'line': b"-- Configured 'flake8' exclude dirs and/or files: \n"}
+[27.868376] (explore_lite) StdoutLine: {'line': b"-- Added test 'lint_cmake' to check CMake code style\n"}
+[27.871723] (explore_lite) StdoutLine: {'line': b"-- Added test 'pep257' to check Python code against some of the docstring style conventions in PEP 257\n"}
+[27.878478] (explore_lite) StdoutLine: {'line': b"-- Added test 'uncrustify' to check C / C++ code style\n"}
+[27.878854] (explore_lite) StdoutLine: {'line': b'-- Configured uncrustify additional arguments: \n'}
+[27.881321] (explore_lite) StdoutLine: {'line': b"-- Added test 'xmllint' to check XML markup files\n"}
+[27.887386] (explore_lite) StdoutLine: {'line': b'-- Configuring done (8.8s)\n'}
+[27.921749] (-) TimerEvent: {}
+[27.932741] (explore_lite) StdoutLine: {'line': b'-- Generating done (0.0s)\n'}
+[27.944741] (explore_lite) StdoutLine: {'line': b'-- Build files have been written to: /home/usernamerahul/agv_ws/build/explore_lite\n'}
+[27.962122] (explore_lite) CommandEnded: {'returncode': 0}
+[27.964142] (explore_lite) JobProgress: {'identifier': 'explore_lite', 'progress': 'build'}
+[27.964234] (explore_lite) Command: {'cmd': ['/usr/bin/cmake', '--build', '/home/usernamerahul/agv_ws/build/explore_lite', '--', '-j8', '-l8'], 'cwd': '/home/usernamerahul/agv_ws/build/explore_lite', 'env': OrderedDict({'LESSOPEN': '| /usr/bin/lesspipe %s', 'GZ_SIM_RESOURCE_PATH': '/opt/ros/jazzy/share', 'USER': 'usernamerahul', 'GZ_CONFIG_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor/share/gz:/opt/ros/jazzy/opt/sdformat_vendor/share/gz:/opt/ros/jazzy/opt/gz_gui_vendor/share/gz:/opt/ros/jazzy/opt/gz_transport_vendor/share/gz:/opt/ros/jazzy/opt/gz_rendering_vendor/share/gz:/opt/ros/jazzy/opt/gz_plugin_vendor/share/gz:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/share/gz:/opt/ros/jazzy/opt/gz_msgs_vendor/share/gz:/opt/ros/jazzy/opt/gz_common_vendor/share/gz', 'GIT_ASKPASS': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass.sh', 'SHLVL': '1', 'LIBGL_ALWAYS_SOFTWARE': '1', 'LD_LIBRARY_PATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib:/opt/ros/jazzy/opt/gz_sim_vendor/lib:/opt/ros/jazzy/opt/gz_sensors_vendor/lib:/opt/ros/jazzy/opt/gz_physics_vendor/lib:/opt/ros/jazzy/opt/sdformat_vendor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_gui_vendor/lib:/opt/ros/jazzy/opt/gz_transport_vendor/lib:/opt/ros/jazzy/opt/gz_rendering_vendor/lib:/opt/ros/jazzy/opt/gz_plugin_vendor/lib:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/lib:/opt/ros/jazzy/opt/gz_msgs_vendor/lib:/opt/ros/jazzy/opt/gz_common_vendor/lib:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_tools_vendor/lib:/opt/ros/jazzy/opt/gz_ogre_next_vendor/lib:/opt/ros/jazzy/opt/gz_dartsim_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib', 'ANTIGRAVITY_CLI_ALIAS': 'agy', 'HOME': '/home/usernamerahul', 'TERM_PROGRAM_VERSION': '1.107.0', 'VSCODE_IPC_HOOK_CLI': '/run/user/1000/vscode-ipc-95f7af35-7163-41c4-b682-ec3dbec09ff8.sock', 'ROS_PYTHON_VERSION': '3', 'PAGER': 'cat', 'VSCODE_GIT_ASKPASS_MAIN': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass-main.js', 'VSCODE_GIT_ASKPASS_NODE': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/node', 'VSCODE_PYTHON_AUTOACTIVATE_GUARD': '1', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus', 'COLORTERM': 'truecolor', 'WSL_DISTRO_NAME': 'Ubuntu', 'ANTIGRAVITY_AGENT': '1', 'NVM_DIR': '/home/usernamerahul/.nvm', 'WAYLAND_DISPLAY': 'wayland-0', 'COLCON_PREFIX_PATH': '/home/usernamerahul/ros2_ws/install', 'ROS_DISTRO': 'jazzy', 'LOGNAME': 'usernamerahul', 'NAME': 'Rahul', 'WSL_INTEROP': '/run/WSL/347_interop', 'PULSE_SERVER': 'unix:/mnt/wslg/PulseServer', '_': '/usr/bin/colcon', 'ROS_VERSION': '2', 'TERM': 'xterm-256color', 'PATH': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/bin/remote-cli:/opt/ros/jazzy/opt/gz_msgs_vendor/bin:/opt/ros/jazzy/opt/gz_tools_vendor/bin:/opt/ros/jazzy/opt/gz_ogre_next_vendor/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/dotnet/:/mnt/c/ProgramData/chocolatey/bin:/mnt/d/Downloads/New folder/runtime/win64:/mnt/d/Downloads/New folder/bin:/mnt/d/Education/MPLab/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/d/Education/MatLab/MatLab/runtime/win64:/mnt/d/Education/MatLab/MatLab/bin:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Git LFS:/mnt/c/Program Files/MySQL/MySQL Server 9.3/bin:/mnt/d/Projects/indeedwebscrap/Indeed-Job-Scraper/edgedriver_win64/msedgedriver.exe:/mnt/c/Program Files/GitHub CLI/:/mnt/c/Program Files/Microsoft SQL Server/150/Tools/Binn/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Files/nodejs/:/mnt/c/Program Files/Go/bin:/mnt/c/Program Files/PuTTY/:/mnt/c/Users/Rahul/.local/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/Scripts/:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/:/mnt/c/Users/Rahul/AppData/Local/Microsoft/WindowsApps:/mnt/c/Program Files/CodeBlocks/MinGW/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Microsoft VS Code/bin:/mnt/c/Users/Rahul/anaconda3/condabin:/mnt/c/Users/Rahul/anaconda3:/mnt/c/Users/Rahul/AppData/Local/Programs/cursor/resources/app/bin:/mnt/c/Program Files/PostgreSQL/psqlODBC:/mnt/c/Program Files/PostgreSQL/17/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Windsurf/bin:/mnt/c/Users/Rahul/google-cloud-sdk/bin:/mnt/c/Users/Rahul/AppData/Roaming/npm:/mnt/c/Users/Rahul/AppData/Local/Programs/Ollama:/mnt/c/Users/Rahul/go/bin:/mnt/c/Program Files/Go/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Antigravity/bin:/snap/bin', 'XDG_RUNTIME_DIR': '/run/user/1000', 'DISPLAY': ':0', 'LANG': 'en_US.UTF-8', 'RMW_IMPLEMENTATION': 'rmw_cyclonedds_cpp', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'VSCODE_GIT_IPC_HANDLE': '/run/user/1000/vscode-git-bbea33e8b1.sock', 'TERM_PROGRAM': 'vscode', 'AMENT_PREFIX_PATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'SHELL': '/bin/bash', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'ROS_AUTOMATIC_DISCOVERY_RANGE': 'SUBNET', 'VSCODE_GIT_ASKPASS_EXTRA_ARGS': '', 'PWD': '/home/usernamerahul/agv_ws/build/explore_lite', 'TURTLEBOT3_MODEL': 'waffle_pi', 'NVM_CD_FLAGS': '', 'XDG_DATA_DIRS': '/usr/local/share:/usr/share:/var/lib/snapd/desktop', 'PYTHONPATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages:/home/usernamerahul/ros2_ws/install/my_robot_controller/lib/python3.12/site-packages:/opt/ros/jazzy/lib/python3.12/site-packages', 'COLCON': '1', 'WSL2_GUI_APPS_ENABLED': '1', 'HOSTTYPE': 'x86_64', 'NVM_RC_VERSION': '', 'CMAKE_PREFIX_PATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs:/opt/ros/jazzy/opt/gz_sim_vendor:/opt/ros/jazzy/opt/gz_sensors_vendor:/opt/ros/jazzy/opt/gz_physics_vendor:/opt/ros/jazzy/opt/sdformat_vendor:/opt/ros/jazzy/opt/gz_gui_vendor:/opt/ros/jazzy/opt/gz_transport_vendor:/opt/ros/jazzy/opt/gz_rendering_vendor:/opt/ros/jazzy/opt/gz_plugin_vendor:/opt/ros/jazzy/opt/gz_fuel_tools_vendor:/opt/ros/jazzy/opt/gz_msgs_vendor:/opt/ros/jazzy/opt/gz_common_vendor:/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_tools_vendor:/opt/ros/jazzy/opt/gz_ogre_next_vendor:/opt/ros/jazzy/opt/gz_dartsim_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'WSLENV': ''}), 'shell': False}
+[28.021924] (-) TimerEvent: {}
+[28.046860] (explore_lite) StdoutLine: {'line': b'[ 10%] \x1b[32mBuilding CXX object gtest/CMakeFiles/gtest.dir/src/gtest-all.cc.o\x1b[0m\n'}
+[28.047520] (explore_lite) StdoutLine: {'line': b'[ 30%] \x1b[32mBuilding CXX object CMakeFiles/explore.dir/src/explore.cpp.o\x1b[0m\n'}
+[28.047801] (explore_lite) StdoutLine: {'line': b'[ 30%] \x1b[32mBuilding CXX object gtest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o\x1b[0m\n'}
+[28.048702] (explore_lite) StdoutLine: {'line': b'[ 40%] \x1b[32mBuilding CXX object CMakeFiles/explore.dir/src/costmap_client.cpp.o\x1b[0m\n'}
+[28.050468] (explore_lite) StdoutLine: {'line': b'[ 50%] \x1b[32mBuilding CXX object CMakeFiles/explore.dir/src/frontier_search.cpp.o\x1b[0m\n'}
+[28.122140] (-) TimerEvent: {}
+[28.222633] (-) TimerEvent: {}
+[28.323194] (-) TimerEvent: {}
+[28.429474] (-) TimerEvent: {}
+[28.530072] (-) TimerEvent: {}
+[28.630836] (-) TimerEvent: {}
+[28.731483] (-) TimerEvent: {}
+[28.832074] (-) TimerEvent: {}
+[28.932943] (-) TimerEvent: {}
+[29.033453] (-) TimerEvent: {}
+[29.134064] (-) TimerEvent: {}
+[29.234691] (-) TimerEvent: {}
+[29.335761] (-) TimerEvent: {}
+[29.437682] (-) TimerEvent: {}
+[29.539321] (-) TimerEvent: {}
+[29.640145] (-) TimerEvent: {}
+[29.740749] (-) TimerEvent: {}
+[29.841348] (-) TimerEvent: {}
+[29.941963] (-) TimerEvent: {}
+[30.042618] (-) TimerEvent: {}
+[30.146038] (-) TimerEvent: {}
+[30.207663] (explore_lite) StdoutLine: {'line': b'[ 60%] \x1b[32m\x1b[1mLinking CXX static library libgtest_main.a\x1b[0m\n'}
+[30.246209] (-) TimerEvent: {}
+[30.319546] (explore_lite) StdoutLine: {'line': b'[ 60%] Built target gtest_main\n'}
+[30.346381] (-) TimerEvent: {}
+[30.446995] (-) TimerEvent: {}
+[30.547549] (-) TimerEvent: {}
+[30.648102] (-) TimerEvent: {}
+[30.748682] (-) TimerEvent: {}
+[30.849316] (-) TimerEvent: {}
+[30.950090] (-) TimerEvent: {}
+[31.050668] (-) TimerEvent: {}
+[31.164691] (-) TimerEvent: {}
+[31.265371] (-) TimerEvent: {}
+[31.365839] (-) TimerEvent: {}
+[31.466631] (-) TimerEvent: {}
+[31.567213] (-) TimerEvent: {}
+[31.667829] (-) TimerEvent: {}
+[31.768612] (-) TimerEvent: {}
+[31.869185] (-) TimerEvent: {}
+[31.973435] (-) TimerEvent: {}
+[32.074069] (-) TimerEvent: {}
+[32.174934] (-) TimerEvent: {}
+[32.275586] (-) TimerEvent: {}
+[32.376155] (-) TimerEvent: {}
+[32.476727] (-) TimerEvent: {}
+[32.577253] (-) TimerEvent: {}
+[32.677783] (-) TimerEvent: {}
+[32.778402] (-) TimerEvent: {}
+[32.878959] (-) TimerEvent: {}
+[32.979533] (-) TimerEvent: {}
+[33.080092] (-) TimerEvent: {}
+[33.180727] (-) TimerEvent: {}
+[33.281376] (-) TimerEvent: {}
+[33.382068] (-) TimerEvent: {}
+[33.484646] (-) TimerEvent: {}
+[33.587022] (-) TimerEvent: {}
+[33.687548] (-) TimerEvent: {}
+[33.788093] (-) TimerEvent: {}
+[33.888800] (-) TimerEvent: {}
+[33.989519] (-) TimerEvent: {}
+[34.090184] (-) TimerEvent: {}
+[34.190704] (-) TimerEvent: {}
+[34.291218] (-) TimerEvent: {}
+[34.391735] (-) TimerEvent: {}
+[34.492345] (-) TimerEvent: {}
+[34.593096] (-) TimerEvent: {}
+[34.693861] (-) TimerEvent: {}
+[34.794563] (-) TimerEvent: {}
+[34.895157] (-) TimerEvent: {}
+[34.995692] (-) TimerEvent: {}
+[35.096430] (-) TimerEvent: {}
+[35.196993] (-) TimerEvent: {}
+[35.297610] (-) TimerEvent: {}
+[35.398564] (-) TimerEvent: {}
+[35.499356] (-) TimerEvent: {}
+[35.599968] (-) TimerEvent: {}
+[35.700529] (-) TimerEvent: {}
+[35.801133] (-) TimerEvent: {}
+[35.901854] (-) TimerEvent: {}
+[36.002563] (-) TimerEvent: {}
+[36.103106] (-) TimerEvent: {}
+[36.203795] (-) TimerEvent: {}
+[36.304579] (-) TimerEvent: {}
+[36.405287] (-) TimerEvent: {}
+[36.505877] (-) TimerEvent: {}
+[36.606493] (-) TimerEvent: {}
+[36.707138] (-) TimerEvent: {}
+[36.807817] (-) TimerEvent: {}
+[36.908450] (-) TimerEvent: {}
+[37.008969] (-) TimerEvent: {}
+[37.109462] (-) TimerEvent: {}
+[37.210046] (-) TimerEvent: {}
+[37.310637] (-) TimerEvent: {}
+[37.411213] (-) TimerEvent: {}
+[37.511765] (-) TimerEvent: {}
+[37.612366] (-) TimerEvent: {}
+[37.713158] (-) TimerEvent: {}
+[37.813781] (-) TimerEvent: {}
+[37.914553] (-) TimerEvent: {}
+[38.015126] (-) TimerEvent: {}
+[38.115695] (-) TimerEvent: {}
+[38.216231] (-) TimerEvent: {}
+[38.316932] (-) TimerEvent: {}
+[38.417528] (-) TimerEvent: {}
+[38.518215] (-) TimerEvent: {}
+[38.619233] (-) TimerEvent: {}
+[38.719809] (-) TimerEvent: {}
+[38.820457] (-) TimerEvent: {}
+[38.921017] (-) TimerEvent: {}
+[39.021562] (-) TimerEvent: {}
+[39.122146] (-) TimerEvent: {}
+[39.222759] (-) TimerEvent: {}
+[39.323272] (-) TimerEvent: {}
+[39.423816] (-) TimerEvent: {}
+[39.514519] (explore_lite) StdoutLine: {'line': b'[ 70%] \x1b[32m\x1b[1mLinking CXX static library libgtest.a\x1b[0m\n'}
+[39.534310] (-) TimerEvent: {}
+[39.671229] (-) TimerEvent: {}
+[39.771711] (-) TimerEvent: {}
+[39.832270] (explore_lite) StdoutLine: {'line': b'[ 70%] Built target gtest\n'}
+[39.872912] (-) TimerEvent: {}
+[39.892528] (explore_lite) StdoutLine: {'line': b'[ 80%] \x1b[32mBuilding CXX object CMakeFiles/test_explore.dir/test/test_explore.cpp.o\x1b[0m\n'}
+[39.973107] (-) TimerEvent: {}
+[40.073608] (-) TimerEvent: {}
+[40.174163] (-) TimerEvent: {}
+[40.274711] (-) TimerEvent: {}
+[40.375285] (-) TimerEvent: {}
+[40.475972] (-) TimerEvent: {}
+[40.576581] (-) TimerEvent: {}
+[40.677073] (-) TimerEvent: {}
+[40.777648] (-) TimerEvent: {}
+[40.878226] (-) TimerEvent: {}
+[40.978805] (-) TimerEvent: {}
+[41.079407] (-) TimerEvent: {}
+[41.180081] (-) TimerEvent: {}
+[41.280742] (-) TimerEvent: {}
+[41.381368] (-) TimerEvent: {}
+[41.482059] (-) TimerEvent: {}
+[41.582676] (-) TimerEvent: {}
+[41.683214] (-) TimerEvent: {}
+[41.783788] (-) TimerEvent: {}
+[41.884343] (-) TimerEvent: {}
+[41.985058] (-) TimerEvent: {}
+[42.085698] (-) TimerEvent: {}
+[42.186291] (-) TimerEvent: {}
+[42.287177] (-) TimerEvent: {}
+[42.387748] (-) TimerEvent: {}
+[42.488363] (-) TimerEvent: {}
+[42.588922] (-) TimerEvent: {}
+[42.689465] (-) TimerEvent: {}
+[42.790124] (-) TimerEvent: {}
+[42.890705] (-) TimerEvent: {}
+[42.991441] (-) TimerEvent: {}
+[43.092180] (-) TimerEvent: {}
+[43.193139] (-) TimerEvent: {}
+[43.298392] (-) TimerEvent: {}
+[43.399012] (-) TimerEvent: {}
+[43.499672] (-) TimerEvent: {}
+[43.538948] (explore_lite) StdoutLine: {'line': b'[ 90%] \x1b[32m\x1b[1mLinking CXX executable test_explore\x1b[0m\n'}
+[43.599927] (-) TimerEvent: {}
+[43.700540] (-) TimerEvent: {}
+[43.808225] (-) TimerEvent: {}
+[43.913067] (-) TimerEvent: {}
+[44.014048] (-) TimerEvent: {}
+[44.115607] (-) TimerEvent: {}
+[44.216215] (-) TimerEvent: {}
+[44.316872] (-) TimerEvent: {}
+[44.375478] (explore_lite) StdoutLine: {'line': b'[ 90%] Built target test_explore\n'}
+[44.417071] (-) TimerEvent: {}
+[44.517815] (-) TimerEvent: {}
+[44.620145] (-) TimerEvent: {}
+[44.720928] (-) TimerEvent: {}
+[44.821497] (-) TimerEvent: {}
+[44.922057] (-) TimerEvent: {}
+[45.022670] (-) TimerEvent: {}
+[45.123253] (-) TimerEvent: {}
+[45.223915] (-) TimerEvent: {}
+[45.324586] (-) TimerEvent: {}
+[45.425233] (-) TimerEvent: {}
+[45.525757] (-) TimerEvent: {}
+[45.626540] (-) TimerEvent: {}
+[45.727075] (-) TimerEvent: {}
+[45.827679] (-) TimerEvent: {}
+[45.928198] (-) TimerEvent: {}
+[46.028799] (-) TimerEvent: {}
+[46.129301] (-) TimerEvent: {}
+[46.229846] (-) TimerEvent: {}
+[46.330411] (-) TimerEvent: {}
+[46.430917] (-) TimerEvent: {}
+[46.531473] (-) TimerEvent: {}
+[46.632033] (-) TimerEvent: {}
+[46.732523] (-) TimerEvent: {}
+[46.833087] (-) TimerEvent: {}
+[46.933578] (-) TimerEvent: {}
+[47.034130] (-) TimerEvent: {}
+[47.134682] (-) TimerEvent: {}
+[47.235184] (-) TimerEvent: {}
+[47.335766] (-) TimerEvent: {}
+[47.436368] (-) TimerEvent: {}
+[47.536912] (-) TimerEvent: {}
+[47.637534] (-) TimerEvent: {}
+[47.738315] (-) TimerEvent: {}
+[47.838890] (-) TimerEvent: {}
+[47.939418] (-) TimerEvent: {}
+[48.039977] (-) TimerEvent: {}
+[48.140498] (-) TimerEvent: {}
+[48.241052] (-) TimerEvent: {}
+[48.341540] (-) TimerEvent: {}
+[48.442151] (-) TimerEvent: {}
+[48.546949] (-) TimerEvent: {}
+[48.650526] (-) TimerEvent: {}
+[48.751014] (-) TimerEvent: {}
+[48.851607] (-) TimerEvent: {}
+[48.952138] (-) TimerEvent: {}
+[49.052709] (-) TimerEvent: {}
+[49.153315] (-) TimerEvent: {}
+[49.253864] (-) TimerEvent: {}
+[49.354467] (-) TimerEvent: {}
+[49.455037] (-) TimerEvent: {}
+[49.555602] (-) TimerEvent: {}
+[49.656153] (-) TimerEvent: {}
+[49.756573] (-) TimerEvent: {}
+[49.857316] (-) TimerEvent: {}
+[49.957858] (-) TimerEvent: {}
+[50.058489] (-) TimerEvent: {}
+[50.159020] (-) TimerEvent: {}
+[50.259597] (-) TimerEvent: {}
+[50.360084] (-) TimerEvent: {}
+[50.460727] (-) TimerEvent: {}
+[50.561310] (-) TimerEvent: {}
+[50.661870] (-) TimerEvent: {}
+[50.762443] (-) TimerEvent: {}
+[50.863011] (-) TimerEvent: {}
+[50.963631] (-) TimerEvent: {}
+[51.064287] (-) TimerEvent: {}
+[51.164865] (-) TimerEvent: {}
+[51.265451] (-) TimerEvent: {}
+[51.366180] (-) TimerEvent: {}
+[51.466751] (-) TimerEvent: {}
+[51.567289] (-) TimerEvent: {}
+[51.668029] (-) TimerEvent: {}
+[51.768574] (-) TimerEvent: {}
+[51.869169] (-) TimerEvent: {}
+[51.969894] (-) TimerEvent: {}
+[52.070557] (-) TimerEvent: {}
+[52.171147] (-) TimerEvent: {}
+[52.271739] (-) TimerEvent: {}
+[52.372306] (-) TimerEvent: {}
+[52.472850] (-) TimerEvent: {}
+[52.573569] (-) TimerEvent: {}
+[52.674288] (-) TimerEvent: {}
+[52.774873] (-) TimerEvent: {}
+[52.875515] (-) TimerEvent: {}
+[52.976241] (-) TimerEvent: {}
+[53.077006] (-) TimerEvent: {}
+[53.177727] (-) TimerEvent: {}
+[53.278348] (-) TimerEvent: {}
+[53.379123] (-) TimerEvent: {}
+[53.479602] (-) TimerEvent: {}
+[53.580147] (-) TimerEvent: {}
+[53.680695] (-) TimerEvent: {}
+[53.781341] (-) TimerEvent: {}
+[53.881938] (-) TimerEvent: {}
+[53.982675] (-) TimerEvent: {}
+[54.083534] (-) TimerEvent: {}
+[54.184161] (-) TimerEvent: {}
+[54.284823] (-) TimerEvent: {}
+[54.385394] (-) TimerEvent: {}
+[54.486030] (-) TimerEvent: {}
+[54.586690] (-) TimerEvent: {}
+[54.687306] (-) TimerEvent: {}
+[54.787959] (-) TimerEvent: {}
+[54.888769] (-) TimerEvent: {}
+[54.989657] (-) TimerEvent: {}
+[55.090248] (-) TimerEvent: {}
+[55.190999] (-) TimerEvent: {}
+[55.291561] (-) TimerEvent: {}
+[55.392191] (-) TimerEvent: {}
+[55.492759] (-) TimerEvent: {}
+[55.593365] (-) TimerEvent: {}
+[55.694084] (-) TimerEvent: {}
+[55.794830] (-) TimerEvent: {}
+[55.895511] (-) TimerEvent: {}
+[55.996050] (-) TimerEvent: {}
+[56.096612] (-) TimerEvent: {}
+[56.197317] (-) TimerEvent: {}
+[56.297902] (-) TimerEvent: {}
+[56.398550] (-) TimerEvent: {}
+[56.499153] (-) TimerEvent: {}
+[56.599725] (-) TimerEvent: {}
+[56.700405] (-) TimerEvent: {}
+[56.801073] (-) TimerEvent: {}
+[56.901623] (-) TimerEvent: {}
+[57.002217] (-) TimerEvent: {}
+[57.102735] (-) TimerEvent: {}
+[57.203306] (-) TimerEvent: {}
+[57.303882] (-) TimerEvent: {}
+[57.404431] (-) TimerEvent: {}
+[57.504955] (-) TimerEvent: {}
+[57.605569] (-) TimerEvent: {}
+[57.706278] (-) TimerEvent: {}
+[57.806809] (-) TimerEvent: {}
+[57.907395] (-) TimerEvent: {}
+[58.007932] (-) TimerEvent: {}
+[58.108432] (-) TimerEvent: {}
+[58.208934] (-) TimerEvent: {}
+[58.309454] (-) TimerEvent: {}
+[58.410066] (-) TimerEvent: {}
+[58.510883] (-) TimerEvent: {}
+[58.611523] (-) TimerEvent: {}
+[58.712158] (-) TimerEvent: {}
+[58.812630] (-) TimerEvent: {}
+[58.913205] (-) TimerEvent: {}
+[59.013883] (-) TimerEvent: {}
+[59.114530] (-) TimerEvent: {}
+[59.215142] (-) TimerEvent: {}
+[59.315787] (-) TimerEvent: {}
+[59.416316] (-) TimerEvent: {}
+[59.516794] (-) TimerEvent: {}
+[59.617477] (-) TimerEvent: {}
+[59.718215] (-) TimerEvent: {}
+[59.818820] (-) TimerEvent: {}
+[59.919536] (-) TimerEvent: {}
+[60.020260] (-) TimerEvent: {}
+[60.120812] (-) TimerEvent: {}
+[60.221460] (-) TimerEvent: {}
+[60.322031] (-) TimerEvent: {}
+[60.422690] (-) TimerEvent: {}
+[60.523240] (-) TimerEvent: {}
+[60.623810] (-) TimerEvent: {}
+[60.724496] (-) TimerEvent: {}
+[60.825185] (-) TimerEvent: {}
+[60.925843] (-) TimerEvent: {}
+[61.026417] (-) TimerEvent: {}
+[61.126889] (-) TimerEvent: {}
+[61.227401] (-) TimerEvent: {}
+[61.327996] (-) TimerEvent: {}
+[61.428523] (-) TimerEvent: {}
+[61.529078] (-) TimerEvent: {}
+[61.629595] (-) TimerEvent: {}
+[61.730099] (-) TimerEvent: {}
+[61.830587] (-) TimerEvent: {}
+[61.931089] (-) TimerEvent: {}
+[62.031662] (-) TimerEvent: {}
+[62.132417] (-) TimerEvent: {}
+[62.232974] (-) TimerEvent: {}
+[62.333496] (-) TimerEvent: {}
+[62.434064] (-) TimerEvent: {}
+[62.534623] (-) TimerEvent: {}
+[62.635185] (-) TimerEvent: {}
+[62.735740] (-) TimerEvent: {}
+[62.836289] (-) TimerEvent: {}
+[62.936840] (-) TimerEvent: {}
+[63.037288] (-) TimerEvent: {}
+[63.137884] (-) TimerEvent: {}
+[63.238591] (-) TimerEvent: {}
+[63.339133] (-) TimerEvent: {}
+[63.439582] (-) TimerEvent: {}
+[63.540057] (-) TimerEvent: {}
+[63.640529] (-) TimerEvent: {}
+[63.740948] (-) TimerEvent: {}
+[63.841404] (-) TimerEvent: {}
+[63.941957] (-) TimerEvent: {}
+[64.042554] (-) TimerEvent: {}
+[64.143012] (-) TimerEvent: {}
+[64.243432] (-) TimerEvent: {}
+[64.343933] (-) TimerEvent: {}
+[64.444403] (-) TimerEvent: {}
+[64.544875] (-) TimerEvent: {}
+[64.645370] (-) TimerEvent: {}
+[64.745814] (-) TimerEvent: {}
+[64.846325] (-) TimerEvent: {}
+[64.946756] (-) TimerEvent: {}
+[65.047213] (-) TimerEvent: {}
+[65.147739] (-) TimerEvent: {}
+[65.248183] (-) TimerEvent: {}
+[65.348703] (-) TimerEvent: {}
+[65.449319] (-) TimerEvent: {}
+[65.549841] (-) TimerEvent: {}
+[65.650346] (-) TimerEvent: {}
+[65.750754] (-) TimerEvent: {}
+[65.851247] (-) TimerEvent: {}
+[65.951704] (-) TimerEvent: {}
+[66.052192] (-) TimerEvent: {}
+[66.152725] (-) TimerEvent: {}
+[66.253269] (-) TimerEvent: {}
+[66.353846] (-) TimerEvent: {}
+[66.454330] (-) TimerEvent: {}
+[66.554795] (-) TimerEvent: {}
+[66.630952] (explore_lite) StdoutLine: {'line': b'[100%] \x1b[32m\x1b[1mLinking CXX executable explore\x1b[0m\n'}
+[66.654872] (-) TimerEvent: {}
+[66.755323] (-) TimerEvent: {}
+[66.855957] (-) TimerEvent: {}
+[66.956373] (-) TimerEvent: {}
+[67.056853] (-) TimerEvent: {}
+[67.157478] (-) TimerEvent: {}
+[67.258124] (-) TimerEvent: {}
+[67.358682] (-) TimerEvent: {}
+[67.459138] (-) TimerEvent: {}
+[67.559581] (-) TimerEvent: {}
+[67.660063] (-) TimerEvent: {}
+[67.760621] (-) TimerEvent: {}
+[67.861248] (-) TimerEvent: {}
+[67.962228] (-) TimerEvent: {}
+[68.062762] (-) TimerEvent: {}
+[68.163559] (-) TimerEvent: {}
+[68.264077] (-) TimerEvent: {}
+[68.367619] (-) TimerEvent: {}
+[68.468183] (-) TimerEvent: {}
+[68.568825] (-) TimerEvent: {}
+[68.669377] (-) TimerEvent: {}
+[68.769866] (-) TimerEvent: {}
+[68.870329] (-) TimerEvent: {}
+[68.940073] (explore_lite) StdoutLine: {'line': b'[100%] Built target explore\n'}
+[68.970502] (-) TimerEvent: {}
+[68.995009] (explore_lite) CommandEnded: {'returncode': 0}
+[69.019022] (explore_lite) JobProgress: {'identifier': 'explore_lite', 'progress': 'install'}
+[69.026534] (explore_lite) Command: {'cmd': ['/usr/bin/cmake', '--install', '/home/usernamerahul/agv_ws/build/explore_lite'], 'cwd': '/home/usernamerahul/agv_ws/build/explore_lite', 'env': OrderedDict({'LESSOPEN': '| /usr/bin/lesspipe %s', 'GZ_SIM_RESOURCE_PATH': '/opt/ros/jazzy/share', 'USER': 'usernamerahul', 'GZ_CONFIG_PATH': '/opt/ros/jazzy/opt/gz_sim_vendor/share/gz:/opt/ros/jazzy/opt/sdformat_vendor/share/gz:/opt/ros/jazzy/opt/gz_gui_vendor/share/gz:/opt/ros/jazzy/opt/gz_transport_vendor/share/gz:/opt/ros/jazzy/opt/gz_rendering_vendor/share/gz:/opt/ros/jazzy/opt/gz_plugin_vendor/share/gz:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/share/gz:/opt/ros/jazzy/opt/gz_msgs_vendor/share/gz:/opt/ros/jazzy/opt/gz_common_vendor/share/gz', 'GIT_ASKPASS': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass.sh', 'SHLVL': '1', 'LIBGL_ALWAYS_SOFTWARE': '1', 'LD_LIBRARY_PATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib:/opt/ros/jazzy/opt/gz_sim_vendor/lib:/opt/ros/jazzy/opt/gz_sensors_vendor/lib:/opt/ros/jazzy/opt/gz_physics_vendor/lib:/opt/ros/jazzy/opt/sdformat_vendor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_gui_vendor/lib:/opt/ros/jazzy/opt/gz_transport_vendor/lib:/opt/ros/jazzy/opt/gz_rendering_vendor/lib:/opt/ros/jazzy/opt/gz_plugin_vendor/lib:/opt/ros/jazzy/opt/gz_fuel_tools_vendor/lib:/opt/ros/jazzy/opt/gz_msgs_vendor/lib:/opt/ros/jazzy/opt/gz_common_vendor/lib:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_tools_vendor/lib:/opt/ros/jazzy/opt/gz_ogre_next_vendor/lib:/opt/ros/jazzy/opt/gz_dartsim_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib', 'ANTIGRAVITY_CLI_ALIAS': 'agy', 'HOME': '/home/usernamerahul', 'TERM_PROGRAM_VERSION': '1.107.0', 'VSCODE_IPC_HOOK_CLI': '/run/user/1000/vscode-ipc-95f7af35-7163-41c4-b682-ec3dbec09ff8.sock', 'ROS_PYTHON_VERSION': '3', 'PAGER': 'cat', 'VSCODE_GIT_ASKPASS_MAIN': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/extensions/git/dist/askpass-main.js', 'VSCODE_GIT_ASKPASS_NODE': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/node', 'VSCODE_PYTHON_AUTOACTIVATE_GUARD': '1', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus', 'COLORTERM': 'truecolor', 'WSL_DISTRO_NAME': 'Ubuntu', 'ANTIGRAVITY_AGENT': '1', 'NVM_DIR': '/home/usernamerahul/.nvm', 'WAYLAND_DISPLAY': 'wayland-0', 'COLCON_PREFIX_PATH': '/home/usernamerahul/ros2_ws/install', 'ROS_DISTRO': 'jazzy', 'LOGNAME': 'usernamerahul', 'NAME': 'Rahul', 'WSL_INTEROP': '/run/WSL/347_interop', 'PULSE_SERVER': 'unix:/mnt/wslg/PulseServer', '_': '/usr/bin/colcon', 'ROS_VERSION': '2', 'TERM': 'xterm-256color', 'PATH': '/home/usernamerahul/.antigravity-server/bin/1.23.2-15487b3041e65228cae24980a3f796c905ef582c/bin/remote-cli:/opt/ros/jazzy/opt/gz_msgs_vendor/bin:/opt/ros/jazzy/opt/gz_tools_vendor/bin:/opt/ros/jazzy/opt/gz_ogre_next_vendor/bin:/opt/ros/jazzy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/mpirt:/mnt/c/Program Files (x86)/Common Files/Intel/Shared Libraries/redist/intel64_win/compiler:/mnt/c/Program Files/Common Files/Oracle/Java/javapath:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/c/Program Files/dotnet/:/mnt/c/ProgramData/chocolatey/bin:/mnt/d/Downloads/New folder/runtime/win64:/mnt/d/Downloads/New folder/bin:/mnt/d/Education/MPLab/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/mnt/c/WINDOWS/System32/OpenSSH/:/mnt/d/Education/MatLab/MatLab/runtime/win64:/mnt/d/Education/MatLab/MatLab/bin:/mnt/c/Program Files/Git/cmd:/mnt/c/Program Files/Git LFS:/mnt/c/Program Files/MySQL/MySQL Server 9.3/bin:/mnt/d/Projects/indeedwebscrap/Indeed-Job-Scraper/edgedriver_win64/msedgedriver.exe:/mnt/c/Program Files/GitHub CLI/:/mnt/c/Program Files/Microsoft SQL Server/150/Tools/Binn/:/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Files/nodejs/:/mnt/c/Program Files/Go/bin:/mnt/c/Program Files/PuTTY/:/mnt/c/Users/Rahul/.local/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/Scripts/:/mnt/c/Users/Rahul/AppData/Local/Programs/Python/Python310/:/mnt/c/Users/Rahul/AppData/Local/Microsoft/WindowsApps:/mnt/c/Program Files/CodeBlocks/MinGW/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Microsoft VS Code/bin:/mnt/c/Users/Rahul/anaconda3/condabin:/mnt/c/Users/Rahul/anaconda3:/mnt/c/Users/Rahul/AppData/Local/Programs/cursor/resources/app/bin:/mnt/c/Program Files/PostgreSQL/psqlODBC:/mnt/c/Program Files/PostgreSQL/17/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Windsurf/bin:/mnt/c/Users/Rahul/google-cloud-sdk/bin:/mnt/c/Users/Rahul/AppData/Roaming/npm:/mnt/c/Users/Rahul/AppData/Local/Programs/Ollama:/mnt/c/Users/Rahul/go/bin:/mnt/c/Program Files/Go/bin:/mnt/c/Users/Rahul/AppData/Local/Programs/Antigravity/bin:/snap/bin', 'XDG_RUNTIME_DIR': '/run/user/1000', 'DISPLAY': ':0', 'LANG': 'en_US.UTF-8', 'RMW_IMPLEMENTATION': 'rmw_cyclonedds_cpp', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'VSCODE_GIT_IPC_HANDLE': '/run/user/1000/vscode-git-bbea33e8b1.sock', 'TERM_PROGRAM': 'vscode', 'AMENT_PREFIX_PATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'SHELL': '/bin/bash', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'ROS_AUTOMATIC_DISCOVERY_RANGE': 'SUBNET', 'VSCODE_GIT_ASKPASS_EXTRA_ARGS': '', 'PWD': '/home/usernamerahul/agv_ws/build/explore_lite', 'TURTLEBOT3_MODEL': 'waffle_pi', 'NVM_CD_FLAGS': '', 'XDG_DATA_DIRS': '/usr/local/share:/usr/share:/var/lib/snapd/desktop', 'PYTHONPATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs/lib/python3.12/site-packages:/home/usernamerahul/ros2_ws/install/my_robot_controller/lib/python3.12/site-packages:/opt/ros/jazzy/lib/python3.12/site-packages', 'COLCON': '1', 'WSL2_GUI_APPS_ENABLED': '1', 'HOSTTYPE': 'x86_64', 'NVM_RC_VERSION': '', 'CMAKE_PREFIX_PATH': '/home/usernamerahul/agv_ws/install/explore_lite_msgs:/opt/ros/jazzy/opt/gz_sim_vendor:/opt/ros/jazzy/opt/gz_sensors_vendor:/opt/ros/jazzy/opt/gz_physics_vendor:/opt/ros/jazzy/opt/sdformat_vendor:/opt/ros/jazzy/opt/gz_gui_vendor:/opt/ros/jazzy/opt/gz_transport_vendor:/opt/ros/jazzy/opt/gz_rendering_vendor:/opt/ros/jazzy/opt/gz_plugin_vendor:/opt/ros/jazzy/opt/gz_fuel_tools_vendor:/opt/ros/jazzy/opt/gz_msgs_vendor:/opt/ros/jazzy/opt/gz_common_vendor:/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_tools_vendor:/opt/ros/jazzy/opt/gz_ogre_next_vendor:/opt/ros/jazzy/opt/gz_dartsim_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor:/home/usernamerahul/ros2_ws/install/my_robot_controller:/opt/ros/jazzy', 'WSLENV': ''}), 'shell': False}
+[69.049734] (explore_lite) StdoutLine: {'line': b'-- Install configuration: ""\n'}
+[69.050617] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/include/explore/\n'}
+[69.052356] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/include/explore//costmap_tools.h\n'}
+[69.053208] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/include/explore//explore.h\n'}
+[69.053682] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/include/explore//costmap_client.h\n'}
+[69.054236] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/include/explore//frontier_search.h\n'}
+[69.054512] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/config\n'}
+[69.054910] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/config/params.yaml\n'}
+[69.055451] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/config/params_costmap.yaml\n'}
+[69.055838] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/launch\n'}
+[69.056551] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/launch/explore.launch.py\n'}
+[69.058342] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/lib/explore_lite/explore\n'}
+[69.070670] (-) TimerEvent: {}
+[69.076828] (explore_lite) StdoutLine: {'line': b'-- Set non-toolchain portion of runtime path of "/home/usernamerahul/agv_ws/install/explore_lite/lib/explore_lite/explore" to ""\n'}
+[69.079570] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/ament_index/resource_index/package_run_dependencies/explore_lite\n'}
+[69.080427] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/ament_index/resource_index/parent_prefix_path/explore_lite\n'}
+[69.081181] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/environment/ament_prefix_path.sh\n'}
+[69.081752] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/environment/ament_prefix_path.dsv\n'}
+[69.082218] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/environment/path.sh\n'}
+[69.082778] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/environment/path.dsv\n'}
+[69.083121] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/local_setup.bash\n'}
+[69.083462] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/local_setup.sh\n'}
+[69.083673] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/local_setup.zsh\n'}
+[69.084108] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/local_setup.dsv\n'}
+[69.084521] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/package.dsv\n'}
+[69.085176] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/ament_index/resource_index/packages/explore_lite\n'}
+[69.085687] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/cmake/ament_cmake_export_dependencies-extras.cmake\n'}
+[69.086170] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/cmake/ament_cmake_export_include_directories-extras.cmake\n'}
+[69.086951] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/cmake/explore_liteConfig.cmake\n'}
+[69.087299] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/cmake/explore_liteConfig-version.cmake\n'}
+[69.087847] (explore_lite) StdoutLine: {'line': b'-- Installing: /home/usernamerahul/agv_ws/install/explore_lite/share/explore_lite/package.xml\n'}
+[69.094997] (explore_lite) CommandEnded: {'returncode': 0}
+[69.172216] (-) TimerEvent: {}
+[69.180148] (explore_lite) JobEnded: {'identifier': 'explore_lite', 'rc': 0}
+[69.191110] (-) EventReactorShutdown: {}

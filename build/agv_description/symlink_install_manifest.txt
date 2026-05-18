@@ -8,6 +8,8 @@
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/urdf/warehouse_agv.urdf
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/worlds/warehouse.world
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/agv.rviz
+/home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/agv_explore.rviz
+/home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/agv_nav.rviz
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/bridge.yaml
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/ekf.yaml
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/config/mapper_params.yaml
