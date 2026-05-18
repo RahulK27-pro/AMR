@@ -1,5 +1,6 @@
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/__pycache__/master_launch.cpython-312.pyc
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/__pycache__/slam_launch.cpython-312.pyc
+/home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/auto_explore.launch.py
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/display.launch.py
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/explore_launch.py
 /home/usernamerahul/agv_ws/install/agv_description/share/agv_description/launch/gazebo.launch.py

@@ -85,22 +85,7 @@ def generate_launch_description():
         ]
     )
 
-    # ── 4. explore_lite (frontier explorer) ───────────────────────────
-    # Delayed further to let Nav2 fully initialise before sending goals
-    explore_node = TimerAction(
-        period=15.0,
-        actions=[
-            Node(
-                package='explore_lite',
-                executable='explore',
-                name='explore_node',
-                output='screen',
-                parameters=[nav2_params_file, {'use_sim_time': True}],
-            )
-        ]
-    )
-
-    # ── 5. RViz2 ──────────────────────────────────────────────────────
+    # ── 4. RViz2 ──────────────────────────────────────────────────────
     rviz_node = TimerAction(
         period=6.0,
         actions=[
@@ -121,6 +106,5 @@ def generate_launch_description():
         gazebo_launch,
         slam_launch,
         nav2_launch,
-        explore_node,
         rviz_node,
     ])
