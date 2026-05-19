@@ -1,0 +1,1 @@
+/home/usernamerahul/agv_ws/src/agv_description/scripts/diag.py
