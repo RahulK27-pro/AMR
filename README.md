@@ -82,6 +82,14 @@ If you want to spin up the nodes individually:
    ros2 launch agv_description auto_explore.launch.py
    ```
 
+### 🎮 Manual Keyboard Teleoperation
+To drive the AGV manually using your keyboard, run the standard ROS 2 keyboard teleop node in a new terminal:
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+Use the keys shown in your terminal (typically `i`/`,` for forward/reverse, `j`/`l` for turning left/right, and `k` or `space` to stop) to control the robot.
+
+
 
 ---
 
