@@ -1,0 +1,27 @@
+# ROS 2 Build/Install/Log directories
+build/
+install/
+log/
+.colcon/
+
+# Windows Zone Identifier metadata files
+*:Zone.Identifier
+*.Zone.Identifier
+Zone.Identifier
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Editor and system files
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo

@@ -1,1 +1,0 @@
-/home/usernamerahul/agv_ws/src/agv_description/scripts/inspect_topics.py

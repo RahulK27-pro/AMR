@@ -1,1 +1,0 @@
-/home/usernamerahul/agv_ws/src/agv_description/launch/sim_only.launch.py

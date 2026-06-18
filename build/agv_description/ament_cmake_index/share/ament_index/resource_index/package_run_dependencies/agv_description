@@ -1,1 +1,0 @@
-robot_state_publisher;ros_gz_sim;ros_gz_bridge;ros_gz_interfaces;joint_state_publisher;joint_state_publisher_gui;rviz2;xacro;slam_toolbox;nav2_bringup;nav2_map_server;nav2_amcl;nav2_lifecycle_manager;robot_localization;explore_lite;ament_lint_auto;ament_lint_common
