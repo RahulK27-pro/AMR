@@ -44,12 +44,17 @@ def generate_launch_description():
         'use_rviz', default_value='true',
         description='Launch RViz2 for monitoring exploration'
     )
+    headless_arg = DeclareLaunchArgument(
+        'headless', default_value='false',
+        description='Run Gazebo simulation headlessly (without GUI)'
+    )
 
     # ── 1. Gazebo + Bridge + RSP + EKF ────────────────────────────────
     gazebo_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_agv, 'launch', 'gazebo.launch.py')
-        )
+        ),
+        launch_arguments={'headless': LaunchConfiguration('headless')}.items()
     )
 
     # ── 2. SLAM Toolbox ───────────────────────────────────────────────
@@ -103,8 +108,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         use_rviz_arg,
+        headless_arg,
         gazebo_launch,
         slam_launch,
         nav2_launch,
         rviz_node,
     ])
+

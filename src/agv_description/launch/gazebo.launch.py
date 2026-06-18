@@ -1,6 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, RegisterEventHandler, TimerAction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, RegisterEventHandler, TimerAction
 from launch.event_handlers import OnProcessStart
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -15,9 +16,20 @@ def generate_launch_description():
     with open(urdf_file, 'r') as infp:
         robot_desc = infp.read()
 
+    # Launch arguments
+    headless_arg = DeclareLaunchArgument(
+        'headless', default_value='false',
+        description='Run Gazebo simulation headlessly (without GUI)'
+    )
+
     # 1. Gazebo Harmonic
+    # We use PythonExpression to conditionally append '-s' (server-only) if headless is true
     gazebo = ExecuteProcess(
-        cmd=['gz', 'sim', '-r', '-v', '2', world_file],
+        cmd=[
+            'gz', 'sim',
+            PythonExpression(["'-s' if '", LaunchConfiguration('headless'), "' == 'true' else ''"]),
+            '-r', '-v', '2', world_file
+        ],
         output='screen'
     )
 
@@ -59,6 +71,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        headless_arg,
         gazebo,
         bridge_node,
         rsp,
