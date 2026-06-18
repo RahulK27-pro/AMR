@@ -44,27 +44,44 @@ source install/setup.bash
 
 ## 🚀 How to Run
 
-### Complete Auto Exploration & Mapping
-To launch the complete simulation including Gazebo Harmonic, SLAM Toolbox, Nav2, and `explore_lite` (autonomous exploration node):
+### Complete Autonomous Exploration Session
+To launch the full autonomous session (Gazebo Harmonic, SLAM Toolbox, Nav2, RViz2, and frontier exploration):
 ```bash
-ros2 launch agv_description auto_explore.launch.py
+ros2 launch agv_description explore_launch.py
 ```
 
-### Manual Simulation Launch
-If you want to spin up parts of the system separately:
+#### Running Headlessly
+If you are running in a Virtual Machine, WSL, or Docker without GUI acceleration, you can run the Gazebo server headlessly (without the GUI window) by adding the `headless:=true` parameter:
+```bash
+ros2 launch agv_description explore_launch.py headless:=true
+```
+
+---
+
+### Manual/Component Launch
+If you want to spin up the nodes individually:
 
 1. **Launch Gazebo & Spawn the AGV:**
    ```bash
    ros2 launch agv_description gazebo.launch.py
    ```
+   *(To run Gazebo server only, use `ros2 launch agv_description gazebo.launch.py headless:=true`)*
+
 2. **Launch SLAM (Mapping):**
    ```bash
    ros2 launch agv_description slam_launch.py
    ```
+
 3. **Launch Navigation (Nav2):**
    ```bash
    ros2 launch agv_description navigation_launch.py
    ```
+
+4. **Launch Frontier Explorer (`explore_lite`):**
+   ```bash
+   ros2 launch agv_description auto_explore.launch.py
+   ```
+
 
 ---
 
