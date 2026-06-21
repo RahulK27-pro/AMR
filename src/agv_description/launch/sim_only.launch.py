@@ -16,13 +16,15 @@ Verify everything is OK before launching explore_only.launch.py:
 
 import os
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, TimerAction, LogInfo
+from launch.actions import ExecuteProcess, TimerAction, LogInfo, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
     pkg     = get_package_share_directory('agv_description')
+    slam_pkg = get_package_share_directory('slam_toolbox')
     urdf    = os.path.join(pkg, 'urdf', 'warehouse_agv.urdf')
     world   = os.path.join(pkg, 'worlds', 'warehouse.world')
     bridge  = os.path.join(pkg, 'config', 'bridge.yaml')
@@ -47,11 +49,16 @@ def generate_launch_description():
     )
 
     # ── 3. Robot State Publisher ───────────────────────────────────────
-    rsp = Node(
-        package='robot_state_publisher',
-        executable='robot_state_publisher',
-        parameters=[{'robot_description': robot_desc, 'use_sim_time': True}],
-        output='screen'
+    rsp = TimerAction(
+        period=2.0,
+        actions=[
+            Node(
+                package='robot_state_publisher',
+                executable='robot_state_publisher',
+                parameters=[{'robot_description': robot_desc, 'use_sim_time': True}],
+                output='screen'
+            )
+        ]
     )
 
     # ── 4. Spawn robot in Gazebo ───────────────────────────────────────
@@ -77,12 +84,11 @@ def generate_launch_description():
         period=5.0,
         actions=[
             LogInfo(msg='[SIM] Starting SLAM Toolbox...'),
-            Node(
-                package='slam_toolbox',
-                executable='async_slam_toolbox_node',
-                name='slam_toolbox',
-                output='screen',
-                parameters=[slam_p, {'use_sim_time': True}],
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(slam_pkg, 'launch', 'online_async_launch.py')
+                ),
+                launch_arguments={'slam_params_file': slam_p, 'use_sim_time': 'true'}.items()
             )
         ]
     )
