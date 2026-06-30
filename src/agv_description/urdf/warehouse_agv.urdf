@@ -27,7 +27,7 @@
     <visual>
       <origin xyz="0 0 0.06"/>
       <geometry>
-        <cylinder radius="0.22" length="0.12"/>
+        <cylinder radius="0.15" length="0.12"/>
       </geometry>
       <material name="blue"/>
     </visual>
@@ -35,7 +35,7 @@
     <collision>
       <origin xyz="0 0 0.06"/>
       <geometry>
-        <cylinder radius="0.22" length="0.12"/>
+        <cylinder radius="0.15" length="0.12"/>
       </geometry>
     </collision>
 
@@ -43,13 +43,13 @@
       <origin xyz="0 0 0.06"/>
       <mass value="12.0"/>
 
-      <inertia
-          ixx="0.16"
-          ixy="0.0"
-          ixz="0.0"
-          iyy="0.16"
-          iyz="0.0"
-          izz="0.29"/>
+      <inertia 
+         ixx="0.0778"
+         ixy="0"
+         ixz="0"
+         iyy="0.0778"
+         iyz="0"
+         izz="0.135"/>
     </inertial>
 
   </link>
@@ -90,18 +90,11 @@
   </link>
 
   <joint name="left_wheel_joint" type="continuous">
-
     <parent link="base_link"/>
     <child link="left_wheel"/>
-
-    <!-- PERFECT BALANCE -->
-
-    <origin xyz="0 0.23 0.05"/>
-
-    <axis xyz="0 -1 0"/>
-
+    <origin xyz="0 0.17 0.05"/>
+    <axis xyz="0 1 0"/>
     <dynamics damping="2.0" friction="2.0"/>
-
   </joint>
 
   <!-- ===================================================== -->
@@ -140,18 +133,11 @@
   </link>
 
   <joint name="right_wheel_joint" type="continuous">
-
     <parent link="base_link"/>
     <child link="right_wheel"/>
-
-    <!-- PERFECT BALANCE -->
-
-    <origin xyz="0 -0.23 0.05"/>
-
-    <axis xyz="0 -1 0"/>
-
+    <origin xyz="0 -0.17 0.05"/>
+    <axis xyz="0 1 0"/>
     <dynamics damping="2.0" friction="2.0"/>
-
   </joint>
 
   <!-- ===================================================== -->
@@ -192,7 +178,7 @@
     <parent link="base_link"/>
     <child link="front_caster"/>
 
-    <origin xyz="0.18 0 0.025"/>
+    <origin xyz="0.12 0 0.025"/>
 
   </joint>
 
@@ -234,7 +220,7 @@
     <parent link="base_link"/>
     <child link="rear_caster"/>
 
-    <origin xyz="-0.18 0 0.025"/>
+    <origin xyz="-0.12 0 0.025"/>
 
   </joint>
 
@@ -332,7 +318,7 @@
   <joint name="camera_joint" type="fixed">
     <parent link="base_link"/>
     <child link="camera_link"/>
-    <origin xyz="0.22 0 0.06"/>
+    <origin xyz="0.15 0 0.06"/>
   </joint>
 
   <gazebo reference="base_link">
@@ -446,12 +432,12 @@
             name="gz::sim::systems::DiffDrive">
       <left_joint>left_wheel_joint</left_joint>
       <right_joint>right_wheel_joint</right_joint>
-      <wheel_separation>0.46</wheel_separation>
+      <wheel_separation>0.34</wheel_separation>
       <wheel_radius>0.05</wheel_radius>
       <max_linear_acceleration>5.0</max_linear_acceleration>
+      <max_angular_acceleration>5.0</max_angular_acceleration>
       <topic>/cmd_vel</topic>
       <odom_topic>/odom</odom_topic>
-      <tf_topic>/tf</tf_topic>
       <frame_id>odom</frame_id>
       <child_frame_id>base_link</child_frame_id>
       <odom_publisher_frequency>50</odom_publisher_frequency>
