@@ -37,46 +37,53 @@ controller_server:
       yaw_goal_tolerance: 0.20
 
     FollowPath:
-      plugin: "dwb_core::DWBLocalPlanner"
-      debug_trajectory_details: true
-      min_vel_x: 0.0
-      min_vel_y: 0.0
-      max_vel_x: 0.35
-      max_vel_y: 0.0
-      max_vel_theta: 0.8
-      min_speed_xy: 0.0
-      max_speed_xy: 0.35
-      min_speed_theta: 0.0
-      acc_lim_x: 2.5
-      acc_lim_y: 0.0
-      acc_lim_theta: 3.2
-      decel_lim_x: -2.5
-      decel_lim_y: 0.0
-      decel_lim_theta: -3.2
-      vx_samples: 20
-      vy_samples: 5
-      vtheta_samples: 20
-      sim_time: 1.7
-      linear_granularity: 0.05
-      angular_granularity: 0.025
+      plugin: "nav2_mppi_controller::MPPIController"
+      time_steps: 56
+      model_dt: 0.05
+      batch_size: 2000
+      vx_std: 0.2
+      vy_std: 0.0
+      wz_std: 0.4
+      vx_max: 0.4
+      vx_min: 0.0
+      vy_max: 0.0
+      wz_max: 0.8
+      iteration_count: 1
+      prune_distance: 1.7
       transform_tolerance: 0.5
-      xy_goal_tolerance: 0.30
-      trans_stopped_velocity: 0.25
-      short_circuit_trajectory_evaluation: true
-      stateful: true
-      critics:
-        ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign",
-         "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
-      PathAlign.scale: 32.0
-      PathAlign.forward_point_distance: 0.1
-      GoalAlign.scale: 24.0
-      GoalAlign.forward_point_distance: 0.1
-      PathDist.scale: 32.0
-      GoalDist.scale: 24.0
-      RotateToGoal.scale: 32.0
-      RotateToGoal.slowing_factor: 5.0
-      RotateToGoal.lookahead_time: -1.0
+      temperature: 0.3
+      gamma: 0.015
+      motion_model: "DiffDrive"
+      visualize: false
+      critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic", "PathAngleCritic", "PreferForwardCritic"]
+      ConstraintCritic:
+        cost_power: 1
+        cost_weight: 4.0
+      CostCritic:
+        cost_power: 1
+        cost_weight: 3.81
+      GoalCritic:
+        cost_power: 1
+        cost_weight: 15.0
+        threshold_to_consider: 1.4
+      GoalAngleCritic:
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+      PathAlignCritic:
+        cost_power: 1
+        cost_weight: 14.0
+        max_heuristic_cost: 0.1
+      PathFollowCritic:
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 20
+      PathAngleCritic:
+        cost_power: 1
+        cost_weight: 2.0
+      PreferForwardCritic:
+        cost_power: 1
+        cost_weight: 5.0
 
 # During exploration the global costmap does NOT use a static map layer.
 # Instead it relies on SLAM Toolbox publishing /map live.
@@ -92,7 +99,7 @@ local_costmap:
       width: 4
       height: 4
       resolution: 0.05
-      robot_radius: 0.24
+      robot_radius: 0.22
       plugins: ["obstacle_layer", "inflation_layer"]
 
       obstacle_layer:
@@ -113,7 +120,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.35
+        inflation_radius: 0.25
 
       always_send_full_costmap: true
 
@@ -125,19 +132,18 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.24
+      robot_radius: 0.22
       resolution: 0.05
       track_unknown_space: true
+      # No width/height/origin needed — static_layer auto-resizes to the SLAM map
       rolling_window: false
-      width: 100
-      height: 100
-      # CRITICAL: Center the map on the robot's spawn position (0,0).
-      # Without origin_x/y, the map spans (0,0)→(100,100) placing the robot
-      # at the bottom-left corner. Setting -50.0 spans (-50,-50)→(50,50).
-      origin_x: -50.0
-      origin_y: -50.0
       always_send_full_costmap: true
-      plugins: ["obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+        subscribe_to_updates: true
 
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -157,7 +163,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.35
+        inflation_radius: 0.25
 
       always_send_full_costmap: true
 
@@ -240,8 +246,8 @@ explore_node:
   ros__parameters:
     use_sim_time: true
     robot_base_frame: base_link
-    costmap_topic: /global_costmap/costmap
-    costmap_updates_topic: /global_costmap/costmap_updates
+    costmap_topic: /map
+    costmap_updates_topic: /map_updates
     visualize: true
     planner_frequency: 0.5       # re-plan to new frontier every 2 seconds
     progress_timeout: 30.0       # if no progress in 30s, try another frontier
