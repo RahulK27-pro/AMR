@@ -41,11 +41,11 @@ controller_server:
       time_steps: 56
       model_dt: 0.05
       batch_size: 2000
-      vx_std: 0.2
+      vx_std: 0.4       # Increased to sample much faster forward trajectories
       vy_std: 0.0
-      wz_std: 0.4
-      vx_max: 0.4
-      vx_min: -0.4
+      wz_std: 0.2       # Decreased to sample less aggressive turning
+      vx_max: 0.5
+      vx_min: 0.0       # FORCE forward motion only
       vy_max: 0.0
       wz_max: 0.8
       iteration_count: 1
@@ -55,7 +55,7 @@ controller_server:
       gamma: 0.015
       motion_model: "DiffDrive"
       visualize: false
-      critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic", "PathAngleCritic", "PreferForwardCritic"]
+      critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic", "PathAngleCritic", "PreferForwardCritic", "TwirlingCritic"]
       ConstraintCritic:
         cost_power: 1
         cost_weight: 4.0
@@ -72,7 +72,7 @@ controller_server:
         threshold_to_consider: 0.5
       PathAlignCritic:
         cost_power: 1
-        cost_weight: 14.0
+        cost_weight: 10.0  # Reduced to allow more deviation
         max_heuristic_cost: 0.1
       PathFollowCritic:
         cost_power: 1
@@ -84,6 +84,9 @@ controller_server:
       PreferForwardCritic:
         cost_power: 1
         cost_weight: 5.0
+      TwirlingCritic:
+        cost_power: 1
+        cost_weight: 10.0 # Strongly penalize spinning in place
 
 # During exploration the global costmap does NOT use a static map layer.
 # Instead it relies on SLAM Toolbox publishing /map live.
@@ -249,10 +252,15 @@ explore_node:
     costmap_topic: /global_costmap/costmap
     costmap_updates_topic: /global_costmap/costmap_updates
     visualize: true
-    planner_frequency: 0.5       # re-plan to new frontier every 2 seconds
-    progress_timeout: 30.0       # if no progress in 30s, try another frontier
+    # FORCE COMMITMENT: Replanning frequency drastically reduced to 0.05 (every 20s).
+    # This completely prevents explore_lite from constantly changing the goal 
+    # while the robot is trying to execute the path!
+    planner_frequency: 0.05
+    progress_timeout: 45.0       # Give it more time to reach goals
     potential_scale: 3.0
     orientation_scale: 0.0
     gain_scale: 1.0
     transform_tolerance: 0.3
-    min_frontier_size: 0.25      # ignore frontiers smaller than 25 cm
+    # INCREASED from 0.25 to 0.75 to ensure gaps are physically wide enough
+    # for the 48cm robot diameter + safety clearance.
+    min_frontier_size: 0.75
