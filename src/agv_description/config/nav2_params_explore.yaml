@@ -131,6 +131,11 @@ global_costmap:
       rolling_window: false
       width: 100
       height: 100
+      # CRITICAL: Center the map on the robot's spawn position (0,0).
+      # Without origin_x/y, the map spans (0,0)→(100,100) placing the robot
+      # at the bottom-left corner. Setting -50.0 spans (-50,-50)→(50,50).
+      origin_x: -50.0
+      origin_y: -50.0
       always_send_full_costmap: true
       plugins: ["obstacle_layer", "inflation_layer"]
 
