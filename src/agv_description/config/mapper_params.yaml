@@ -25,8 +25,8 @@ slam_toolbox:
     # SLAM only processes a new scan when the robot has moved at least
     # this much since the last processed scan. Very low values ensure
     # SLAM triggers immediately on the first tiny movement.
-    minimum_travel_distance: 0.03    # 3 cm
-    minimum_travel_heading:  0.03    # ~1.7 degrees
+    minimum_travel_distance: 0.05    # 5 cm
+    minimum_travel_heading:  0.05    # ~3 degrees
 
     # ── LiDAR range ──────────────────────────────────────────────────
     # Must match the <max> value in the URDF lidar sensor block.
