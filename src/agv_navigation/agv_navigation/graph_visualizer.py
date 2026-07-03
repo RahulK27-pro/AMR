@@ -11,9 +11,29 @@ class GraphVisualizer(Node):
         self.marker_pub = self.create_publisher(MarkerArray, '/agv_graph_markers', 10)
         
         # Load the map
-        self.map_path = os.path.join(os.environ['HOME'], 'agv_ws', 'src', 'agv_navigation', 'maps', 'test_map.json')
+        # Path updated to point to the new warehouse map in agv_description
+        self.map_path = os.path.join(os.environ['HOME'], 'AMR', 'AMR-main', 'src', 'agv_description', 'maps', 'warehouse_graph.json')
+        
+        # Fallback for the older path if the above fails
+        if not os.path.exists(self.map_path):
+            self.map_path = os.path.join(os.environ['HOME'], 'agv_ws', 'src', 'agv_description', 'maps', 'warehouse_graph.json')
+
         with open(self.map_path, 'r') as f:
-            self.map_data = json.load(f)["graph"]
+            raw_data = json.load(f)
+            
+        self.map_data = {}
+        for node in raw_data.get("nodes", []):
+            self.map_data[node["id"]] = {
+                "x": node["x"],
+                "y": node["y"],
+                "edges": []
+            }
+            
+        for edge in raw_data.get("edges", []):
+            from_node = edge["from"]
+            to_node = edge["to"]
+            if from_node in self.map_data:
+                self.map_data[from_node]["edges"].append({"to_node": to_node})
             
         self.timer = self.create_timer(1.0, self.publish_markers) # Publish every 1 second
         self.get_logger().info("Graph Visualizer Active. Open RViz to see the map.")
