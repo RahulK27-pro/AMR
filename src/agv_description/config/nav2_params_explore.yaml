@@ -255,16 +255,31 @@ explore_node:
     costmap_topic: /global_costmap/costmap
     costmap_updates_topic: /global_costmap/costmap_updates
     visualize: true
-    # FORCE COMMITMENT: Replanning frequency drastically reduced to 0.05 (every 20s).
-    # This completely prevents explore_lite from constantly changing the goal 
-    # while the robot is trying to execute the path!
-    planner_frequency: 0.05
-    progress_timeout: 45.0       # Give it more time to reach goals
-    potential_scale: 3.0
+    # ---------------------------------------------------------------
+    # STEP 1 WALL-BIAS TUNING
+    # Cost = (potential_scale × distance) − (gain_scale × frontier_size)
+    #
+    # potential_scale: 1.0  — low distance penalty: robot will travel
+    #   further to reach a larger (wall-edge) frontier instead of lazily
+    #   picking the nearest small blob.
+    # gain_scale: 5.0       — strong size reward: long wall-edge frontiers
+    #   score far better than small interior noise clusters.
+    # min_frontier_size: 0.5 — filters out sub-50cm noise fragments so only
+    #   real wall boundaries are considered as goals.
+    # planner_frequency: 0.033 — 30s lock: robot must fully commit to
+    #   driving to its chosen wall frontier before reconsidering.
+    # ---------------------------------------------------------------
+    planner_frequency: 0.033
+    progress_timeout: 60.0
+    potential_scale: 1.0
     orientation_scale: 0.0
-    gain_scale: 1.0
+    gain_scale: 5.0
     transform_tolerance: 0.3
-    # DECREASED from 0.75 to 0.3. min_frontier_size is the frontier's edge length.
-    # 0.75m is too restrictive because a 48cm robot can fit through a 50cm gap.
-    # A large value causes explore_lite to ignore valid frontiers in narrow areas.
-    min_frontier_size: 0.3
+    min_frontier_size: 0.5
+    # Step 2: Wall-proximity bonus — reduces cost of frontiers near walls.
+    # Value 2.0 means a frontier fully surrounded by walls gets cost reduced
+    # by 2.0 on top of the gain_scale reward.
+    wall_bonus_scale: 2.0
+    # Step 2: Momentum bonus — reduces cost of frontiers in the robot's
+    # current heading direction, preventing U-turns.
+    momentum_scale: 1.5
