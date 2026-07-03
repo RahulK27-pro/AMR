@@ -46,7 +46,21 @@ class RouteRunner(Node):
                     "distance_m": cost
                 })
             
-        # State variables
+        # Fix Graph Connectivity: Ensure all edges are bidirectional!
+        for node_id, data in list(self.map_data.items()):
+            for edge in list(data["edges"]):
+                target_id = edge["to_node"]
+                weight = edge["distance_m"]
+                
+                if target_id in self.map_data:
+                    target_edges = self.map_data[target_id]["edges"]
+                    if not any(e["to_node"] == node_id for e in target_edges):
+                        target_edges.append({
+                            "to_node": node_id,
+                            "distance_m": weight
+                        })
+            
+
         self.state = "IDLE" # IDLE, PLANNING, NAVIGATING
         
         self.path_plan = []           
@@ -71,7 +85,7 @@ class RouteRunner(Node):
         # MPPI Noise covariance
         self.noise_v = 0.3
         self.noise_w = 0.5
-        self.lambda_weight = 1.0 # Temperature
+        self.lambda_weight = 0.1 # Temperature (lowered to allow sharper turns)
         
         # MPPI Cost Weights
         self.w_dist = 5.0
@@ -204,7 +218,7 @@ class RouteRunner(Node):
         distance_to_target = math.sqrt((target_x - self.current_x)**2 + (target_y - self.current_y)**2)
         
         # Check if reached node
-        if distance_to_target < 0.2:
+        if distance_to_target < 0.4:
             self.get_logger().info(f"Reached Waypoint: Node {active_node_id}")
             if self.current_target_index < len(self.path_plan) - 1:
                 self.current_target_index += 1
@@ -217,9 +231,9 @@ class RouteRunner(Node):
             
         # --- MPPI Controller ---
         # 1. Sample control sequences
-        # Baseline nominal control (random around zero)
-        v_seq = np.random.normal(0, self.noise_v, (self.num_samples, self.horizon))
-        w_seq = np.random.normal(0, self.noise_w, (self.num_samples, self.horizon))
+        # Baseline nominal control (forward momentum)
+        v_seq = np.random.normal(0.5, self.noise_v, (self.num_samples, self.horizon))
+        w_seq = np.random.normal(0.0, self.noise_w, (self.num_samples, self.horizon))
         
         # Clip to kinematic limits
         v_seq = np.clip(v_seq, self.v_min, self.v_max)
@@ -266,8 +280,9 @@ class RouteRunner(Node):
         beta = np.min(costs)
         weights = np.exp(-1.0 / self.lambda_weight * (costs - beta))
         
-        if np.sum(weights) < 1e-6:
-            self.get_logger().warn("MPPI: All paths lead to high cost (blocked). Stopping.")
+        # If the BEST path still incurs a collision penalty, we are blocked!
+        if beta >= self.w_collision:
+            self.get_logger().warn("MPPI: All paths lead to collision! Stopping.")
             optimal_v = 0.0
             optimal_w = 0.0
         else:
