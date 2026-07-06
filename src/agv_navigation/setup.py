@@ -27,7 +27,8 @@ setup(
             'tracer = agv_navigation.path_tracer:main',
             'map_builder = agv_navigation.map_builder:main',
             'route_runner = agv_navigation.route_runner:main',
-            'graph_visualizer = agv_navigation.graph_visualizer:main'
+            'graph_visualizer = agv_navigation.graph_visualizer:main',
+            'data_logger = agv_navigation.data_logger:main'
         ],
     },
 )

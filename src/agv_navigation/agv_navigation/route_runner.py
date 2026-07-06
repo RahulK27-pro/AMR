@@ -76,22 +76,22 @@ class RouteRunner(Node):
         
         # MPPI Parameters
         self.v_max = 1.0
-        self.v_min = 0.0
+        self.v_min = -0.5 # ALLOW REVERSING to escape walls!
         self.w_max = 1.5
         self.dt = 0.1 # 10 Hz
         self.horizon = 20 # 2.0s / 0.1s
         self.num_samples = 150
         
         # MPPI Noise covariance
-        self.noise_v = 0.3
-        self.noise_w = 0.5
+        self.noise_v = 0.4 # Increased noise to sample more diverse speeds
+        self.noise_w = 0.8 # Increased turning noise to find escape routes
         self.lambda_weight = 0.1 # Temperature (lowered to allow sharper turns)
         
         # MPPI Cost Weights
         self.w_dist = 5.0
         self.w_heading = 1.0
-        self.w_collision = 1000.0
-        self.collision_radius = 0.4 # meters
+        self.w_collision = 2000.0
+        self.collision_radius = 0.25 # Matched to robot_radius (0.15) + safety_margin (0.10)
         
         # Control timer
         self.control_timer = self.create_timer(self.dt, self.control_loop)
@@ -231,8 +231,8 @@ class RouteRunner(Node):
             
         # --- MPPI Controller ---
         # 1. Sample control sequences
-        # Baseline nominal control (forward momentum)
-        v_seq = np.random.normal(0.5, self.noise_v, (self.num_samples, self.horizon))
+        # Baseline nominal control (slight forward momentum, but allows reverse)
+        v_seq = np.random.normal(0.2, self.noise_v, (self.num_samples, self.horizon))
         w_seq = np.random.normal(0.0, self.noise_w, (self.num_samples, self.horizon))
         
         # Clip to kinematic limits
@@ -280,15 +280,9 @@ class RouteRunner(Node):
         beta = np.min(costs)
         weights = np.exp(-1.0 / self.lambda_weight * (costs - beta))
         
-        # If the BEST path still incurs a collision penalty, we are blocked!
-        if beta >= self.w_collision:
-            self.get_logger().warn("MPPI: All paths lead to collision! Stopping.")
-            optimal_v = 0.0
-            optimal_w = 0.0
-        else:
-            weights = weights / np.sum(weights)
-            optimal_v = np.sum(weights * v_seq[:, 0])
-            optimal_w = np.sum(weights * w_seq[:, 0])
+        weights = weights / np.sum(weights)
+        optimal_v = np.sum(weights * v_seq[:, 0])
+        optimal_w = np.sum(weights * w_seq[:, 0])
             
         # Execute
         twist = Twist()
