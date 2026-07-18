@@ -116,15 +116,10 @@ def extract_graph(map_yaml_path):
         x0, y0 = candidate_nodes[i]
         c0 = dist_transform[y0, x0] * resolution
         
-        # Determine local connection radius (1.5x local grid spacing)
-        if c0 > 2.0:
-            radius = 1.5 * 0.80
-        elif c0 >= 1.0:
-            radius = 1.5 * 0.50
-        else:
-            radius = 1.5 * 0.40
-            
-        radius_px = radius / resolution
+        # Global uniform search radius to prevent asymmetric edge breaks
+        # Set to 2.5m to natively find long line-of-sight connections, straightening zig-zags!
+        global_search_radius = 2.5 
+        radius_px = global_search_radius / resolution
         
         for j in range(i + 1, len(candidate_nodes)):
             x1, y1 = candidate_nodes[j]
@@ -206,15 +201,32 @@ def extract_graph(map_yaml_path):
             "py": py
         })
         
+    exported_edges = set()
+    
     for u, v, weight in edges:
         if u in valid_nodes and v in valid_nodes:
             new_u = old_to_new[u]
             new_v = old_to_new[v]
-            json_graph["edges"].append({
-                "from": f"N{new_u}",
-                "to": f"N{new_v}",
-                "cost": round(weight, 4)
-            })
+            
+            # Forward edge
+            edge_fwd = (f"N{new_u}", f"N{new_v}")
+            if edge_fwd not in exported_edges:
+                json_graph["edges"].append({
+                    "from": edge_fwd[0],
+                    "to": edge_fwd[1],
+                    "cost": round(weight, 4)
+                })
+                exported_edges.add(edge_fwd)
+                
+            # Reverse edge
+            edge_rev = (f"N{new_v}", f"N{new_u}")
+            if edge_rev not in exported_edges:
+                json_graph["edges"].append({
+                    "from": edge_rev[0],
+                    "to": edge_rev[1],
+                    "cost": round(weight, 4)
+                })
+                exported_edges.add(edge_rev)
         
     json_path = os.path.join(dir_name, "warehouse_graph.json")
     with open(json_path, 'w') as f:
