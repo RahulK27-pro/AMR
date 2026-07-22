@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import Twist, PoseStamped
 from sensor_msgs.msg import LaserScan
 import tf2_ros
@@ -15,7 +15,9 @@ class RouteRunner(Node):
     def __init__(self):
         super().__init__('route_runner')
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
+        self.path_pub = self.create_publisher(Path, '/agv_dense_path', 10)  # Publish dense path for RViz
+        # Use EKF-fused odometry (/odometry/filtered) to match Nav2 stack — consistent with AMCL
+        self.odom_sub = self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)
         self.goal_sub = self.create_subscription(PoseStamped, '/goal_pose', self.goal_callback, 10)
         self.goal_sub_alt = self.create_subscription(PoseStamped, '/goal', self.goal_callback, 10)
         self.goal_sub_mb = self.create_subscription(PoseStamped, '/move_base_simple/goal', self.goal_callback, 10)
@@ -72,8 +74,10 @@ class RouteRunner(Node):
 
         self.state = "IDLE" # IDLE, PLANNING, NAVIGATING
         
+        # path_plan stores dense (x, y) waypoints interpolated between Dijkstra nodes
         self.path_plan = []           
         self.current_target_index = 0
+        self.node_path = []  # The raw Dijkstra node sequence for logging
         
         self.current_x = 0.0
         self.current_y = 0.0
@@ -84,23 +88,25 @@ class RouteRunner(Node):
         self.obstacles = np.array([]) # Shape (N, 2)
         
         # MPPI Parameters
-        self.v_max = 1.0
-        self.v_min = -0.5 # ALLOW REVERSING to escape walls!
-        self.w_max = 1.5
+        self.v_max = 0.8
+        self.v_min = 0.0  # Forward-only: prevents backward oscillation near waypoints
+        self.w_max = 1.8  # INCREASED turning authority to quickly correct lateral drift
         self.dt = 0.1 # 10 Hz
-        self.horizon = 20 # 2.0s / 0.1s
-        self.num_samples = 150
+        self.horizon = 15  # Reduced from 20 to cut computation time
+        self.num_samples = 80  # Reduced from 150 to stay within 100ms control deadline
         
         # MPPI Noise covariance
-        self.noise_v = 0.4 # Increased noise to sample more diverse speeds
-        self.noise_w = 0.8 # Increased turning noise to find escape routes
-        self.lambda_weight = 0.1 # Temperature (lowered to allow sharper turns)
+        self.noise_v = 0.3
+        self.noise_w = 0.5
+        # lambda_weight: lower = sharper (collision-aware), higher = smoother but ignores obstacles
+        # 0.5 is a safe middle ground: smooth enough to avoid jitter, sharp enough to respect walls
+        self.lambda_weight = 0.5
         
         # MPPI Cost Weights
         self.w_dist = 5.0
         self.w_heading = 1.0
-        self.w_collision = 2000.0
-        self.collision_radius = 0.25 # Matched to robot_radius (0.15) + safety_margin (0.10)
+        self.w_collision = 5000.0  # Raised: make collision cost dominate trajectory selection
+        self.collision_radius = 0.30  # Slightly conservative clearance
         
         # Control timer
         self.control_timer = self.create_timer(self.dt, self.control_loop)
@@ -168,11 +174,16 @@ class RouteRunner(Node):
             self.odom_ready = True
             return True
         except TransformException:
-            # Fallback to /odom if map transform is not ready yet
+            # FIX: Reset using_map_tf so odom_callback resumes updating the pose
+            # This prevents the frozen-pose bug when AMCL TF temporarily drops
+            if self.using_map_tf:
+                self.get_logger().warn("AMCL TF lost! Falling back to /odometry/filtered.")
+                self.using_map_tf = False
             return self.odom_ready
 
     def odom_callback(self, msg):
-        # Update fallback odom pose if map TF is not active
+        # Update pose from /odometry/filtered (EKF-fused) when map TF is not active
+        # This matches the odometry source used by the rest of the Nav2 stack
         if not self.using_map_tf:
             self.current_x = msg.pose.pose.position.x
             self.current_y = msg.pose.pose.position.y
@@ -192,12 +203,16 @@ class RouteRunner(Node):
         if len(ranges) == 0:
             self.obstacles = np.array([])
             return
+
+        # Downsample LiDAR to every 3rd point — balances computation speed vs wall detection
+        # Every 5th was too sparse and caused walls to be missed entirely
+        ranges = ranges[::3]
+        angles = angles[::3]
             
-        # Convert to global frame
+        # Convert to global map frame
         ox_local = ranges * np.cos(angles)
         oy_local = ranges * np.sin(angles)
         
-        # Rotate and translate to global frame
         cos_yaw = np.cos(self.current_yaw)
         sin_yaw = np.sin(self.current_yaw)
         
@@ -205,6 +220,26 @@ class RouteRunner(Node):
         oy_global = self.current_y + ox_local * sin_yaw + oy_local * cos_yaw
         
         self.obstacles = np.column_stack((ox_global, oy_global))
+
+    def densify_path(self, node_path, step_m=0.30):
+        """Interpolate dense (x,y) waypoints every step_m meters between Dijkstra nodes."""
+        dense = []
+        for i in range(len(node_path)):
+            nx = self.map_data[node_path[i]]["x"]
+            ny = self.map_data[node_path[i]]["y"]
+            if i == 0:
+                dense.append((nx, ny))
+                continue
+            px = self.map_data[node_path[i-1]]["x"]
+            py = self.map_data[node_path[i-1]]["y"]
+            seg_len = math.sqrt((nx - px)**2 + (ny - py)**2)
+            num_steps = max(1, int(seg_len / step_m))
+            for k in range(1, num_steps + 1):
+                t = k / num_steps
+                ix = px + t * (nx - px)
+                iy = py + t * (ny - py)
+                dense.append((ix, iy))
+        return dense
 
     def goal_callback(self, msg):
         self.update_robot_pose()
@@ -223,38 +258,80 @@ class RouteRunner(Node):
         
         self.get_logger().info(f"Snapping to nodes: Start={start_node}, Target={target_node}")
         
-        self.path_plan = self.calculate_dijkstra(start_node, target_node)
+        self.node_path = self.calculate_dijkstra(start_node, target_node)
         
-        if not self.path_plan:
+        if not self.node_path:
             self.state = "IDLE"
             return
-            
-        self.get_logger().info(f"DIJKSTRA PATH FOUND: {self.path_plan}")
+        
+        # Densify: create a waypoint every 0.3m along the full node path
+        self.path_plan = self.densify_path(self.node_path, step_m=0.30)
+        
+        self.get_logger().info(
+            f"DIJKSTRA PATH: {self.node_path} → Densified to {len(self.path_plan)} waypoints"
+        )
         self.current_target_index = 1 if len(self.path_plan) > 1 else 0
         self.state = "NAVIGATING"
+
+        # Publish dense path so graph_visualizer can show it in RViz as a magenta line
+        ros_path = Path()
+        ros_path.header.frame_id = "map"
+        ros_path.header.stamp = self.get_clock().now().to_msg()
+        for (px, py) in self.path_plan:
+            pose = PoseStamped()
+            pose.header.frame_id = "map"
+            pose.pose.position.x = px
+            pose.pose.position.y = py
+            pose.pose.orientation.w = 1.0
+            ros_path.poses.append(pose)
+        self.path_pub.publish(ros_path)
         
+    def get_lookahead_target(self, lookahead_dist=1.0):
+        """Finds a target point on the path that is lookahead_dist away from the robot."""
+        # Find closest point on path starting from current_target_index
+        min_dist = float('inf')
+        closest_idx = self.current_target_index
+        # Only search a local window to avoid snapping to a different part of a looping path
+        search_window = min(len(self.path_plan), self.current_target_index + 20)
+        for i in range(self.current_target_index, search_window):
+            px, py = self.path_plan[i]
+            dist = math.sqrt((px - self.current_x)**2 + (py - self.current_y)**2)
+            if dist < min_dist:
+                min_dist = dist
+                closest_idx = i
+                
+        self.current_target_index = closest_idx
+        
+        # Search forward to find the point lookahead_dist away
+        target_idx = closest_idx
+        for i in range(closest_idx, len(self.path_plan)):
+            px, py = self.path_plan[i]
+            dist = math.sqrt((px - self.current_x)**2 + (py - self.current_y)**2)
+            if dist >= lookahead_dist:
+                target_idx = i
+                break
+        else:
+            target_idx = len(self.path_plan) - 1
+            
+        return self.path_plan[target_idx], target_idx
+
     def control_loop(self):
         self.update_robot_pose()
         if self.state != "NAVIGATING":
             return
-            
-        active_node_id = self.path_plan[self.current_target_index]
-        target_x = self.map_data[active_node_id]["x"]
-        target_y = self.map_data[active_node_id]["y"]
         
-        distance_to_target = math.sqrt((target_x - self.current_x)**2 + (target_y - self.current_y)**2)
+        # Check if we have reached the FINAL destination
+        final_x, final_y = self.path_plan[-1]
+        dist_to_final = math.sqrt((final_x - self.current_x)**2 + (final_y - self.current_y)**2)
         
-        # Check if reached node
-        if distance_to_target < 0.4:
-            self.get_logger().info(f"Reached Waypoint: Node {active_node_id}")
-            if self.current_target_index < len(self.path_plan) - 1:
-                self.current_target_index += 1
-            else:
-                self.get_logger().info("FINAL DESTINATION REACHED! Mission Complete.")
-                twist = Twist()
-                self.cmd_pub.publish(twist)
-                self.state = "IDLE"
+        if dist_to_final < 0.30:
+            self.get_logger().info("FINAL DESTINATION REACHED! Mission Complete.")
+            self.cmd_pub.publish(Twist())
+            self.state = "IDLE"
             return
+            
+        # Get dynamic lookahead target (1.2 meters ahead) so MPPI horizon doesn't overshoot it
+        (target_x, target_y), target_idx = self.get_lookahead_target(lookahead_dist=1.2)
             
         # --- MPPI Controller ---
         # 1. Sample control sequences
@@ -289,6 +366,26 @@ class RouteRunner(Node):
         angle_errors = target_angles - yaw_rollout[:, -1]
         angle_errors = np.arctan2(np.sin(angle_errors), np.cos(angle_errors))
         costs += self.w_heading * np.abs(angle_errors)
+        
+        # Cross-Track Error Penalty (Strict Path Tracking)
+        # 1. Get local path segment (from current index to target index + 1)
+        local_path = np.array(self.path_plan[self.current_target_index : target_idx + 2])
+        if len(local_path) > 0:
+            # 2. Shape rollout points for broadcasting: (num_samples, horizon, 1, 2)
+            rollout_pts = np.stack((x_rollout, y_rollout), axis=-1)[:, :, np.newaxis, :]
+            
+            # 3. Shape path points: (1, 1, N, 2)
+            path_pts = local_path[np.newaxis, np.newaxis, :, :]
+            
+            # 4. Calculate distances to all path points: (num_samples, horizon, N)
+            dists = np.linalg.norm(rollout_pts - path_pts, axis=-1)
+            
+            # 5. Find distance to the closest path point for each rollout step: (num_samples, horizon)
+            min_dists = np.min(dists, axis=-1)
+            
+            # 6. Sum the errors over the horizon and add to total cost
+            w_cross_track = 15.0  # Strong penalty for lateral deviation
+            costs += w_cross_track * np.sum(min_dists, axis=-1)
         
         # Collision cost
         if len(self.obstacles) > 0:
