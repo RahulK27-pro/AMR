@@ -35,10 +35,12 @@ def generate_launch_description():
     pkg_agv  = get_package_share_directory('agv_description')
     pkg_nav2 = get_package_share_directory('nav2_bringup')
 
-    # ── Default map path (saved after exploration) ────────────────────
-    default_map = os.path.join(
-        os.path.expanduser('~'), 'agv_ws', 'maps', 'warehouse_map.yaml'
-    )
+    # ── Default map path ──────────────────────────────────────────────
+    default_map = os.path.join(pkg_agv, 'maps', 'warehouse_map.yaml')
+    if not os.path.exists(default_map):
+        default_map = os.path.join(
+            os.path.expanduser('~'), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps', 'warehouse_map.yaml'
+        )
 
     # ── Config files ──────────────────────────────────────────────────
     nav2_params_file = os.path.join(pkg_agv, 'config', 'nav2_params.yaml')
@@ -72,12 +74,12 @@ def generate_launch_description():
                     os.path.join(pkg_nav2, 'launch', 'bringup_launch.py')
                 ),
                 launch_arguments={
-                    'use_sim_time': 'true',
+                    'use_sim_time': 'True',
                     'params_file':  nav2_params_file,
                     'map':          LaunchConfiguration('map'),
-                    'use_lifecycle_mgr': 'true',
-                    'autostart': 'true',
-                    'slam': 'false',
+                    'use_lifecycle_mgr': 'True',
+                    'autostart': 'True',
+                    'slam': 'False',
                 }.items()
             )
         ]

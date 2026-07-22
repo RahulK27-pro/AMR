@@ -3,6 +3,8 @@ from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist, PoseStamped
 from sensor_msgs.msg import LaserScan
+import tf2_ros
+from tf2_ros import Buffer, TransformListener, TransformException
 import math
 import json
 import os
@@ -16,6 +18,11 @@ class RouteRunner(Node):
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
         self.goal_sub = self.create_subscription(PoseStamped, '/goal_pose', self.goal_callback, 10)
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
+        
+        # TF Buffer and Listener for AMCL / SLAM localization (map -> base_link)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.using_map_tf = False
         
         # Load the map
         # Path updated to point to the new warehouse map in agv_description
@@ -147,15 +154,31 @@ class RouteRunner(Node):
             return []
         return path
 
+    def update_robot_pose(self):
+        try:
+            t = self.tf_buffer.lookup_transform('map', 'base_link', rclpy.time.Time())
+            self.current_x = t.transform.translation.x
+            self.current_y = t.transform.translation.y
+            self.current_yaw = self.get_yaw_from_quaternion(t.transform.rotation)
+            if not self.using_map_tf:
+                self.get_logger().info("Localization Active! Received map -> base_link TF transform.")
+                self.using_map_tf = True
+            self.odom_ready = True
+            return True
+        except TransformException:
+            # Fallback to /odom if map transform is not ready yet
+            return self.odom_ready
+
     def odom_callback(self, msg):
-        self.current_x = msg.pose.pose.position.x
-        self.current_y = msg.pose.pose.position.y
-        self.current_yaw = self.get_yaw_from_quaternion(msg.pose.pose.orientation)
-        self.odom_ready = True
+        # Update fallback odom pose if map TF is not active
+        if not self.using_map_tf:
+            self.current_x = msg.pose.pose.position.x
+            self.current_y = msg.pose.pose.position.y
+            self.current_yaw = self.get_yaw_from_quaternion(msg.pose.pose.orientation)
+            self.odom_ready = True
         
     def scan_callback(self, msg):
-        # Convert LaserScan to 2D Cartesian points in base_link frame, then to odom frame
-        # For simplicity, assuming scan is in base_link frame
+        self.update_robot_pose()
         ranges = np.array(msg.ranges)
         angles = msg.angle_min + np.arange(len(ranges)) * msg.angle_increment
         
@@ -182,8 +205,9 @@ class RouteRunner(Node):
         self.obstacles = np.column_stack((ox_global, oy_global))
 
     def goal_callback(self, msg):
+        self.update_robot_pose()
         if not self.odom_ready:
-            self.get_logger().warn("Waiting for Odometry before accepting goals.")
+            self.get_logger().warn("Waiting for localization/odometry before accepting goals.")
             return
             
         goal_x = msg.pose.position.x
@@ -208,6 +232,7 @@ class RouteRunner(Node):
         self.state = "NAVIGATING"
         
     def control_loop(self):
+        self.update_robot_pose()
         if self.state != "NAVIGATING":
             return
             

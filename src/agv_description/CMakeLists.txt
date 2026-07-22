@@ -29,6 +29,7 @@ install(DIRECTORY
   worlds
   config
   scripts
+  maps
   DESTINATION share/${PROJECT_NAME}
 )
 
