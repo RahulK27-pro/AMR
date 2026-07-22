@@ -45,7 +45,7 @@ class GraphVisualizer(Node):
         for node_id, data in self.map_data.items():
             # 1. Draw the Node (A glowing yellow sphere)
             node_marker = Marker()
-            node_marker.header.frame_id = "odom"
+            node_marker.header.frame_id = "map"
             node_marker.header.stamp = self.get_clock().now().to_msg()
             node_marker.ns = "nodes"
             node_marker.id = marker_id
@@ -66,7 +66,7 @@ class GraphVisualizer(Node):
 
             # 2. Draw the ID text above the sphere
             text_marker = Marker()
-            text_marker.header.frame_id = "odom"
+            text_marker.header.frame_id = "map"
             text_marker.header.stamp = self.get_clock().now().to_msg()
             text_marker.ns = "labels"
             text_marker.id = marker_id
@@ -89,7 +89,7 @@ class GraphVisualizer(Node):
                 target_id = edge["to_node"]
                 if target_id in self.map_data:
                     line_marker = Marker()
-                    line_marker.header.frame_id = "odom"
+                    line_marker.header.frame_id = "map"
                     line_marker.header.stamp = self.get_clock().now().to_msg()
                     line_marker.ns = "edges"
                     line_marker.id = marker_id

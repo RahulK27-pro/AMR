@@ -17,6 +17,8 @@ class RouteRunner(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
         self.goal_sub = self.create_subscription(PoseStamped, '/goal_pose', self.goal_callback, 10)
+        self.goal_sub_alt = self.create_subscription(PoseStamped, '/goal', self.goal_callback, 10)
+        self.goal_sub_mb = self.create_subscription(PoseStamped, '/move_base_simple/goal', self.goal_callback, 10)
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
         
         # TF Buffer and Listener for AMCL / SLAM localization (map -> base_link)
