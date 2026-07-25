@@ -3,6 +3,7 @@ build/
 install/
 log/
 .colcon/
+circling_bug_bag/
 
 # Windows Zone Identifier metadata files
 *:Zone.Identifier
