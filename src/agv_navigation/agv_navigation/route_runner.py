@@ -222,23 +222,34 @@ class RouteRunner(Node):
         self.obstacles = np.column_stack((ox_global, oy_global))
 
     def densify_path(self, node_path, step_m=0.30):
-        """Interpolate dense (x,y) waypoints every step_m meters between Dijkstra nodes."""
+        """Interpolate dense (x, y, theta) waypoints every step_m meters.
+        theta is the path tangent direction — the direction the robot should
+        be facing when it passes through this point."""
         dense = []
         for i in range(len(node_path)):
             nx = self.map_data[node_path[i]]["x"]
             ny = self.map_data[node_path[i]]["y"]
             if i == 0:
-                dense.append((nx, ny))
+                # For the first node, theta points toward the second node
+                if len(node_path) > 1:
+                    nx2 = self.map_data[node_path[1]]["x"]
+                    ny2 = self.map_data[node_path[1]]["y"]
+                    theta0 = math.atan2(ny2 - ny, nx2 - nx)
+                else:
+                    theta0 = self.current_yaw
+                dense.append((nx, ny, theta0))
                 continue
             px = self.map_data[node_path[i-1]]["x"]
             py = self.map_data[node_path[i-1]]["y"]
+            # Segment heading = direction from prev node to this node
+            seg_theta = math.atan2(ny - py, nx - px)
             seg_len = math.sqrt((nx - px)**2 + (ny - py)**2)
             num_steps = max(1, int(seg_len / step_m))
             for k in range(1, num_steps + 1):
                 t = k / num_steps
                 ix = px + t * (nx - px)
                 iy = py + t * (ny - py)
-                dense.append((ix, iy))
+                dense.append((ix, iy, seg_theta))
         return dense
 
     def goal_callback(self, msg):
@@ -277,12 +288,14 @@ class RouteRunner(Node):
         ros_path = Path()
         ros_path.header.frame_id = "map"
         ros_path.header.stamp = self.get_clock().now().to_msg()
-        for (px, py) in self.path_plan:
+        for (px, py, ptheta) in self.path_plan:
             pose = PoseStamped()
             pose.header.frame_id = "map"
             pose.pose.position.x = px
             pose.pose.position.y = py
-            pose.pose.orientation.w = 1.0
+            # Convert theta to quaternion (rotation around Z)
+            pose.pose.orientation.z = math.sin(ptheta / 2.0)
+            pose.pose.orientation.w = math.cos(ptheta / 2.0)
             ros_path.poses.append(pose)
         self.path_pub.publish(ros_path)
         
@@ -294,7 +307,7 @@ class RouteRunner(Node):
         # Only search a local window to avoid snapping to a different part of a looping path
         search_window = min(len(self.path_plan), self.current_target_index + 20)
         for i in range(self.current_target_index, search_window):
-            px, py = self.path_plan[i]
+            px, py, _ = self.path_plan[i]
             dist = math.sqrt((px - self.current_x)**2 + (py - self.current_y)**2)
             if dist < min_dist:
                 min_dist = dist
@@ -305,7 +318,7 @@ class RouteRunner(Node):
         # Search forward to find the point lookahead_dist away
         target_idx = closest_idx
         for i in range(closest_idx, len(self.path_plan)):
-            px, py = self.path_plan[i]
+            px, py, _ = self.path_plan[i]
             dist = math.sqrt((px - self.current_x)**2 + (py - self.current_y)**2)
             if dist >= lookahead_dist:
                 target_idx = i
@@ -321,7 +334,7 @@ class RouteRunner(Node):
             return
         
         # Check if we have reached the FINAL destination
-        final_x, final_y = self.path_plan[-1]
+        final_x, final_y, _ = self.path_plan[-1]
         dist_to_final = math.sqrt((final_x - self.current_x)**2 + (final_y - self.current_y)**2)
         
         if dist_to_final < 0.30:
@@ -331,7 +344,7 @@ class RouteRunner(Node):
             return
             
         # Get dynamic lookahead target (1.2 meters ahead) so MPPI horizon doesn't overshoot it
-        (target_x, target_y), target_idx = self.get_lookahead_target(lookahead_dist=1.2)
+        (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=1.2)
             
         # --- MPPI Controller ---
         # 1. Sample control sequences
@@ -361,15 +374,15 @@ class RouteRunner(Node):
         terminal_dists = np.sqrt((x_rollout[:, -1] - target_x)**2 + (y_rollout[:, -1] - target_y)**2)
         costs += self.w_dist * terminal_dists
         
-        # Heading cost towards target
-        target_angles = np.arctan2(target_y - y_rollout[:, -1], target_x - x_rollout[:, -1])
-        angle_errors = target_angles - yaw_rollout[:, -1]
+        # Heading cost towards target: use path tangent theta stored in waypoint, not point-to-point angle
+        angle_errors = target_theta - yaw_rollout[:, -1]
         angle_errors = np.arctan2(np.sin(angle_errors), np.cos(angle_errors))
         costs += self.w_heading * np.abs(angle_errors)
         
         # Cross-Track Error Penalty (Strict Path Tracking)
         # 1. Get local path segment (from current index to target index + 1)
-        local_path = np.array(self.path_plan[self.current_target_index : target_idx + 2])
+        local_path_full = self.path_plan[self.current_target_index : target_idx + 2]
+        local_path = np.array([(p[0], p[1]) for p in local_path_full])
         if len(local_path) > 0:
             # 2. Shape rollout points for broadcasting: (num_samples, horizon, 1, 2)
             rollout_pts = np.stack((x_rollout, y_rollout), axis=-1)[:, :, np.newaxis, :]
