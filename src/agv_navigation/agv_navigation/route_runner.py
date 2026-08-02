@@ -103,8 +103,8 @@ class RouteRunner(Node):
         self.lambda_weight = 0.5
         
         # MPPI Cost Weights
-        self.w_dist = 5.0
-        self.w_heading = 1.0
+        self.w_dist = 4.0
+        self.w_heading = 3.0
         self.w_collision = 5000.0  # Raised: make collision cost dominate trajectory selection
         self.collision_radius = 0.30  # Slightly conservative clearance
         
@@ -313,7 +313,7 @@ class RouteRunner(Node):
                 min_dist = dist
                 closest_idx = i
                 
-        self.current_target_index = closest_idx
+        self.current_target_index = max(self.current_target_index, closest_idx)
         
         # Search forward to find the point lookahead_dist away
         target_idx = closest_idx
@@ -397,7 +397,7 @@ class RouteRunner(Node):
             min_dists = np.min(dists, axis=-1)
             
             # 6. Sum the errors over the horizon and add to total cost
-            w_cross_track = 15.0  # Strong penalty for lateral deviation
+            w_cross_track = 6.0  # Penalty for lateral deviation
             costs += w_cross_track * np.sum(min_dists, axis=-1)
         
         # Collision cost
