@@ -1,12 +1,12 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, RegisterEventHandler, TimerAction
-from launch.event_handlers import OnProcessStart
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
 
-def generate_launch_description():
+def launch_setup(context, *args, **kwargs):
+    headless = LaunchConfiguration('headless').perform(context)
     pkg_path = get_package_share_directory('agv_description')
     urdf_file = os.path.join(pkg_path, 'urdf', 'warehouse_agv.urdf')
     world_file = os.path.join(pkg_path, 'worlds', 'warehouse.world')
@@ -16,24 +16,23 @@ def generate_launch_description():
     with open(urdf_file, 'r') as infp:
         robot_desc = infp.read()
 
-    # Launch arguments
-    headless_arg = DeclareLaunchArgument(
-        'headless', default_value='false',
-        description='Run Gazebo simulation headlessly (without GUI)'
-    )
+    gz_cmd = ['gz', 'sim']
+    if headless.lower() in ('true', '1'):
+        gz_cmd.append('-s')
+    gz_cmd.extend(['-r', '-v', '2', world_file])
 
-    # 1. Gazebo Harmonic
-    # We use PythonExpression to conditionally append '-s' (server-only) if headless is true
+    # WSL2 requires software rendering via llvmpipe since there is no /dev/dri
+    # OGRE2 in hardware mode causes [WARN:COPY MODE] and window crashes under WSL2
     gazebo = ExecuteProcess(
-        cmd=[
-            'gz', 'sim',
-            PythonExpression(["'-s' if '", LaunchConfiguration('headless'), "' == 'true' else ''"]),
-            '-r', '-v', '2', world_file
-        ],
+        cmd=gz_cmd,
+        additional_env={
+            'LIBGL_ALWAYS_SOFTWARE': '1',
+            'GALLIUM_DRIVER': 'llvmpipe',
+            'MESA_GL_VERSION_OVERRIDE': '4.5',
+        },
         output='screen'
     )
 
-    # 2. Bridge
     bridge_node = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -41,7 +40,6 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 3. Robot State Publisher
     rsp = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -49,7 +47,6 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 4. EKF Node (Robot Localization)
     ekf_node = Node(
         package='robot_localization',
         executable='ekf_node',
@@ -58,7 +55,6 @@ def generate_launch_description():
         parameters=[ekf_file, {'use_sim_time': True}]
     )
 
-    # 5. Spawn Entity
     spawn = Node(
         package='ros_gz_sim',
         executable='create',
@@ -70,11 +66,23 @@ def generate_launch_description():
         output='screen'
     )
 
-    return LaunchDescription([
-        headless_arg,
+    return [
         gazebo,
         bridge_node,
         rsp,
         ekf_node,
         spawn
+    ]
+
+def generate_launch_description():
+    headless_arg = DeclareLaunchArgument(
+        'headless', default_value='false',
+        description='Run Gazebo simulation headlessly (without GUI)'
+    )
+
+    return LaunchDescription([
+        headless_arg,
+        OpaqueFunction(function=launch_setup)
     ])
+
+
