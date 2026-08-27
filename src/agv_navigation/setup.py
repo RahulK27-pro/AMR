@@ -24,11 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'tracer = agv_navigation.path_tracer:main',
-            # 'map_builder = agv_navigation.map_builder:main',  # RETIRED — superseded by graph_extractor
             'route_runner = agv_navigation.route_runner:main',
             'graph_visualizer = agv_navigation.graph_visualizer:main',
-            'data_logger = agv_navigation.data_logger:main'
         ],
     },
 )
