@@ -26,7 +26,7 @@ A fully simulated **Autonomous Mobile Robot (AMR)** for warehouse navigation, bu
 | Total mass | ~15 kg |
 | Drive type | Differential drive (2 driven wheels + 2 caster wheels) |
 | Wheel radius | 0.05 m |
-| Wheel separation | 0.30 m |
+| Wheel separation | 0.34 m |
 | Sensors | 2D LiDAR (`/scan`), IMU (`/imu/data`), Camera (`/camera/image_raw`) |
 | Max linear velocity | 0.8 m/s |
 | Max angular velocity | 1.8 rad/s |

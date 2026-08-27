@@ -15,8 +15,8 @@ setup(
     zip_safe=True,
     maintainer='usernamerahul',
     maintainer_email='usernamerahul@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Topological navigation with Dijkstra planner and custom MPPI controller for warehouse AGV',
+    license='MIT',
     extras_require={
         'test': [
             'pytest',
@@ -26,6 +26,8 @@ setup(
         'console_scripts': [
             'route_runner = agv_navigation.route_runner:main',
             'graph_visualizer = agv_navigation.graph_visualizer:main',
+            'dynamic_obstacle_manager = agv_navigation.dynamic_obstacle_manager:main',
+            'obstacle_teleop = agv_navigation.obstacle_teleop:main',
         ],
     },
 )

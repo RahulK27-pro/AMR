@@ -30,6 +30,7 @@ install(DIRECTORY
   config
   scripts
   maps
+  models
   DESTINATION share/${PROJECT_NAME}
 )
 

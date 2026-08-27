@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from ament_index_python.packages import get_package_share_directory
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Path
@@ -16,10 +17,12 @@ class GraphVisualizer(Node):
         self.path_sub = self.create_subscription(Path, '/agv_dense_path', self.path_callback, 10)
         self.active_path_points = []  # list of (x, y)
 
-        # Load the graph
-        self.map_path = os.path.join(os.environ['HOME'], 'AMR', 'AMR-main', 'src', 'agv_description', 'maps', 'warehouse_graph.json')
-        if not os.path.exists(self.map_path):
-            self.map_path = os.path.join(os.environ['HOME'], 'agv_ws', 'src', 'agv_description', 'maps', 'warehouse_graph.json')
+        # Load the graph — use installed share path (portable)
+        try:
+            pkg_share = get_package_share_directory('agv_description')
+            self.map_path = os.path.join(pkg_share, 'maps', 'warehouse_graph.json')
+        except Exception:
+            self.map_path = os.path.join(os.environ['HOME'], 'AMR', 'AMR-main', 'src', 'agv_description', 'maps', 'warehouse_graph.json')
 
         with open(self.map_path, 'r') as f:
             raw_data = json.load(f)
@@ -38,6 +41,7 @@ class GraphVisualizer(Node):
             if from_node in self.map_data:
                 self.map_data[from_node]["edges"].append({"to_node": to_node})
 
+        self.prev_marker_count = 0  # Track marker count for cleanup
         self.timer = self.create_timer(0.5, self.publish_markers)
         self.get_logger().info("Graph Visualizer Active. Open RViz and subscribe to /agv_graph_markers.")
 
@@ -49,6 +53,12 @@ class GraphVisualizer(Node):
         marker_array = MarkerArray()
         marker_id = 0
         stamp = self.get_clock().now().to_msg()
+
+        # Delete all stale markers from previous publish to prevent ghosts
+        delete_all = Marker()
+        delete_all.action = Marker.DELETEALL
+        marker_array.markers.append(delete_all)
+        marker_id += 1
 
         for node_id, data in self.map_data.items():
             # 1. Node sphere (yellow)

@@ -15,8 +15,8 @@ setup(
     zip_safe=True,
     maintainer='usernamerahul',
     maintainer_email='usernamerahul@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Camera-based obstacle detection for warehouse AGV using HSV color thresholding',
+    license='MIT',
     extras_require={
         'test': [
             'pytest',

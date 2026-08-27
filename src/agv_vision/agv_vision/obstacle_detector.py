@@ -5,6 +5,7 @@ from geometry_msgs.msg import Point
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
+import os
 
 class ObstacleDetector(Node):
     def __init__(self):
@@ -16,6 +17,14 @@ class ObstacleDetector(Node):
         self.alert_pub = self.create_publisher(Point, '/obstacle_alert', 10)
         
         self.bridge = CvBridge()
+
+        # GUI display — auto-detect if a display server is available (X11/Wayland)
+        self.declare_parameter('show_gui', True)
+        self.show_gui = self.get_parameter('show_gui').get_parameter_value().bool_value
+        if self.show_gui and not os.environ.get('DISPLAY'):
+            self.get_logger().warn("No DISPLAY environment variable set. Disabling GUI window.")
+            self.show_gui = False
+
         self.get_logger().info("Edge-AI Vision Node Active. Scanning for Obstacles...")
 
     def image_callback(self, msg):
@@ -24,11 +33,22 @@ class ObstacleDetector(Node):
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             height, width, _ = cv_image.shape
             
-            # --- MVP YOLO: Color Detection (Looking for a Red Box) ---
+            # --- Color Detection for Red Obstacles ---
+            # Red wraps around the HSV hue wheel, so we need TWO ranges
             hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
-            lower_red = np.array([0, 120, 70])
-            upper_red = np.array([10, 255, 255])
-            mask = cv2.inRange(hsv, lower_red, upper_red)
+
+            # Range 1: low red hues (H: 0-10)
+            lower_red1 = np.array([0, 120, 70])
+            upper_red1 = np.array([10, 255, 255])
+            mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+
+            # Range 2: high red hues (H: 170-180) — the wraparound
+            lower_red2 = np.array([170, 120, 70])
+            upper_red2 = np.array([180, 255, 255])
+            mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+
+            # Combine both ranges
+            mask = mask1 | mask2
             
             # Find the obstacle's bounding box
             contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -61,9 +81,10 @@ class ObstacleDetector(Node):
 
             self.alert_pub.publish(alert_msg)
             
-            # Show the Dashcam View
-            cv2.imshow("AGV Dashcam - AI Vision", cv_image)
-            cv2.waitKey(1)
+            # Show the Dashcam View (only if display is available)
+            if self.show_gui:
+                cv2.imshow("AGV Dashcam - AI Vision", cv_image)
+                cv2.waitKey(1)
             
         except Exception as e:
             self.get_logger().error(f"Vision Error: {e}")
@@ -71,9 +92,14 @@ class ObstacleDetector(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = ObstacleDetector()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
