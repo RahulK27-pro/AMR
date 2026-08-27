@@ -33,7 +33,7 @@ def generate_launch_description():
 
     # ── Package paths ─────────────────────────────────────────────────
     pkg_agv  = get_package_share_directory('agv_description')
-    pkg_nav2 = get_package_share_directory('nav2_bringup')
+    # pkg_nav2 removed — no longer using bringup_launch.py (caused dual /cmd_vel conflict)
 
     # ── Default map path ──────────────────────────────────────────────
     default_map = os.path.join(pkg_agv, 'maps', 'warehouse_map.yaml')
@@ -65,23 +65,48 @@ def generate_launch_description():
         )
     )
 
-    # ── 2. Nav2 Bringup with AMCL + saved map ─────────────────────────
-    nav2_launch = TimerAction(
+    # ── 2. Localization only: map_server + AMCL + lifecycle_manager ────
+    #
+    # controller_server (DWB) is intentionally NOT started here.
+    # route_runner.py's custom MPPI is the sole owner of /cmd_vel.
+    # Running DWB alongside route_runner causes interleaved conflicting
+    # velocity commands (30 Hz total) — the primary circling bug source.
+    localization_launch = TimerAction(
         period=5.0,
         actions=[
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(pkg_nav2, 'launch', 'bringup_launch.py')
-                ),
-                launch_arguments={
-                    'use_sim_time': 'True',
-                    'params_file':  nav2_params_file,
-                    'map':          LaunchConfiguration('map'),
-                    'use_lifecycle_mgr': 'True',
-                    'autostart': 'True',
-                    'slam': 'False',
-                }.items()
-            )
+            Node(
+                package='nav2_map_server',
+                executable='map_server',
+                name='map_server',
+                parameters=[
+                    nav2_params_file,
+                    {
+                        'yaml_filename': LaunchConfiguration('map'),
+                        'use_sim_time': True,
+                    },
+                ],
+                output='screen',
+            ),
+            Node(
+                package='nav2_amcl',
+                executable='amcl',
+                name='amcl',
+                parameters=[nav2_params_file, {'use_sim_time': True}],
+                remappings=[('/initialpose', '/initialpose')],
+                output='screen',
+            ),
+            Node(
+                package='nav2_lifecycle_manager',
+                executable='lifecycle_manager',
+                name='lifecycle_manager_localization',
+                parameters=[{
+                    'use_sim_time': True,
+                    'autostart': True,
+                    'node_names': ['map_server', 'amcl'],
+                    'bond_timeout': 20.0,
+                }],
+                output='screen',
+            ),
         ]
     )
 
@@ -105,6 +130,6 @@ def generate_launch_description():
         map_arg,
         use_rviz_arg,
         gazebo_launch,
-        nav2_launch,
+        localization_launch,   # map_server + amcl only (no DWB — MPPI owns /cmd_vel)
         rviz_node,
     ])

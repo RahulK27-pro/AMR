@@ -250,6 +250,15 @@ class RouteRunner(Node):
                 ix = px + t * (nx - px)
                 iy = py + t * (ny - py)
                 dense.append((ix, iy, seg_theta))
+        # Post-process: smooth theta by pointing each waypoint toward the next dense point.
+        # This eliminates the instantaneous 90° theta jump that occurs at path corners:
+        # without this, the last East waypoint has theta=0° and the next (first North
+        # waypoint) has theta=90° — a single-step spike that drives MPPI to spin.
+        for i in range(len(dense) - 1):
+            x1, y1, _ = dense[i]
+            x2, y2, _ = dense[i + 1]
+            dense[i] = (x1, y1, math.atan2(y2 - y1, x2 - x1))
+        # Last waypoint keeps its segment theta (path tangent at goal)
         return dense
 
     def goal_callback(self, msg):
@@ -315,13 +324,17 @@ class RouteRunner(Node):
                 
         self.current_target_index = max(self.current_target_index, closest_idx)
         
-        # Search forward to find the point lookahead_dist away
+        # Search forward using arc-length along the path curve — NOT Euclidean distance.
+        # Euclidean lookup fails at corners: the robot at corner B is 2m Euclidean from
+        # start A but only 1.2m arc-length into the path — the old code snapped back to A.
+        arc_length = 0.0
         target_idx = closest_idx
-        for i in range(closest_idx, len(self.path_plan)):
-            px, py, _ = self.path_plan[i]
-            dist = math.sqrt((px - self.current_x)**2 + (py - self.current_y)**2)
-            if dist >= lookahead_dist:
-                target_idx = i
+        for i in range(closest_idx, len(self.path_plan) - 1):
+            x1, y1, _ = self.path_plan[i]
+            x2, y2, _ = self.path_plan[i + 1]
+            arc_length += math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+            if arc_length >= lookahead_dist:
+                target_idx = i + 1
                 break
         else:
             target_idx = len(self.path_plan) - 1
@@ -374,10 +387,17 @@ class RouteRunner(Node):
         terminal_dists = np.sqrt((x_rollout[:, -1] - target_x)**2 + (y_rollout[:, -1] - target_y)**2)
         costs += self.w_dist * terminal_dists
         
-        # Heading cost towards target: use path tangent theta stored in waypoint, not point-to-point angle
-        angle_errors = target_theta - yaw_rollout[:, -1]
-        angle_errors = np.arctan2(np.sin(angle_errors), np.cos(angle_errors))
-        costs += self.w_heading * np.abs(angle_errors)
+        # Heading cost across ALL horizon steps — not just the terminal step.
+        # Previous bug: terminal-only heading gave effective CTE:Heading ratio of ~6:1
+        # (CTE summed over 15 steps vs heading checked once). MPPI ignored heading at
+        # corners, overshot, then spun back — the circling loop.
+        # Fix: distribute w_heading evenly per step to match the CTE cost structure.
+        for t in range(self.horizon):
+            h_err = np.arctan2(
+                np.sin(target_theta - yaw_rollout[:, t]),
+                np.cos(target_theta - yaw_rollout[:, t])
+            )
+            costs += (self.w_heading / self.horizon) * np.abs(h_err)
         
         # Cross-Track Error Penalty (Strict Path Tracking)
         # 1. Get local path segment (from current index to target index + 1)

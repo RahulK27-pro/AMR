@@ -204,7 +204,7 @@ global_costmap:
 map_server:
   ros__parameters:
     use_sim_time: true
-    yaml_filename: ""
+    yaml_filename: "/home/rahul/AMR/AMR-main/src/agv_description/maps/warehouse_map.yaml"
 
 map_saver:
   ros__parameters:
@@ -320,9 +320,5 @@ collision_monitor:
       max_height: 2.0
       enabled: true
 
-# Disable docking server — not used in this project
-docking_server:
-  ros__parameters:
-    use_sim_time: true
-    dock_plugins: [""]
-    dock_database: ""
+# docking_server intentionally omitted — not used in this project.
+# dock_plugins: [""] (empty string in list) crashes the Nav2 lifecycle manager.

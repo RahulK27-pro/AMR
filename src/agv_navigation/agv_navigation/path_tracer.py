@@ -13,7 +13,7 @@ class PathTracerNode(Node):
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
         
         # Subscribe to IMU (Inner Ear)
-        self.imu_sub = self.create_subscription(Imu, '/imu', self.imu_callback, 10)
+        self.imu_sub = self.create_subscription(Imu, '/imu/data', self.imu_callback, 10)
         
         # Publisher for the continuous path trail
         self.path_pub = self.create_publisher(Path, '/agv_path', 10)
