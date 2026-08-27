@@ -1,168 +1,371 @@
-# Autonomous Mobile Robot (AMR) Workspace
+# Warehouse AGV — Autonomous Mobile Robot
 
-Welcome to the **Autonomous Mobile Robot (AMR)** development workspace. This project contains a simulated Automated Guided Vehicle (AGV) designed for autonomous mapping, navigation, and frontier exploration in a warehouse environment.
+A fully simulated **Autonomous Mobile Robot (AMR)** for warehouse navigation, built on **ROS 2 Jazzy Jalisco** and **Gazebo Harmonic**. The system performs two distinct phases: autonomous SLAM mapping of the warehouse, followed by production navigation using a custom **Dijkstra + MPPI** controller.
 
-The codebase is fully migrated to run on **Ubuntu 24.04** using **ROS 2 Jazzy Jalisco** and **Gazebo Harmonic**.
+> **Platform:** Ubuntu 24.04 · ROS 2 Jazzy · Gazebo Harmonic
 
 ---
 
-## 📂 Repository Structure
+## ✨ Key Features
 
-The workspace consists of the following ROS 2 packages under the `src/` directory:
+- **Custom MPPI Controller** — Model Predictive Path Integral local planner running at 10 Hz; owns `/cmd_vel` exclusively (no DWB conflict)
+- **Dijkstra Global Planner** — Routes over a pre-extracted topological graph with dense 0.3 m waypoint interpolation
+- **AMCL Localisation** — Monte Carlo particle filter for robust map-to-robot pose estimation
+- **EKF Sensor Fusion** — Fuses wheel odometry (`/odom`) and IMU (`/imu/data`) into `/odometry/filtered` at 50 Hz
+- **SLAM Mapping** — Autonomous frontier exploration via `explore_lite` + SLAM Toolbox; produces a full occupancy grid
+- **Graph Extraction** — Converts the occupancy grid into a traversable JSON topological graph using distance-transform + line-of-sight checks
+- **RViz Graph Overlay** — Live visualisation of graph nodes, edges, and the active planned path as RViz markers
 
-| Package | Description |
-| :--- | :--- |
-| **[`agv_description`](file:///home/rahul/AMR/AMR-main/src/agv_description)** | Contains the robot URDF (`warehouse_agv.urdf`), warehouse simulation worlds, RViz configurations, launch scripts, and nav2 configuration parameters. |
-| **[`agv_navigation`](file:///home/rahul/AMR/AMR-main/src/agv_navigation)** | Contains Python nodes for path-following, topological map building, route planning, and visualization. |
-| **[`agv_vision`](file:///home/rahul/AMR/AMR-main/src/agv_vision)** | Contains computer vision nodes, specifically the camera-based obstacle detector. |
-| **[`m-explore-ros2`](file:///home/rahul/AMR/AMR-main/src/m-explore-ros2)** | A submodule containing `explore_lite` for frontier-based autonomous exploration and map merging. |
+---
 
-### 📂 File & Directory Structure
+## 🤖 Robot Specifications
 
-```text
-AMR-main/
-├── README.md
-├── docs/                               # Project-wide documentation
-│   ├── Phase1_Mapping.md
-│   ├── implementation.md
-│   └── project_migration_and_troubleshooting.md
-└── src/                                # ROS 2 Packages
-    ├── agv_description/                # URDF, Simulation, Config & Launch files
-    │   ├── config/                     # Configuration parameters for EKF, SLAM, Bridge, Nav2
-    │   │   ├── bridge.yaml
-    │   │   ├── ekf.yaml
-    │   │   ├── mapper_params.yaml
-    │   │   └── nav2_params_explore.yaml
-    │   ├── launch/                     # ROS 2 launch scripts
-    │   │   ├── mapping_session.launch.py   # Launch complete autonomous mapping session
-    │   │   ├── gazebo.launch.py
-    │   │   ├── slam_launch.py
-    │   │   ├── navigation_launch.py
-    │   │   └── auto_explore.launch.py
-    │   ├── maps/                       # Generated occupancy grid maps (.yaml, .pgm)
-    │   ├── scripts/                    # Helper scripts (e.g., save_map.sh)
-    │   ├── urdf/                       # warehouse_agv.urdf robot physical description
-    │   └── worlds/                     # warehouse.world warehouse simulator world
-    ├── agv_navigation/                 # Custom navigation nodes and path trackers
-    │   ├── agv_navigation/
-    │   │   ├── graph_visualizer.py
-    │   │   ├── map_builder.py
-    │   │   ├── path_tracer.py
-    │   │   └── route_runner.py
-    │   └── maps/
-    ├── agv_vision/                     # Vision/perception nodes
-    │   └── agv_vision/
-    │       └── obstacle_detector.py    # Camera-based obstacle detection
-    └── m-explore-ros2/                 # Submodule for frontier exploration (explore_lite)
+| Property | Value |
+|---|---|
+| Base geometry | Cylinder, radius 0.15 m, height 0.12 m |
+| Total mass | ~15 kg |
+| Drive type | Differential drive (2 driven wheels + 2 caster wheels) |
+| Wheel radius | 0.05 m |
+| Wheel separation | 0.30 m |
+| Sensors | 2D LiDAR (`/scan`), IMU (`/imu/data`), Camera (`/camera/image_raw`) |
+| Max linear velocity | 0.8 m/s |
+| Max angular velocity | 1.8 rad/s |
+
+---
+
+## 📦 Package Overview
+
+```
+src/
+├── agv_description/     URDF, worlds, launch files, configs, maps
+├── agv_navigation/      Route runner (Dijkstra + MPPI) and graph visualiser
+├── agv_vision/          Camera-based obstacle detector
+└── m-explore-ros2/      explore_lite — frontier exploration (mapping phase)
 ```
 
+### `agv_description`
+The simulation and configuration hub. Contains everything needed to spawn the robot and run the full navigation stack.
+
+| Path | Contents |
+|---|---|
+| `urdf/warehouse_agv.urdf` | Full robot description: base, wheels, casters, LiDAR, IMU, camera |
+| `worlds/warehouse.world` | Gazebo Harmonic warehouse world with aisles and shelving |
+| `launch/navigation_launch.py` | **Production launch** — Gazebo + AMCL localisation + RViz |
+| `launch/gazebo.launch.py` | Sim stack only: Gazebo + Bridge + RSP + EKF |
+| `launch/mapping_session.launch.py` | Phase 1 mapping: Gazebo + SLAM + Nav2 + explore_lite |
+| `config/nav2_params.yaml` | AMCL, map server parameters (navigation mode) |
+| `config/nav2_params_explore.yaml` | Nav2 parameters for autonomous exploration mode |
+| `config/ekf.yaml` | EKF fusing `/odom` (vx, vy, vyaw) + `/imu/data` (yaw, vyaw) |
+| `config/bridge.yaml` | Gazebo ↔ ROS 2 topic bridge: `/scan`, `/odom`, `/cmd_vel`, `/imu/data`, `/tf`, `/clock` |
+| `config/mapper_params.yaml` | SLAM Toolbox online-async parameters |
+| `config/agv_nav.rviz` | RViz config for navigation session |
+| `config/agv_explore.rviz` | RViz config for mapping session |
+| `maps/warehouse_map.pgm` | Saved occupancy grid map (329×275 px @ 0.05 m/px) |
+| `maps/warehouse_map.yaml` | Map metadata (resolution, origin) |
+| `maps/warehouse_graph.json` | Topological graph (~300+ nodes, bidirectional edges) |
+| `maps/graph_extractor.py` | Offline tool: generates `warehouse_graph.json` from the occupancy grid |
+| `maps/graph_visualization.png` | Visual overlay of the extracted graph on the map |
+| `scripts/save_map.sh` | Helper: saves the SLAM map to disk during/after mapping |
+
+### `agv_navigation`
+
+| File | Role |
+|---|---|
+| `route_runner.py` | Core navigation node. Dijkstra global planner + MPPI local controller. Subscribes to `/goal_pose` (RViz 2D Goal Pose), locates robot via `map → base_link` TF (AMCL), finds the Dijkstra path, densifies it to 0.3 m waypoints, and runs an 80-sample MPPI controller at 10 Hz. |
+| `graph_visualizer.py` | RViz overlay node. Publishes the full graph (yellow spheres = nodes, cyan lines = edges) and the active planned path (magenta line + orange dots) to `/agv_graph_markers` at 2 Hz. |
+
+### `agv_vision`
+
+| File | Role |
+|---|---|
+| `obstacle_detector.py` | Camera-based colour detection node. Subscribes to `/camera/image_raw`, detects red obstacles via HSV thresholding, and publishes bounding-box offset to `/obstacle_alert`. |
+
 ---
 
-## 📖 Project Documentation & Phases
+## 🏗️ Architecture
 
-Detailed design documentation, configuration guides, and phase-by-phase implementations are stored in the `docs` folder:
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Gazebo Harmonic                        │
+│  warehouse.world  →  warehouse_agv robot                  │
+│  Sensors: /scan (LiDAR)  /odom  /imu/data  /tf           │
+└──────────────────┬───────────────────────────────────────┘
+                   │ ros_gz_bridge (bridge.yaml)
+                   ▼
+┌─────────────────────────────────────────┐
+│  robot_state_publisher  (URDF → /tf)    │
+│  ekf_node   /odom + /imu → /odometry/filtered            │
+└──────────────────┬──────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────┐
+│  map_server  (warehouse_map.yaml)        │
+│  amcl        /scan + /map → map→odom TF │
+│  lifecycle_manager_localization          │
+└──────────────────┬──────────────────────┘
+                   │  map → base_link TF
+                   ▼
+┌─────────────────────────────────────────┐
+│  route_runner                            │
+│  ├─ Dijkstra on warehouse_graph.json     │
+│  ├─ Densify: 0.3 m waypoints            │
+│  ├─ MPPI: 80 samples × 15-step horizon  │
+│  │   costs: dist + heading + CTE + collision             │
+│  └─ /cmd_vel → Gazebo → robot moves     │
+└──────────────────┬──────────────────────┘
+                   │  /agv_dense_path
+                   ▼
+┌─────────────────────────────────────────┐
+│  graph_visualizer → /agv_graph_markers  │
+│  (RViz: nodes, edges, active path)      │
+└─────────────────────────────────────────┘
+```
 
-1. **[Phase 1: Robot Design & Autonomous Mapping](file:///home/rahul/AMR/AMR-main/docs/Phase1_Mapping.md)**
-   - Custom URDF physical modeling (30cm footprint).
-   - Sensor integration (LiDAR, Camera, IMU).
-   - Differential drive kinematics.
-   - SLAM Toolbox setup and Nav2 `explore_lite` frontier exploration.
-2. **Phase 2: Autonomous Navigation** *(Pending)*
-   - Utilizing the saved maps to perform `navigate_to_pose`.
-   - Obstacle avoidance and dynamic re-routing.
-3. **Phase 3: High-Level Task Execution** *(Pending)*
-   - Integration with behavior trees.
-   - Dispatching tasks (e.g., patrolling, warehouse logic).
-
-### Additional Documentation:
-- **[System Implementation Details](file:///home/rahul/AMR/AMR-main/docs/implementation.md)**: Deep dive into config parameters, MPPI planner parameters, and frontier explorer tuning.
-- **[Project Migration & Troubleshooting Guide](file:///home/rahul/AMR/AMR-main/docs/project_migration_and_troubleshooting.md)**: Details on migrating from Gazebo Classic to Gazebo Harmonic and troubleshooting SLAM Lifecycle/Nav2 Costmap errors.
+### Why no Nav2 controller server?
+The `controller_server` (DWB) is intentionally **not launched** during navigation. Running DWB alongside `route_runner` caused interleaved `/cmd_vel` commands at 30 Hz — the primary cause of the circling bug. `route_runner`'s MPPI controller is the **sole owner** of `/cmd_vel`.
 
 ---
 
 ## 🛠️ Build & Installation
 
-### 1. Prerequisites
-Ensure you have **ROS 2 Jazzy** and **Gazebo Harmonic** installed on Ubuntu 24.04:
+### Prerequisites
+
+- Ubuntu 24.04
+- [ROS 2 Jazzy Jalisco](https://docs.ros.org/en/jazzy/Installation.html)
+- Gazebo Harmonic (`ros-jazzy-ros-gz`)
+- Nav2 (`ros-jazzy-navigation2`)
+- SLAM Toolbox (`ros-jazzy-slam-toolbox`)
+- robot_localization (`ros-jazzy-robot-localization`)
+
 ```bash
-# Source ROS 2 environment
-source /opt/ros/jazzy/setup.bash
+sudo apt install \
+  ros-jazzy-navigation2 \
+  ros-jazzy-nav2-bringup \
+  ros-jazzy-slam-toolbox \
+  ros-jazzy-robot-localization \
+  ros-jazzy-ros-gz \
+  python3-opencv
 ```
 
-### 2. Compiling the Workspace
-Use `colcon` to build the workspace from the root directory:
-```bash
-colcon build --symlink-install
-```
+### Clone & Build
 
-### 3. Sourcing the Local Workspace
-After a successful build, source the setup script to overlay your local packages:
 ```bash
+git clone https://github.com/RahulK27-pro/AMR.git
+cd AMR/AMR-main
+colcon build
 source install/setup.bash
+```
+
+> **Note:** Source `install/setup.bash` in **every** new terminal before running any ROS 2 commands.
+
+---
+
+## 🚀 Running the System
+
+The project has two phases. The map is already saved — you only need Phase 2 for day-to-day use.
+
+---
+
+### Phase 2 — Navigation (day-to-day use)
+
+Run these in separate terminals, all from the workspace root:
+
+```bash
+# Build & source first (once per terminal)
+cd ~/AMR/AMR-main
+source install/setup.bash
+```
+
+**Terminal 1 — Simulation + Localisation + RViz**
+```bash
+ros2 launch agv_description navigation_launch.py
+```
+Wait for the message: `Managed nodes are active`
+
+**Terminal 2 — Set initial pose in RViz**
+In the RViz window, click **"2D Pose Estimate"** and click on the robot's approximate starting location on the map.
+Wait for: `AMCL: initialPoseReceived`
+
+**Terminal 3 — Graph Visualiser** *(optional, recommended)*
+```bash
+ros2 run agv_navigation graph_visualizer
+```
+In RViz, add a **MarkerArray** display subscribed to `/agv_graph_markers` to see the full navigation graph.
+
+**Terminal 4 — Route Runner**
+```bash
+ros2 run agv_navigation route_runner
+```
+Wait for: `Localization Active! Received map -> base_link TF transform.`
+
+**Sending a Goal**
+1. In RViz, click **"2D Goal Pose"**
+2. Click anywhere on the map to set a destination
+3. Watch `route_runner` snap to the nearest graph node and begin navigating
+
+Expected output:
+```
+[route_runner]: Received RViz Goal: (-1.75, 3.96)
+[route_runner]: Snapping to nodes: Start=N62, Target=N12
+[route_runner]: DIJKSTRA PATH: ['N62', 'N44', 'N28', ...] → Densified to 13 waypoints
+[route_runner]: FINAL DESTINATION REACHED! Mission Complete.
 ```
 
 ---
 
-## 🚀 How to Run
+### Phase 1 — Autonomous Mapping *(only needed to re-map)*
 
-### Complete Autonomous Exploration Session
-To launch the full autonomous session (Gazebo Harmonic, SLAM Toolbox, Nav2, RViz2, and frontier exploration):
 ```bash
 ros2 launch agv_description mapping_session.launch.py
 ```
 
-#### Running Headlessly
-If you are running in a Virtual Machine, WSL, or Docker without GUI acceleration, you can run the Gazebo server headlessly (without the GUI window) by adding the `headless:=true` parameter:
-```bash
-ros2 launch agv_description mapping_session.launch.py headless:=true
-```
+The launch sequence (fully timed, no manual steps):
 
-#### Saving the Map after Exploration
-Once the robot has explored the entire warehouse, open a new terminal and run:
+| Time | Event |
+|---|---|
+| t=0s | Gazebo + Bridge + EKF start |
+| t=3s | Robot State Publisher |
+| t=12s | SLAM Toolbox (lifecycle-managed) |
+| t=13s | RViz2 |
+| t=20s | Nav2 (controller, planner, BT navigator) |
+| t=45s | explore_lite frontier explorer — robot starts mapping |
+
+When the warehouse is fully explored, **save the map** in a new terminal:
 ```bash
 bash ~/AMR/AMR-main/src/agv_description/scripts/save_map.sh
 ```
 
+**Regenerate the topological graph** after saving the map:
+```bash
+cd ~/AMR/AMR-main/src/agv_description/maps
+python3 graph_extractor.py warehouse_map.yaml
+```
+This outputs `warehouse_graph.json` and `graph_visualization.png`.
+
 ---
 
-### Manual/Component Launch
-If you want to spin up the nodes individually:
+### Manual Teleoperation
 
-1. **Launch Gazebo & Spawn the AGV:**
-   ```bash
-   ros2 launch agv_description gazebo.launch.py
-   ```
-   *(To run Gazebo server only, use `ros2 launch agv_description gazebo.launch.py headless:=true`)*
-
-2. **Launch SLAM (Mapping):**
-   ```bash
-   ros2 launch agv_description slam_launch.py
-   ```
-
-3. **Launch Navigation (Nav2):**
-   ```bash
-   ros2 launch agv_description navigation_launch.py
-   ```
-
-4. **Launch Frontier Explorer (`explore_lite`):**
-   ```bash
-   ros2 launch agv_description auto_explore.launch.py
-   ```
-
-### 🎮 Manual Keyboard Teleoperation
-To drive the AGV manually using your keyboard, run the standard ROS 2 keyboard teleop node in a new terminal:
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
-Use the keys shown in your terminal (typically `i`/`,` for forward/reverse, `j`/`l` for turning left/right, and `k` or `space` to stop) to control the robot.
+
+Keys: `i`=forward · `,`=reverse · `j`/`l`=turn · `k`/space=stop
 
 ---
 
-## 📝 Key Migration & Architecture Notes
+## ⚙️ Key Configuration
 
-During the transition from Gazebo Classic to Gazebo Harmonic, several changes were introduced:
+### MPPI Tuning (`route_runner.py`)
 
-* **Gazebo Harmonic Integration**: Replaced `gazebo_ros` with `ros_gz_sim`. A ROS-Gazebo bridge configuration ([`bridge.yaml`](file:///home/rahul/AMR/AMR-main/src/agv_description/config/bridge.yaml)) handles topic transitions for `/scan`, `/cmd_vel`, `/tf`, and odometry data.
-* **Odometry Broadcasting**: The diff-drive plugin inside the URDF ([`warehouse_agv.urdf`](file:///home/rahul/AMR/AMR-main/src/agv_description/urdf/warehouse_agv.urdf)) was updated to explicitly broadcast the `odom -> base_link` transform on `/tf`.
-* **SLAM Toolbox Lifecycle**: In ROS 2 Jazzy, `slam_toolbox` runs as a Lifecycle Node. Launching it requires a Lifecycle Manager to transition the node into an `Active` state, which is handled via the official launch includes in [`slam_launch.py`](file:///home/rahul/AMR/AMR-main/src/agv_description/launch/slam_launch.py).
-* **Self-Contained World**: The warehouse world was updated to include explicit light and collision plane representations rather than relying on external web resources (`model://sun`, `model://ground_plane`).
+| Parameter | Value | Description |
+|---|---|---|
+| `v_max` | 0.8 m/s | Max linear velocity |
+| `w_max` | 1.8 rad/s | Max angular velocity |
+| `horizon` | 15 steps | Prediction horizon (1.5 s) |
+| `num_samples` | 80 | Trajectory samples per iteration |
+| `dt` | 0.1 s | Control period (10 Hz) |
+| `w_dist` | 4.0 | Terminal distance cost weight |
+| `w_heading` | 3.0 | Heading alignment cost weight |
+| `w_cross_track` | 6.0 | Cross-track error cost weight |
+| `w_collision` | 5000.0 | Collision penalty |
+| `collision_radius` | 0.30 m | Safety clearance from obstacles |
+| `lookahead_dist` | 1.2 m | Arc-length lookahead distance |
+
+### EKF Sensor Fusion (`ekf.yaml`)
+
+| Source | Fused signals |
+|---|---|
+| `/odom` | vx, vy, vyaw (velocity only) |
+| `/imu/data` | yaw, vyaw (absolute heading + rate) |
+| Output | `/odometry/filtered` at 50 Hz |
+
+---
+
+## 🗺️ ROS 2 Topic Map
+
+| Topic | Type | Direction |
+|---|---|---|
+| `/scan` | `sensor_msgs/LaserScan` | Gazebo → ROS |
+| `/odom` | `nav_msgs/Odometry` | Gazebo → ROS |
+| `/imu/data` | `sensor_msgs/Imu` | Gazebo → ROS |
+| `/odometry/filtered` | `nav_msgs/Odometry` | EKF output |
+| `/cmd_vel` | `geometry_msgs/Twist` | route_runner → Gazebo |
+| `/goal_pose` | `geometry_msgs/PoseStamped` | RViz → route_runner |
+| `/agv_dense_path` | `nav_msgs/Path` | route_runner → graph_visualizer |
+| `/agv_graph_markers` | `visualization_msgs/MarkerArray` | graph_visualizer → RViz |
+| `/map` | `nav_msgs/OccupancyGrid` | map_server → AMCL |
+| `/particle_cloud` | `nav2_msgs/ParticleCloud` | AMCL → RViz |
+
+---
+
+## 🔧 Troubleshooting
+
+**AMCL keeps warning "cannot publish a pose"**
+→ You haven't set an initial pose. Use **"2D Pose Estimate"** in RViz to click the robot's location on the map.
+
+**`route_runner` says "Waiting for localization/odometry"**
+→ AMCL TF (`map → base_link`) is not yet available. Ensure `navigation_launch.py` is fully up and initial pose is set.
+
+**Robot spins or circles**
+→ Tune `w_heading` and `w_cross_track` in `route_runner.py`. Increasing `w_cross_track` (currently 6.0) makes the robot track the path more strictly.
+
+**EKF "Failed to meet update rate"**
+→ System is under load. Try reducing `frequency` in `ekf.yaml` from 50 Hz to 30 Hz, or close other CPU-intensive processes.
+
+**`graph_extractor.py` fails**
+→ Ensure dependencies: `sudo apt install python3-opencv python3-yaml`
+
+**`/particle_cloud` QoS incompatible warning in RViz**
+→ Cosmetic warning only. RViz's default QoS for particle cloud doesn't match AMCL's reliable QoS. Navigation works correctly regardless.
+
+---
+
+## 📁 Repository Structure
+
+```
+AMR-main/
+├── README.md
+├── docs/                                  # Project documentation
+│   ├── Running_Guide.md
+│   ├── Phase1_Mapping.md
+│   ├── Phase2_Node_Extraction.md
+│   ├── Phase3_Navigation.md
+│   ├── Evaluation_Results.md
+│   ├── implementation.md
+│   └── project_migration_and_troubleshooting.md
+└── src/
+    ├── agv_description/
+    │   ├── config/
+    │   │   ├── agv_explore.rviz
+    │   │   ├── agv_nav.rviz
+    │   │   ├── bridge.yaml
+    │   │   ├── ekf.yaml
+    │   │   ├── mapper_params.yaml
+    │   │   ├── nav2_params.yaml
+    │   │   └── nav2_params_explore.yaml
+    │   ├── launch/
+    │   │   ├── gazebo.launch.py
+    │   │   ├── mapping_session.launch.py
+    │   │   └── navigation_launch.py
+    │   ├── maps/
+    │   │   ├── graph_extractor.py
+    │   │   ├── graph_visualization.png
+    │   │   ├── warehouse_graph.json
+    │   │   ├── warehouse_map.pgm
+    │   │   └── warehouse_map.yaml
+    │   ├── scripts/
+    │   │   └── save_map.sh
+    │   ├── urdf/
+    │   │   └── warehouse_agv.urdf
+    │   └── worlds/
+    │       └── warehouse.world
+    ├── agv_navigation/
+    │   └── agv_navigation/
+    │       ├── route_runner.py
+    │       └── graph_visualizer.py
+    ├── agv_vision/
+    │   └── agv_vision/
+    │       └── obstacle_detector.py
+    └── m-explore-ros2/                    # explore_lite (mapping phase)
+```

@@ -37,13 +37,6 @@ ros2 run agv_navigation route_runner
 ```
 You should see terminal output indicating: `"Route Runner Active. Waiting for Goal in RViz..."`
 
-### 4. Optional: Start the Path Tracer (Terminal 4)
-If you want to debug odometry drift or simply draw a cool trail showing exactly where the robot has driven over time, launch the tracer:
-```bash
-ros2 run agv_navigation tracer
-```
-*In RViz:* Add a `Path` display and subscribe to the `/agv_path` topic.
-
 ---
 
 ## Executing Autonomous Navigation
