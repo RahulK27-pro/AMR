@@ -12,6 +12,7 @@ import os
 import heapq
 
 import numpy as np
+from scipy.spatial import KDTree
 
 
 class RouteRunner(Node):
@@ -75,6 +76,11 @@ class RouteRunner(Node):
                             "distance_m": weight
                         })
 
+        # Build KD-Tree for O(log N) fast node snapping
+        self.node_ids = list(self.map_data.keys())
+        self.node_coords = np.array([[self.map_data[nid]["x"], self.map_data[nid]["y"]] for nid in self.node_ids])
+        self.node_kdtree = KDTree(self.node_coords) if len(self.node_coords) > 0 else None
+
         # Navigation state machine: IDLE, PLANNING, NAVIGATING, YIELDING, RE_ROUTING
         self.state = "IDLE"
 
@@ -131,7 +137,7 @@ class RouteRunner(Node):
 
         # Control timer
         self.control_timer = self.create_timer(self.dt, self.control_loop)
-        self.get_logger().info("Route Runner Active with Dynamic Obstacle Avoidance & Re-routing.")
+        self.get_logger().info(f"Route Runner Active with KD-Tree ({len(self.node_ids)} nodes) & Dynamic Obstacle Avoidance.")
 
     def _now_sec(self):
         """Return current ROS time as float seconds (sim-time aware)."""
@@ -143,14 +149,10 @@ class RouteRunner(Node):
         return math.atan2(siny_cosp, cosy_cosp)
 
     def find_closest_node(self, x, y):
-        closest_node = None
-        min_dist = float('inf')
-        for node_id, data in self.map_data.items():
-            dist = math.sqrt((x - data["x"])**2 + (y - data["y"])**2)
-            if dist < min_dist:
-                min_dist = dist
-                closest_node = node_id
-        return closest_node
+        if self.node_kdtree is None or len(self.node_ids) == 0:
+            return None
+        _, idx = self.node_kdtree.query([x, y])
+        return self.node_ids[idx]
 
     def calculate_dijkstra(self, start_node, target_node):
         distances = {node: float('infinity') for node in self.map_data}
@@ -564,18 +566,24 @@ class RouteRunner(Node):
 
         # Collision & Repulsion from Static Obstacles (Walls, Shelves)
         if len(self.obstacles) > 0:
-            for t in range(self.horizon):
-                pts = np.stack([x_rollout[:, t], y_rollout[:, t]], axis=-1)[:, np.newaxis, :]
-                obs = self.obstacles[np.newaxis, :, :]
-                min_dists = np.min(np.linalg.norm(pts - obs, axis=-1), axis=1)
+            # Spatial pre-filter: keep only obstacles within 3.5m radius of the robot
+            obs_dists_sq = (self.obstacles[:, 0] - self.current_x)**2 + (self.obstacles[:, 1] - self.current_y)**2
+            near_mask = obs_dists_sq < 12.25  # 3.5^2
+            near_obs = self.obstacles[near_mask]
 
-                # Hard collision
-                col_mask = min_dists < self.collision_radius
-                costs[col_mask] += self.w_collision
+            if len(near_obs) > 0:
+                obs = near_obs[np.newaxis, :, :]
+                for t in range(self.horizon):
+                    pts = np.stack([x_rollout[:, t], y_rollout[:, t]], axis=-1)[:, np.newaxis, :]
+                    min_dists = np.min(np.linalg.norm(pts - obs, axis=-1), axis=1)
 
-                # Graduated repulsion field
-                rep_mask = min_dists < 0.65
-                costs[rep_mask] += 25.0 * (0.65 - min_dists[rep_mask])
+                    # Hard collision
+                    col_mask = min_dists < self.collision_radius
+                    costs[col_mask] += self.w_collision
+
+                    # Graduated repulsion field
+                    rep_mask = min_dists < 0.65
+                    costs[rep_mask] += 25.0 * (0.65 - min_dists[rep_mask])
 
         # --- Traffic & Yielding Decision ---
         best_cost = np.min(costs)
