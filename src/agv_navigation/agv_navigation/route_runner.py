@@ -2,7 +2,8 @@ import rclpy
 from rclpy.node import Node
 from ament_index_python.packages import get_package_share_directory
 from nav_msgs.msg import Odometry, Path
-from geometry_msgs.msg import Twist, PoseStamped, Point
+from geometry_msgs.msg import Twist, PoseStamped
+from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 import tf2_ros
 from tf2_ros import Buffer, TransformListener, TransformException
@@ -12,7 +13,6 @@ import os
 import heapq
 
 import numpy as np
-from scipy.spatial import KDTree
 
 
 class RouteRunner(Node):
@@ -20,6 +20,8 @@ class RouteRunner(Node):
         super().__init__('route_runner')
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.path_pub = self.create_publisher(Path, '/agv_dense_path', 10)  # Publish dense path for RViz
+        # Mission progress publisher: JSON string of {current, total, goal_node, state}
+        self.mission_pub = self.create_publisher(String, '/mission_progress', 10)
 
         # Subscribers
         self.odom_sub = self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)
@@ -27,7 +29,8 @@ class RouteRunner(Node):
         self.goal_sub_alt = self.create_subscription(PoseStamped, '/goal', self.goal_callback, 10)
         self.goal_sub_mb = self.create_subscription(PoseStamped, '/move_base_simple/goal', self.goal_callback, 10)
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
-        self.vision_sub = self.create_subscription(Point, '/obstacle_alert', self.vision_callback, 10)
+        # Multi-goal sequence subscriber: expects JSON array of node IDs e.g. '["N5","N12","N40"]'
+        self.seq_sub = self.create_subscription(String, '/goal_sequence', self.sequence_callback, 10)
 
         # TF Buffer and Listener for AMCL / SLAM localization (map -> base_link)
         self.tf_buffer = Buffer()
@@ -76,11 +79,6 @@ class RouteRunner(Node):
                             "distance_m": weight
                         })
 
-        # Build KD-Tree for O(log N) fast node snapping
-        self.node_ids = list(self.map_data.keys())
-        self.node_coords = np.array([[self.map_data[nid]["x"], self.map_data[nid]["y"]] for nid in self.node_ids])
-        self.node_kdtree = KDTree(self.node_coords) if len(self.node_coords) > 0 else None
-
         # Navigation state machine: IDLE, PLANNING, NAVIGATING, YIELDING, RE_ROUTING
         self.state = "IDLE"
 
@@ -89,6 +87,11 @@ class RouteRunner(Node):
         self.current_target_index = 0
         self.node_path = []            # Dijkstra node sequence
         self.target_node = None        # Final goal node
+
+        # Multi-goal mission queue
+        self.goal_queue = []           # List of (goal_x, goal_y) tuples to visit in order
+        self.mission_total = 0         # Total goals in the current mission
+        self.mission_current = 0       # Index of the goal currently being executed (1-based)
 
         self.current_x = 0.0
         self.current_y = 0.0
@@ -101,9 +104,6 @@ class RouteRunner(Node):
         self.dynamic_obstacles = []    # List of dicts: {'pos': (x,y), 'vel': (vx,vy), 'radius': r}
         self.last_scan_time = None
 
-        # Vision Early-Warning
-        self.vision_obstacle_detected = False
-        self.vision_last_time = 0.0  # seconds (ROS sim time)
 
         # Traffic & Re-routing parameters
         self.yield_timeout = 4.5       # Seconds to wait for transient obstacles before re-routing
@@ -137,7 +137,7 @@ class RouteRunner(Node):
 
         # Control timer
         self.control_timer = self.create_timer(self.dt, self.control_loop)
-        self.get_logger().info(f"Route Runner Active with KD-Tree ({len(self.node_ids)} nodes) & Dynamic Obstacle Avoidance.")
+        self.get_logger().info("Route Runner Active with Dynamic Obstacle Avoidance & Re-routing.")
 
     def _now_sec(self):
         """Return current ROS time as float seconds (sim-time aware)."""
@@ -149,10 +149,14 @@ class RouteRunner(Node):
         return math.atan2(siny_cosp, cosy_cosp)
 
     def find_closest_node(self, x, y):
-        if self.node_kdtree is None or len(self.node_ids) == 0:
-            return None
-        _, idx = self.node_kdtree.query([x, y])
-        return self.node_ids[idx]
+        closest_node = None
+        min_dist = float('inf')
+        for node_id, data in self.map_data.items():
+            dist = math.sqrt((x - data["x"])**2 + (y - data["y"])**2)
+            if dist < min_dist:
+                min_dist = dist
+                closest_node = node_id
+        return closest_node
 
     def calculate_dijkstra(self, start_node, target_node):
         distances = {node: float('infinity') for node in self.map_data}
@@ -212,11 +216,6 @@ class RouteRunner(Node):
             self.current_yaw = self.get_yaw_from_quaternion(msg.pose.pose.orientation)
             self.odom_ready = True
 
-    def vision_callback(self, msg):
-        """Processes /obstacle_alert from agv_vision node."""
-        if msg.y > 1200:  # Area proxy indicating close proximity
-            self.vision_obstacle_detected = True
-            self.vision_last_time = self._now_sec()
 
     def scan_callback(self, msg):
         self.update_robot_pose()
@@ -329,6 +328,70 @@ class RouteRunner(Node):
             dense[i] = (x1, y1, math.atan2(y2 - y1, x2 - x1))
         return dense
 
+    def sequence_callback(self, msg):
+        """Receives a JSON array of node IDs and builds a goal queue.
+
+        Example message payload: '["N5", "N12", "N40"]'
+        Each node ID is snapped to that graph node's (x, y) world coordinates.
+        """
+        try:
+            node_ids = json.loads(msg.data)
+            if not isinstance(node_ids, list) or len(node_ids) == 0:
+                self.get_logger().error("goal_sequence: expected a non-empty JSON array of node IDs.")
+                return
+
+            # Validate every node exists in the graph
+            unknown = [n for n in node_ids if n not in self.map_data]
+            if unknown:
+                self.get_logger().error(f"goal_sequence: unknown node IDs {unknown}")
+                return
+
+            # Build queue from node world positions
+            self.goal_queue = [
+                (self.map_data[n]["x"], self.map_data[n]["y"]) for n in node_ids
+            ]
+            self.mission_total = len(self.goal_queue)
+            self.mission_current = 0
+            self.get_logger().info(
+                f"Mission loaded: {self.mission_total} goals -> {node_ids}"
+            )
+            # Kick off first goal immediately
+            self._dispatch_next_goal()
+        except json.JSONDecodeError as e:
+            self.get_logger().error(f"goal_sequence: JSON parse error — {e}")
+
+    def _dispatch_next_goal(self):
+        """Dequeue the next goal and begin planning toward it."""
+        if not self.goal_queue:
+            self.get_logger().info("All mission goals completed! Robot idle.")
+            self._publish_mission_progress("MISSION_COMPLETE")
+            return
+
+        goal_x, goal_y = self.goal_queue.pop(0)
+        self.mission_current += 1
+        self.get_logger().info(
+            f"Mission goal {self.mission_current}/{self.mission_total}: "
+            f"({goal_x:.2f}, {goal_y:.2f})"
+        )
+        # Reuse existing planning logic via a synthetic PoseStamped
+        synthetic = PoseStamped()
+        synthetic.pose.position.x = goal_x
+        synthetic.pose.position.y = goal_y
+        self.goal_callback(synthetic)
+
+    def _publish_mission_progress(self, status_override=None):
+        """Publish a JSON mission progress string to /mission_progress."""
+        status = status_override if status_override else self.state
+        payload = {
+            "current": self.mission_current,
+            "total": self.mission_total,
+            "goal_node": self.target_node,
+            "state": status,
+        }
+        msg = String()
+        msg.data = json.dumps(payload)
+        self.mission_pub.publish(msg)
+
     def goal_callback(self, msg):
         self.update_robot_pose()
         if not self.odom_ready:
@@ -339,7 +402,7 @@ class RouteRunner(Node):
         goal_y = msg.pose.position.y
 
         self.state = "PLANNING"
-        self.get_logger().info(f"Received RViz Goal: ({goal_x:.2f}, {goal_y:.2f})")
+        self.get_logger().info(f"Received Goal: ({goal_x:.2f}, {goal_y:.2f})")
 
         start_node = self.find_closest_node(self.current_x, self.current_y)
         self.target_node = self.find_closest_node(goal_x, goal_y)
@@ -358,6 +421,7 @@ class RouteRunner(Node):
         self.current_target_index = 1 if len(self.path_plan) > 1 else 0
         self.state = "NAVIGATING"
         self.publish_active_path()
+        self._publish_mission_progress()
 
     def publish_active_path(self):
         ros_path = Path()
@@ -475,14 +539,27 @@ class RouteRunner(Node):
         final_x, final_y, _ = self.path_plan[-1]
         dist_to_final = math.sqrt((final_x - self.current_x)**2 + (final_y - self.current_y)**2)
         if dist_to_final < 0.30:
-            self.get_logger().info("FINAL DESTINATION REACHED! Mission Complete.")
             self.cmd_pub.publish(Twist())
             self.state = "IDLE"
+            if self.goal_queue:
+                # More goals remain — dequeue and navigate to next waypoint
+                self.get_logger().info(
+                    f"Waypoint {self.mission_current}/{self.mission_total} reached. "
+                    f"Proceeding to next goal ({len(self.goal_queue)} remaining)."
+                )
+                self._dispatch_next_goal()
+            else:
+                # Final goal reached — mission complete
+                total = self.mission_total if self.mission_total > 0 else 1
+                self.get_logger().info(
+                    f"FINAL DESTINATION REACHED! "
+                    f"Mission complete ({total} goal(s) visited)."
+                )
+                self._publish_mission_progress("MISSION_COMPLETE")
+                self.mission_total = 0
+                self.mission_current = 0
             return
 
-        # Check Vision Early Warning (expire after 1.5s)
-        if self.vision_obstacle_detected and (now - self.vision_last_time > 1.5):
-            self.vision_obstacle_detected = False
 
         # Get lookahead target
         (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=1.2)
@@ -499,7 +576,7 @@ class RouteRunner(Node):
             obstacle_blocking_path = np.any((dists_to_path < 0.40) & (dists_to_robot < 1.6))
 
         # Dynamically soften cross-track error to allow swerving around obstacles
-        if obstacle_blocking_path or self.vision_obstacle_detected or len(self.dynamic_obstacles) > 0:
+        if obstacle_blocking_path or len(self.dynamic_obstacles) > 0:
             self.w_cross_track = self.w_cross_track_evasion
         else:
             self.w_cross_track = self.w_cross_track_nominal
@@ -566,24 +643,18 @@ class RouteRunner(Node):
 
         # Collision & Repulsion from Static Obstacles (Walls, Shelves)
         if len(self.obstacles) > 0:
-            # Spatial pre-filter: keep only obstacles within 3.5m radius of the robot
-            obs_dists_sq = (self.obstacles[:, 0] - self.current_x)**2 + (self.obstacles[:, 1] - self.current_y)**2
-            near_mask = obs_dists_sq < 12.25  # 3.5^2
-            near_obs = self.obstacles[near_mask]
+            for t in range(self.horizon):
+                pts = np.stack([x_rollout[:, t], y_rollout[:, t]], axis=-1)[:, np.newaxis, :]
+                obs = self.obstacles[np.newaxis, :, :]
+                min_dists = np.min(np.linalg.norm(pts - obs, axis=-1), axis=1)
 
-            if len(near_obs) > 0:
-                obs = near_obs[np.newaxis, :, :]
-                for t in range(self.horizon):
-                    pts = np.stack([x_rollout[:, t], y_rollout[:, t]], axis=-1)[:, np.newaxis, :]
-                    min_dists = np.min(np.linalg.norm(pts - obs, axis=-1), axis=1)
+                # Hard collision
+                col_mask = min_dists < self.collision_radius
+                costs[col_mask] += self.w_collision
 
-                    # Hard collision
-                    col_mask = min_dists < self.collision_radius
-                    costs[col_mask] += self.w_collision
-
-                    # Graduated repulsion field
-                    rep_mask = min_dists < 0.65
-                    costs[rep_mask] += 25.0 * (0.65 - min_dists[rep_mask])
+                # Graduated repulsion field
+                rep_mask = min_dists < 0.65
+                costs[rep_mask] += 25.0 * (0.65 - min_dists[rep_mask])
 
         # --- Traffic & Yielding Decision ---
         best_cost = np.min(costs)
