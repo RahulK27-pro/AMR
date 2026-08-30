@@ -28,6 +28,7 @@ setup(
             'graph_visualizer = agv_navigation.graph_visualizer:main',
             'dynamic_obstacle_manager = agv_navigation.dynamic_obstacle_manager:main',
             'obstacle_teleop = agv_navigation.obstacle_teleop:main',
+            'bt_manager = agv_navigation.bt_manager:main',
         ],
     },
 )

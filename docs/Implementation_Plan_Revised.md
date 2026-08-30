@@ -20,6 +20,7 @@
 | Fixes | sim-time, hardcoded paths, costmap static_layer, pkg deps, docs | multiple | ✅ Done |
 | Step 1 | Multi-Goal Waypoint Following (`/goal_sequence` + `/mission_progress`) | `route_runner.py` | ✅ Done |
 | Step 2 | Remove Camera / Vision Code (LiDAR-only cleanup) | `route_runner.py` | ✅ Done |
+| Step 3 | Phase 5: KD-Tree + MPPI Spatial Pre-Filter | `route_runner.py` | ✅ Done |
 
 ---
 
@@ -44,7 +45,7 @@ and no references to a sensor that doesn't exist.
 
 ---
 
-## Step 3 — Phase 5: KD-Tree + MPPI Spatial Pre-Filter (NEXT)
+## Step 3 — Phase 5: KD-Tree + MPPI Spatial Pre-Filter ✅ Done
 
 **Goal:** Optimize the two hotspots in `route_runner.py` without changing graph density.
 
@@ -97,7 +98,7 @@ reducing matrix ops by 70-90% per tick.
 
 ---
 
-## Step 4 — Behavior Tree Orchestration
+## Step 4 — Behavior Tree Orchestration (NEXT)
 
 **Goal:** Replace the `IDLE → PLANNING → NAVIGATING → YIELDING` state machine with
 a formal `py_trees` Behavior Tree for maintainability and extensible recovery.
