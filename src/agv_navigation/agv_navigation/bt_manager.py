@@ -98,12 +98,15 @@ class BackUpRecovery(py_trees.behaviour.Behaviour):
         self.blackboard = blackboard
         self.start_time = None
 
+    def _now_sec(self):
+        return self.node.get_clock().now().nanoseconds / 1e9
+
     def initialise(self):
-        self.start_time = time.time()
+        self.start_time = self._now_sec()
         self.node.get_logger().warn("BT Recovery: Executing BackUp behavior (0.3m reverse)...")
 
     def update(self):
-        elapsed = time.time() - self.start_time
+        elapsed = self._now_sec() - self.start_time
         if elapsed < 1.5:
             cmd = Twist()
             cmd.linear.x = -0.15
@@ -123,12 +126,15 @@ class SpinRecovery(py_trees.behaviour.Behaviour):
         self.blackboard = blackboard
         self.start_time = None
 
+    def _now_sec(self):
+        return self.node.get_clock().now().nanoseconds / 1e9
+
     def initialise(self):
-        self.start_time = time.time()
+        self.start_time = self._now_sec()
         self.node.get_logger().warn("BT Recovery: Executing Spin behavior (clear sensor view)...")
 
     def update(self):
-        elapsed = time.time() - self.start_time
+        elapsed = self._now_sec() - self.start_time
         if elapsed < 2.0:
             cmd = Twist()
             cmd.angular.z = 0.5

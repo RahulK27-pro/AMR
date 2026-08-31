@@ -55,11 +55,15 @@ class DynamicObstacleManager(Node):
         # State machine for pattern execution
         self.direction = 1  # 1 = forward, -1 = reverse
         self.state = 'FORWARD'  # FORWARD, PAUSE, ROTATING
-        self.state_start_time = time.time()
+        self.state_start_time = 0.0
 
         # Control loop at 10 Hz
         self.timer = self.create_timer(0.1, self.control_loop)
         self.get_logger().info(f"Dynamic Obstacle Manager Active. Pattern: '{self.pattern}' at {self.speed} m/s")
+
+    def _now_sec(self):
+        """Return current ROS time as float seconds (sim-time aware)."""
+        return self.get_clock().now().nanoseconds / 1e9
 
     def odom_callback(self, msg):
         self.current_x = msg.pose.pose.position.x
@@ -68,7 +72,9 @@ class DynamicObstacleManager(Node):
 
     def control_loop(self):
         twist = Twist()
-        now = time.time()
+        now = self._now_sec()
+        if self.state_start_time == 0.0:
+            self.state_start_time = now
         elapsed = now - self.state_start_time
 
         if self.pattern == 'aisle_crossing':

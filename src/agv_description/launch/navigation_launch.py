@@ -103,7 +103,7 @@ def generate_launch_description():
                     'use_sim_time': True,
                     'autostart': True,
                     'node_names': ['map_server', 'amcl'],
-                    'bond_timeout': 20.0,
+                    'bond_timeout': 0.0,  # 0.0 = disable bond timeout to prevent premature shutdowns during sim startup
                 }],
                 output='screen',
             ),

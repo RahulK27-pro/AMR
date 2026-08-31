@@ -21,6 +21,7 @@
 | Step 1 | Multi-Goal Waypoint Following (`/goal_sequence` + `/mission_progress`) | `route_runner.py` | ✅ Done |
 | Step 2 | Remove Camera / Vision Code (LiDAR-only cleanup) | `route_runner.py` | ✅ Done |
 | Step 3 | Phase 5: KD-Tree + MPPI Spatial Pre-Filter | `route_runner.py` | ✅ Done |
+| Step 4 | Behavior Tree Orchestration (`bt_manager.py`) | `bt_manager.py` | ✅ Done |
 
 ---
 
@@ -98,7 +99,7 @@ reducing matrix ops by 70-90% per tick.
 
 ---
 
-## Step 4 — Behavior Tree Orchestration (NEXT)
+## Step 4 — Behavior Tree Orchestration ✅ Done
 
 **Goal:** Replace the `IDLE → PLANNING → NAVIGATING → YIELDING` state machine with
 a formal `py_trees` Behavior Tree for maintainability and extensible recovery.
@@ -132,7 +133,7 @@ Also adds: skip unreachable goals in mission queue (plugs the known limitation f
 
 ---
 
-## Step 5 — FastAPI Mobile Bridge
+## Step 5 — FastAPI Mobile Bridge (NEXT)
 
 **Goal:** Create a new `agv_api` ROS 2 package with FastAPI + WebSocket server for
 remote goal dispatch and real-time telemetry streaming.

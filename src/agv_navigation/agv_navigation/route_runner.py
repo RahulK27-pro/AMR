@@ -88,6 +88,9 @@ class RouteRunner(Node):
         # Navigation state machine: IDLE, PLANNING, NAVIGATING, YIELDING, RE_ROUTING
         self.state = "IDLE"
 
+        # Diagnostic rate-limiter: only log blocking details once per second
+        self._last_block_log_time = 0.0
+
         # Path storage
         self.path_plan = []            # Dense (x, y, theta) waypoints
         self.current_target_index = 0
@@ -133,9 +136,9 @@ class RouteRunner(Node):
         self.w_dist = 4.0
         self.w_heading = 3.0
         self.w_collision = 5000.0
-        self.collision_radius = 0.30   # Safety hard clearance (m)
+        self.collision_radius = 0.22   # Safety hard clearance (m) — robot body radius 0.15 + 0.07 margin
         self.w_repulsive = 35.0        # Smooth proactive repulsion from obstacles
-        self.repulsive_dist = 0.85     # Distance at which repulsion activates (m)
+        self.repulsive_dist = 0.55     # Distance at which repulsion activates (m) — tuned for narrow corridors
 
         self.w_cross_track_nominal = 6.0
         self.w_cross_track_evasion = 2.5   # Soften centerline tracking to steer around obstacles
@@ -566,16 +569,28 @@ class RouteRunner(Node):
         # Get lookahead target
         (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=1.2)
 
-        # Check if an obstacle is directly in front on the upcoming path (within 1.5m)
+        # Check if an obstacle is directly in front on the upcoming path
         upcoming_slice = self.path_plan[self.current_target_index : min(len(self.path_plan), target_idx + 3)]
         obstacle_blocking_path = False
+        _blocking_diag = None  # filled below for diagnostics
         if len(self.obstacles) > 0 and len(upcoming_slice) > 0:
             path_pts = np.array([(p[0], p[1]) for p in upcoming_slice])
-            # Distance from obstacle points to upcoming path points
+            # Distance from each LiDAR point to nearest upcoming path point
             dists_to_path = np.min(np.linalg.norm(self.obstacles[:, np.newaxis, :] - path_pts[np.newaxis, :, :], axis=-1), axis=1)
-            # Distance from obstacle points to robot
+            # Distance from each LiDAR point to robot
             dists_to_robot = np.linalg.norm(self.obstacles - np.array([self.current_x, self.current_y]), axis=-1)
-            obstacle_blocking_path = np.any((dists_to_path < 0.40) & (dists_to_robot < 1.6))
+            # Only count points that are <0.25 m from the path centreline AND <1.2 m from robot
+            block_mask = (dists_to_path < 0.25) & (dists_to_robot < 1.2)
+            obstacle_blocking_path = bool(np.any(block_mask))
+            if obstacle_blocking_path:
+                # Collect diagnostic: which point is closest to the path
+                worst_idx = int(np.argmin(np.where(block_mask, dists_to_path, np.inf)))
+                _blocking_diag = (
+                    float(self.obstacles[worst_idx, 0]),
+                    float(self.obstacles[worst_idx, 1]),
+                    float(dists_to_path[worst_idx]),
+                    float(dists_to_robot[worst_idx])
+                )
 
         # Dynamically soften cross-track error to allow swerving around obstacles
         if obstacle_blocking_path or len(self.dynamic_obstacles) > 0:
@@ -661,19 +676,28 @@ class RouteRunner(Node):
                     costs[col_mask] += self.w_collision
 
                     # Graduated repulsion field
-                    rep_mask = min_dists < 0.65
-                    costs[rep_mask] += 25.0 * (0.65 - min_dists[rep_mask])
+                    rep_mask = min_dists < 0.45  # Tightened from 0.65 to prevent corridor-wide repulsion
+                    costs[rep_mask] += 25.0 * (0.45 - min_dists[rep_mask])
 
         # --- Traffic & Yielding Decision ---
         best_cost = np.min(costs)
         all_colliding = best_cost >= self.w_collision
 
         if all_colliding and obstacle_blocking_path:
-            # All paths are blocked by an obstacle in front
+            # All sampled trajectories are blocked AND an obstacle is on the path
             if self.state == "NAVIGATING":
                 self.state = "YIELDING"
                 self.yield_start_time = now
-                self.get_logger().warn("Narrow corridor blocked by obstacle! Yielding and waiting for obstacle to pass...")
+                # Diagnostic: log which obstacle point triggered the block (rate-limited to 1 Hz)
+                if _blocking_diag and (now - self._last_block_log_time) > 1.0:
+                    ox, oy, dp, dr = _blocking_diag
+                    self.get_logger().warn(
+                        f"Narrow corridor blocked! "
+                        f"Obstacle at map({ox:.3f}, {oy:.3f}), "
+                        f"dist_to_path={dp:.3f}m, dist_to_robot={dr:.3f}m, "
+                        f"MPPI_best_cost={best_cost:.1f}"
+                    )
+                    self._last_block_log_time = now
                 self.cmd_pub.publish(Twist())
                 return
             elif self.state == "YIELDING":
@@ -683,11 +707,21 @@ class RouteRunner(Node):
                     self.trigger_reroute()
                     return
                 else:
+                    # Rate-limited diagnostic while waiting
+                    if _blocking_diag and (now - self._last_block_log_time) > 1.0:
+                        ox, oy, dp, dr = _blocking_diag
+                        self.get_logger().warn(
+                            f"Still yielding ({elapsed:.1f}s): obstacle at map({ox:.3f}, {oy:.3f}), "
+                            f"dist_to_path={dp:.3f}m, dist_to_robot={dr:.3f}m"
+                        )
+                        self._last_block_log_time = now
                     self.cmd_pub.publish(Twist())
                     return
 
-        # If we were yielding and path has opened up:
-        if self.state == "YIELDING" and not all_colliding:
+        # Path is clear — exit YIELDING only when BOTH MPPI and path-blocker agree
+        # (Previously only checked all_colliding, causing oscillation when one MPPI
+        # sample sneaked through while a wall was still <0.25 m from the path.)
+        if self.state == "YIELDING" and (not all_colliding) and (not obstacle_blocking_path):
             self.get_logger().info("Corridor cleared! Resuming navigation.")
             self.state = "NAVIGATING"
             self.yield_start_time = None
