@@ -88,8 +88,10 @@ class RouteRunner(Node):
         # Navigation state machine: IDLE, PLANNING, NAVIGATING, YIELDING, RE_ROUTING
         self.state = "IDLE"
 
-        # Diagnostic rate-limiter: only log blocking details once per second
+        # Diagnostic rate-limiters & tracking
         self._last_block_log_time = 0.0
+        self._last_turn_log_time = 0.0
+        self.last_snapped_node = None
 
         # Path storage
         self.path_plan = []            # Dense (x, y, theta) waypoints
@@ -141,7 +143,7 @@ class RouteRunner(Node):
         self.repulsive_dist = 0.55     # Distance at which repulsion activates (m) — tuned for narrow corridors
 
         self.w_cross_track_nominal = 6.0
-        self.w_cross_track_evasion = 2.5   # Soften centerline tracking to steer around obstacles
+        self.w_cross_track_evasion = 0.5   # Soften centerline tracking heavily to steer around obstacles
         self.w_cross_track = self.w_cross_track_nominal
 
         # Control timer
@@ -228,7 +230,9 @@ class RouteRunner(Node):
         ranges = np.array(msg.ranges)
         angles = msg.angle_min + np.arange(len(ranges)) * msg.angle_increment
 
-        valid = (ranges > msg.range_min) & (ranges < msg.range_max)
+        # Enforce minimum range of 0.22m to filter out self-reflections off robot wheels (0.17m) & chassis (0.15m)
+        min_range = max(0.22, msg.range_min)
+        valid = (ranges > min_range) & (ranges < msg.range_max)
         ranges = ranges[valid]
         angles = angles[valid]
 
@@ -446,7 +450,8 @@ class RouteRunner(Node):
         """Finds target point along path arc-length to prevent corner cutting."""
         min_dist = float('inf')
         closest_idx = self.current_target_index
-        search_window = min(len(self.path_plan), self.current_target_index + 40)
+        # Restrict search window to max 8 waypoints (~2.4m) ahead to prevent snapping across U-turns or thin shelf walls
+        search_window = min(len(self.path_plan), self.current_target_index + 8)
         for i in range(self.current_target_index, search_window):
             px, py, _ = self.path_plan[i]
             dist = math.sqrt((px - self.current_x)**2 + (py - self.current_y)**2)
@@ -567,7 +572,25 @@ class RouteRunner(Node):
 
 
         # Get lookahead target
-        (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=1.2)
+        (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=0.75)
+
+        # Continuous Node Tracking & Off-Path Deviation Alert
+        snapped_node = self.find_closest_node(self.current_x, self.current_y)
+        if snapped_node != self.last_snapped_node:
+            self.last_snapped_node = snapped_node
+            is_in_plan = (snapped_node in self.node_path)
+            yaw_deg = math.degrees(self.current_yaw)
+            if is_in_plan:
+                node_idx = self.node_path.index(snapped_node)
+                self.get_logger().info(
+                    f"[NODE TRACK] Reached Node {snapped_node} ({node_idx + 1}/{len(self.node_path)} in plan) "
+                    f"at ({self.current_x:.2f}, {self.current_y:.2f}), yaw={yaw_deg:.1f}°"
+                )
+            else:
+                self.get_logger().warn(
+                    f"[DEVIATION ALERT] Robot at Node {snapped_node} at ({self.current_x:.2f}, {self.current_y:.2f}) "
+                    f"— OUTSIDE planned path {self.node_path}!"
+                )
 
         # Check if an obstacle is directly in front on the upcoming path
         upcoming_slice = self.path_plan[self.current_target_index : min(len(self.path_plan), target_idx + 3)]
@@ -579,8 +602,8 @@ class RouteRunner(Node):
             dists_to_path = np.min(np.linalg.norm(self.obstacles[:, np.newaxis, :] - path_pts[np.newaxis, :, :], axis=-1), axis=1)
             # Distance from each LiDAR point to robot
             dists_to_robot = np.linalg.norm(self.obstacles - np.array([self.current_x, self.current_y]), axis=-1)
-            # Only count points that are <0.25 m from the path centreline AND <1.2 m from robot
-            block_mask = (dists_to_path < 0.25) & (dists_to_robot < 1.2)
+            # Only count points that are <0.18 m from path centreline AND <1.2 m from robot (0.18m = robot body width clearance)
+            block_mask = (dists_to_path < 0.18) & (dists_to_robot < 1.2)
             obstacle_blocking_path = bool(np.any(block_mask))
             if obstacle_blocking_path:
                 # Collect diagnostic: which point is closest to the path
@@ -598,9 +621,18 @@ class RouteRunner(Node):
         else:
             self.w_cross_track = self.w_cross_track_nominal
 
+        # Calculate vector heading from current robot pose to lookahead target
+        target_heading = math.atan2(target_y - self.current_y, target_x - self.current_x)
+        heading_error = math.atan2(math.sin(target_heading - self.current_yaw), math.cos(target_heading - self.current_yaw))
+
         # --- MPPI Controller with Predictive Dynamic Rollout ---
         # 1. Sample control sequences
-        v_seq = np.random.normal(0.25, self.noise_v, (self.num_samples, self.horizon))
+        # Heading-Velocity Coupling: when heading error is large (> 30 deg), scale v_mean down toward 0
+        # This allows pure in-place rotation so the robot doesn't take wide arcs or 360 loops into walls
+        heading_alignment = max(0.0, math.cos(heading_error))
+        v_mean = 0.35 * (heading_alignment ** 2)
+
+        v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
         w_seq = np.random.normal(0.0, self.noise_w, (self.num_samples, self.horizon))
         v_seq = np.clip(v_seq, self.v_min, self.v_max)
         w_seq = np.clip(w_seq, -self.w_max, self.w_max)
@@ -622,11 +654,11 @@ class RouteRunner(Node):
         terminal_dists = np.sqrt((x_rollout[:, -1] - target_x)**2 + (y_rollout[:, -1] - target_y)**2)
         costs += self.w_dist * terminal_dists
 
-        # Horizon-wide heading cost
+        # Horizon-wide heading cost (evaluate alignment to target_heading)
         for t in range(self.horizon):
             h_err = np.arctan2(
-                np.sin(target_theta - yaw_rollout[:, t]),
-                np.cos(target_theta - yaw_rollout[:, t])
+                np.sin(target_heading - yaw_rollout[:, t]),
+                np.cos(target_heading - yaw_rollout[:, t])
             )
             costs += (self.w_heading / self.horizon) * np.abs(h_err)
 
@@ -677,7 +709,7 @@ class RouteRunner(Node):
 
                     # Graduated repulsion field
                     rep_mask = min_dists < 0.45  # Tightened from 0.65 to prevent corridor-wide repulsion
-                    costs[rep_mask] += 25.0 * (0.45 - min_dists[rep_mask])
+                    costs[rep_mask] += 80.0 * ((0.45 - min_dists[rep_mask]) ** 2)
 
         # --- Traffic & Yielding Decision ---
         best_cost = np.min(costs)
@@ -733,6 +765,17 @@ class RouteRunner(Node):
 
         optimal_v = float(np.sum(weights * v_seq[:, 0]))
         optimal_w = float(np.sum(weights * w_seq[:, 0]))
+
+        # Turn Area & Off-Track Telemetry Logger
+        abs_h_err_deg = math.degrees(abs(heading_error))
+        if (abs_h_err_deg > 15.0 or abs(optimal_w) > 0.3) and (now - self._last_turn_log_time) > 0.8:
+            self._last_turn_log_time = now
+            min_obs_d = float(np.min(np.linalg.norm(self.obstacles - np.array([self.current_x, self.current_y]), axis=-1))) if len(self.obstacles) > 0 else 99.0
+            self.get_logger().info(
+                f"[TURN TELEMETRY] Node={snapped_node} | Pose=({self.current_x:.2f}, {self.current_y:.2f}, {math.degrees(self.current_yaw):.1f}°) | "
+                f"Wpt={target_idx}/{len(self.path_plan)} ({target_x:.2f}, {target_y:.2f}) | "
+                f"HeadingErr={abs_h_err_deg:.1f}° | Cmd=(v={optimal_v:.2f}, w={optimal_w:.2f}) | MinObs={min_obs_d:.2f}m"
+            )
 
         twist = Twist()
         twist.linear.x = optimal_v
