@@ -519,7 +519,12 @@ class RouteRunner(Node):
         else:
             self.get_logger().warn("No alternate route available around blockage. Will continue waiting...")
             self.state = "YIELDING"
-            self.yield_start_time = now
+            # Do NOT reset yield_start_time here — preserve the original blockage
+            # onset time so the 4.5s yield_timeout continues counting correctly.
+            # Overwriting it would cause an infinite retry loop where the timer
+            # never expires.
+            if self.yield_start_time is None:
+                self.yield_start_time = now
 
     def restore_unblocked_edges(self):
         """Restores temporarily blocked edges once their cooldown has elapsed."""

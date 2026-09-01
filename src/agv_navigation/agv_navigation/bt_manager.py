@@ -5,10 +5,11 @@ from std_msgs.msg import String
 from nav_msgs.msg import Path
 import tf2_ros
 from tf2_ros import Buffer, TransformListener, TransformException
+from ament_index_python.packages import get_package_share_directory
 
 import py_trees
 import json
-import time
+import os
 
 
 class CheckLocalization(py_trees.behaviour.Behaviour):
@@ -164,6 +165,20 @@ class BTManagerNode(Node):
 
         self.blackboard = SimpleBlackboard()
 
+        # Load topological graph for node-ID → (x, y) lookup in sequence_cb
+        try:
+            pkg_share = get_package_share_directory('agv_description')
+            graph_path = os.path.join(pkg_share, 'maps', 'warehouse_graph.json')
+        except Exception:
+            graph_path = os.path.join(
+                os.environ['HOME'], 'AMR', 'AMR-main',
+                'src', 'agv_description', 'maps', 'warehouse_graph.json'
+            )
+        with open(graph_path, 'r') as f:
+            raw = json.load(f)
+        self.graph_coords = {n['id']: (n['x'], n['y']) for n in raw.get('nodes', [])}
+        self.get_logger().info(f"BT Manager: Loaded {len(self.graph_coords)}-node graph for sequence lookup.")
+
         # Publishers & Subscribers
         self.goal_pub = self.create_publisher(PoseStamped, '/goal_pose', 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -185,11 +200,38 @@ class BTManagerNode(Node):
         self.get_logger().info("BT Manager Node Active. Behavior Tree Orchestration running at 10 Hz.")
 
     def sequence_cb(self, msg):
+        """Receives JSON node-ID list, resolves (x, y) coords and populates blackboard goal_queue."""
         try:
-            nodes = json.loads(msg.data)
-            self.get_logger().info(f"BT Manager: Received sequence {nodes}")
+            node_ids = json.loads(msg.data)
+            if not isinstance(node_ids, list):
+                self.get_logger().error("BT Manager: /goal_sequence payload must be a JSON array of node IDs.")
+                return
+
+            coords = []
+            unknown = []
+            for nid in node_ids:
+                if nid in self.graph_coords:
+                    coords.append(self.graph_coords[nid])
+                else:
+                    unknown.append(nid)
+
+            if unknown:
+                self.get_logger().error(
+                    f"BT Manager: Unknown node IDs in sequence (skipped): {unknown}"
+                )
+            if not coords:
+                self.get_logger().warn("BT Manager: No valid goals in sequence — mission not started.")
+                return
+
+            self.blackboard.set("goal_queue", coords)
+            self.blackboard.set("current_goal", None)
+            self.blackboard.set("mission_status", "IDLE")
+            self.get_logger().info(
+                f"BT Manager: Mission loaded — {len(coords)} goal(s): {node_ids}"
+            )
         except Exception as e:
-            self.get_logger().error(f"BT Manager: Failed to parse sequence JSON: {e}")
+            self.get_logger().error(f"BT Manager: Failed to parse /goal_sequence: {e}")
+
 
     def progress_cb(self, msg):
         try:
