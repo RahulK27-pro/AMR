@@ -156,8 +156,8 @@ class RouteRunner(Node):
         # Repulsion fields
         self.dynamic_repulsive_dist = 0.85  # Proactive evasion bubble for moving obstacles (m)
         self.dynamic_w_repulsive = 45.0     # Smooth proactive repulsion from dynamic obstacles
-        self.static_repulsive_dist = 0.45   # Wall repulsion activation distance (m)
-        self.static_w_repulsive = 80.0      # Quadratic steep wall repulsion
+        self.static_repulsive_dist = 0.30   # Wall repulsion activation distance (m) (tuned for narrow corridors)
+        self.static_w_repulsive = 50.0      # Quadratic wall repulsion (smooth gradient in narrow passages)
 
         self.w_cross_track_nominal = 6.0
         self.w_cross_track_evasion = 0.5   # Soften centerline tracking heavily to steer around obstacles
@@ -613,6 +613,8 @@ class RouteRunner(Node):
         if self._recovery_phase is None:
             self._recovery_phase = "BACKUP"
             self._recovery_start_time = now
+            self._stuck_counter = 0
+            self._last_stuck_check_pos = None
             self.get_logger().warn(
                 f"[BRAIN: RECOVERY] Phase 1/2 — BACKING UP at ({self.current_x:.2f}, {self.current_y:.2f}). "
                 f"Reversing for {self._recovery_backup_dur:.1f}s to escape stuck position."
@@ -637,6 +639,7 @@ class RouteRunner(Node):
                 f"({self.current_x:.2f}, {self.current_y:.2f}) to {self.target_node}."
             )
             self._recovery_phase = None
+            self._stuck_counter = 0
             self._last_stuck_check_pos = None
             self.trigger_reroute()
 
@@ -647,6 +650,13 @@ class RouteRunner(Node):
 
         now = self._now_sec()
         self.restore_unblocked_edges()
+
+        # Handle active recovery maneuver directly before standard control flow
+        if self._recovery_phase is not None:
+            self._stuck_counter = 0
+            self._last_stuck_check_pos = None
+            self._execute_recovery()
+            return
 
         # Check final destination
         final_x, final_y, _ = self.path_plan[-1]
@@ -776,7 +786,7 @@ class RouteRunner(Node):
 
         v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
 
-        # Fix 3 — Swerve side commitment: bias MPPI angular sampling toward the clear side
+        # Fix 3 & D — Swerve side commitment: bias MPPI angular sampling toward clear side with distance-scaling
         if len(close_dyn) > 0 and is_evading:
             if self._swerve_lock_ticks <= 0:
                 # Determine which side to pass based on cross-product of (robot→target) × (robot→obstacle)
@@ -787,21 +797,26 @@ class RouteRunner(Node):
                 dx_o = nearest['pos'][0] - self.current_x
                 dy_o = nearest['pos'][1] - self.current_y
                 cross = dx_t * dy_o - dy_t * dx_o  # >0 = obstacle on left → swerve right
-                self._swerve_bias = -self.swerve_bias_strength if cross > 0 else self.swerve_bias_strength
+                obs_dist = math.hypot(dx_o, dy_o)
+                # Fix D — Scale bias inversely with distance so closer obstacles produce stronger evasive push
+                raw_bias = self.swerve_bias_strength * (self.evasion_range / max(0.20, obs_dist))
+                bias_mag = min(0.80, max(0.25, raw_bias))
+                self._swerve_bias = -bias_mag if cross > 0 else bias_mag
                 self._swerve_lock_ticks = self.swerve_lock_duration
                 side_str = "RIGHT (obs on LEFT)" if cross > 0 else "LEFT (obs on RIGHT)"
                 self.get_logger().info(
                     f"[BRAIN: SWERVE] Committed swerve {side_str} for {self.swerve_lock_duration} ticks | "
-                    f"bias={self._swerve_bias:+.2f} rad/s | "
-                    f"Nearest obs at ({nearest['pos'][0]:.2f}, {nearest['pos'][1]:.2f}) "
-                    f"dist={math.hypot(dx_o, dy_o):.2f}m"
+                    f"bias={self._swerve_bias:+.2f} rad/s (dist={obs_dist:.2f}m) | "
+                    f"Nearest obs at ({nearest['pos'][0]:.2f}, {nearest['pos'][1]:.2f})"
                 )
             else:
                 self._swerve_lock_ticks -= 1
         else:
-            # No close obstacle — release swerve commitment
-            self._swerve_bias = 0.0
-            self._swerve_lock_ticks = 0
+            # Fix A — Do NOT abruptly zero the lock! Count down naturally so brief range exits don't flip direction
+            if self._swerve_lock_ticks > 0:
+                self._swerve_lock_ticks -= 1
+            else:
+                self._swerve_bias = 0.0
 
         w_seq = np.random.normal(self._swerve_bias, self.noise_w, (self.num_samples, self.horizon))
         v_seq = np.clip(v_seq, self.v_min, self.v_max)
@@ -962,30 +977,31 @@ class RouteRunner(Node):
                 f"HeadingErr={abs_h_err_deg:.1f}° | Cmd=(v={optimal_v:.2f}, w={optimal_w:.2f}) | MinObs={min_obs_d:.2f}m"
             )
 
-        # Fix 5 — Stuck detector: count ticks where robot spins but doesn't translate
-        if self._last_stuck_check_pos is not None:
-            moved = math.hypot(
-                self.current_x - self._last_stuck_check_pos[0],
-                self.current_y - self._last_stuck_check_pos[1]
-            )
-            is_spinning = abs(optimal_w) > 0.15
-            if moved < 0.03 and is_spinning:
-                self._stuck_counter += 1
+        # Fix 5 & B — Stuck detector: count ticks where robot spins but doesn't translate
+        if self._recovery_phase is None:
+            if self._last_stuck_check_pos is not None:
+                moved = math.hypot(
+                    self.current_x - self._last_stuck_check_pos[0],
+                    self.current_y - self._last_stuck_check_pos[1]
+                )
+                is_spinning = abs(optimal_w) > 0.15
+                if moved < 0.03 and is_spinning:
+                    self._stuck_counter += 1
+                else:
+                    self._stuck_counter = 0
+                    self._last_stuck_check_pos = (self.current_x, self.current_y)
             else:
-                self._stuck_counter = 0
                 self._last_stuck_check_pos = (self.current_x, self.current_y)
-        else:
-            self._last_stuck_check_pos = (self.current_x, self.current_y)
 
-        if self._stuck_counter >= self._stuck_threshold_ticks:
-            self.get_logger().warn(
-                f"[BRAIN: STUCK_DETECTOR] Stuck for {self._stuck_counter} ticks at "
-                f"({self.current_x:.2f}, {self.current_y:.2f}). Triggering recovery."
-            )
-            self._stuck_counter = 0
-            self._last_stuck_check_pos = None
-            self._execute_recovery()
-            return
+            if self._stuck_counter >= self._stuck_threshold_ticks:
+                self.get_logger().warn(
+                    f"[BRAIN: STUCK_DETECTOR] Stuck for {self._stuck_counter} ticks at "
+                    f"({self.current_x:.2f}, {self.current_y:.2f}). Triggering recovery."
+                )
+                self._stuck_counter = 0
+                self._last_stuck_check_pos = None
+                self._execute_recovery()
+                return
 
         twist = Twist()
         twist.linear.x = optimal_v

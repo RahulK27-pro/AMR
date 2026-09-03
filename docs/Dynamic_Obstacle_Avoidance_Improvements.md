@@ -276,17 +276,43 @@ self._last_recovery_log_time = 0.0
 
 ---
 
+---
+
+## Narrow Corridor Navigation Refinements (Fixes A, B, C, D)
+
+Based on telemetry analysis of narrow passage bottlenecks (`MinObs < 0.55m`), 4 additional refinements were introduced:
+
+### Fix A — Swerve Lock Retention
+- **Problem:** When an obstacle momentarily moved past the 1.0m boundary, `_swerve_lock_ticks` was abruptly cleared to 0, re-triggering rapid L/R oscillation (29 rapid flips).
+- **Fix:** Allow `_swerve_lock_ticks` to decrement naturally rather than zeroing it out on exit, maintaining consistent angular bias.
+
+### Fix B — Active Recovery Phase Guard in Control Loop
+- **Problem:** During the 1.5s reverse recovery maneuver, the robot's lack of forward translation satisfied the stuck detector condition and re-triggered recovery at the exact same location.
+- **Fix:** Guard the top of `control_loop()` to execute recovery directly and skip stuck accumulation whenever `_recovery_phase is not None`.
+
+### Fix C — Narrow Corridor Wall Repulsion Tuning
+- **Problem:** In ~0.8m–1.0m wide passages, a `0.45m` static repulsion bubble on both sides left no low-cost forward path, causing deadlocks at `MinObs ≈ 0.37m`.
+- **Fix:** Decreased `static_repulsive_dist` from `0.45m` to `0.30m` and softened `static_w_repulsive` from `80.0` to `50.0`, leaving a clean travel corridor between shelves and doorways.
+
+### Fix D — Distance-Scaled Swerve Bias
+- **Problem:** A fixed `±0.35 rad/s` angular bias was insufficient to overcome obstacle repulsion when obstacles were very close (`< 0.50m`).
+- **Fix:** Scaled the bias inversely with distance: `bias_mag = min(0.80, max(0.25, 0.35 * (1.0 / dist)))`, providing up to `0.80 rad/s` decisive steering at close proximity.
+
+---
+
 ## Summary of Parameter Changes
 
-| Parameter | Old Value | New Value | Reason |
-|---|---|---|---|
-| Evasion trigger | `len(dynamic_obstacles) > 0` | `distance < 1.0m` | Prevent path-collapse for far obstacles |
-| Max tracked speed | `2.5 m/s` | `2.0 m/s` | Reject teleporting ghost clusters |
-| Min age to count | `1 frame` | `2 consecutive frames` | LiDAR ghost filter |
-| `v_mean` floor | `0.0 m/s` | `0.08 m/s` | Break freeze loop at high heading error |
-| `w_seq` mean | `0.0 rad/s` | `±0.35 rad/s` (biased) | Commit swerge direction |
-| Stuck threshold | N/A (none) | `10 ticks (~1s)` | Trigger recovery |
-| Recovery backup speed | N/A (none) | `-0.15 m/s for 1.5s` | Escape stuck position |
+| Parameter | Initial Value | Tuned Value | Final Narrow Corridor Value | Reason |
+|---|---|---|---|---|
+| Evasion trigger range | `len(dyn_obs) > 0` (all) | `1.0m` | `1.0m` | Avoid path-following collapse for far obstacles |
+| Swerve Lock Exit | Instant reset (`0`) | Decrement naturally | Decrement naturally | Prevent rapid L/R direction flipping |
+| Static Repulsion Distance | `0.65m` | `0.45m` | `0.30m` | Open clearance channel in narrow corridors |
+| Static Repulsion Weight | `120.0` | `80.0` | `50.0` | Smoother gradient near warehouse walls & doors |
+| Swerve Bias Strength | `0.0 rad/s` (none) | `±0.35 rad/s` (fixed) | `±0.25 ~ 0.80 rad/s` (distance-scaled) | Stronger evasive push at close range |
+| Stuck Recovery Guard | None | Basic timer | Dedicated state bypass in `control_loop` | Prevent false re-triggers during backup |
+| Max Tracked Speed | `2.5 m/s` | `2.0 m/s` | `2.0 m/s` | Filter LiDAR cluster teleportation noise |
+| Min Cluster Age | `1 frame` | `2 frames` | `2 frames` | Eliminate ghost single-frame detections |
+| `v_mean` Floor | `0.0 m/s` | `0.08 m/s` | `0.08 m/s` | Break freeze loop when heading error is high |
 
 ---
 
@@ -304,26 +330,10 @@ colcon build --packages-select agv_navigation --symlink-install
 source install/setup.bash
 ros2 run agv_navigation route_runner 2>&1 | tee "logs/route_runner_$(date +%Y%m%d_%H%M%S).log"
 
-# After run — check new brain events
+# After run — check brain & recovery events
 grep "BRAIN: SWERVE\|BRAIN: STUCK\|BRAIN: RECOVERY" logs/route_runner_*.log
 
-# Compare obstacle count (was 5-29, should now be 0-3)
-grep "LIDAR_SCAN: DYNAMIC_OBSTACLE" logs/route_runner_*.log | awk -F'Obs #' '{print $2}' | cut -d' ' -f1 | sort -n | tail -1
-
-# Check for spin-in-place reduction (was 72, target <10)
+# Check for spin-in-place reduction (target: < 10)
 grep -c "v=0.00m/s" logs/route_runner_*.log
 ```
 
----
-
-## Expected Improvements After Fix
-
-| Metric | Before | Expected After |
-|---|---|---|
-| Ghost obstacles per scan | 5–29 | 0–3 |
-| Spin-in-place readings | 72 | < 10 |
-| False halts (v=0, MinObs > 0.4m) | 61 | < 5 |
-| Deviation alerts | 78 | < 20 |
-| Max circling duration | 12.4s | < 1s (10 ticks) |
-| MPPI evasion triggers | 503 | < 50 |
-| Successful swerge-and-pass | Rare (luck) | Consistent |
