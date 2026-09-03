@@ -466,7 +466,7 @@ global_costmap:
       use_sim_time: true
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.24
+      robot_radius: 0.13
       resolution: 0.05
       rolling_window: false
       width: 100
@@ -488,7 +488,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.35
+        inflation_radius: 0.25
 
 # ── local_costmap — for TEB/MPPI obstacle reactions ──────────────────
 local_costmap:
@@ -503,7 +503,7 @@ local_costmap:
       width: 5
       height: 5
       resolution: 0.05
-      robot_radius: 0.24
+      robot_radius: 0.13
       plugins: ["obstacle_layer", "inflation_layer"]
       # (same obstacle/inflation layers as global)
 ```

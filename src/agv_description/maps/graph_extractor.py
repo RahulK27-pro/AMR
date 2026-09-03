@@ -61,9 +61,9 @@ def extract_graph(map_yaml_path):
     print("Computing Distance Transform...")
     dist_transform = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
     
-    robot_radius = 0.15
+    robot_radius = 0.11
     safety_margin = 0.10
-    min_clearance = robot_radius + safety_margin  # 0.25m
+    min_clearance = robot_radius + safety_margin  # 0.21m
     
     print("Generating Adaptive Grid...")
     # Generate multi-resolution candidate grids

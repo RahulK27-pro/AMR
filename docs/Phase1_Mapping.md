@@ -5,20 +5,20 @@ This document details the configuration and implementation of the autonomous map
 ## 1. Physical Robot Geometry (`warehouse_agv.urdf`)
 The robot is modeled to mathematically reflect a compact, differential drive platform.
 
-- **Footprint:** The `base_link` cylinder has a radius of `0.15m` (30cm diameter).
+- **Footprint:** The `base_link` cylinder has a radius of `0.11m` (22cm diameter) and height of `0.10m`.
 - **Ground Clearance:** A `1cm` gap is mathematically enforced underneath the chassis (`z=0.01`) to prevent Gazebo from bogging down the physics solver with floor friction. The casters and wheels correctly sit at `z=0`.
 - **Sensors:** 
-  - **LiDAR:** Mounted on top at `z=0.155m`. Minimum range clamped to `0.15m` so it does not scan the robot's own chassis.
-  - **Camera:** Front-facing, flush with the 15cm radius rim.
+  - **LiDAR:** Mounted on top-center of body at `z=0.125m`. Minimum range clamped to `0.15m` so it does not scan the robot's own chassis.
+  - **Camera:** Front-facing, mounted at `x=0.11m`.
   - **IMU:** Placed in the dead center of the chassis for accurate orientation data.
-- **Kinematics:** Differential drive plugin configured with exactly `0.34m` wheel separation.
+- **Kinematics:** Differential drive plugin configured with exactly `0.26m` wheel separation and `0.025m` wheel radius.
 
 ## 2. Nav2 Configuration (`nav2_params_explore.yaml`)
 Autonomous exploration relies on the tight integration of MPPI local planning and SLAM.
 
 ### Costmaps and Safety
-- **Robot Radius:** `0.15m` (matches URDF).
-- **Inflation Radius:** `0.25m` (Provides a 10cm safety buffer from walls).
+- **Robot Radius:** `0.13m` (0.11m chassis + 0.02m margin).
+- **Inflation Radius:** `0.25m` (Provides a 12cm safety buffer from walls).
 - **Costmap Broadcasts:** `always_send_full_costmap: true` ensures the global map is constantly streamed to `explore_lite`.
 - **Message Filter:** Added `transform_tolerance: 0.5` to prevent LiDAR frames from being dropped due to simulation clock jitter.
 

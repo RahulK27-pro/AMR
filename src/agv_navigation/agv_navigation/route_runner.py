@@ -151,7 +151,7 @@ class RouteRunner(Node):
         self.w_dist = 4.0
         self.w_heading = 3.0
         self.w_collision = 5000.0
-        self.collision_radius = 0.22   # Safety hard clearance (m) — robot body radius 0.15 + 0.07 margin
+        self.collision_radius = 0.18   # Safety hard clearance (m) — robot body radius 0.11 + 0.07 margin
         
         # Repulsion fields
         self.dynamic_repulsive_dist = 0.85  # Proactive evasion bubble for moving obstacles (m)
@@ -256,8 +256,8 @@ class RouteRunner(Node):
         ranges = np.array(msg.ranges)
         angles = msg.angle_min + np.arange(len(ranges)) * msg.angle_increment
 
-        # Enforce minimum range of 0.22m to filter out self-reflections off robot wheels (0.17m) & chassis (0.15m)
-        min_range = max(0.22, msg.range_min)
+        # Enforce minimum range of 0.15m to filter out self-reflections off robot wheels (0.13m) & chassis (0.11m)
+        min_range = max(0.15, msg.range_min)
         valid = (ranges > min_range) & (ranges < msg.range_max)
         ranges = ranges[valid]
         angles = angles[valid]

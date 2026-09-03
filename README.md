@@ -22,11 +22,11 @@ A fully simulated **Autonomous Mobile Robot (AMR)** for warehouse navigation, bu
 
 | Property | Value |
 |---|---|
-| Base geometry | Cylinder, radius 0.15 m, height 0.12 m |
-| Total mass | ~15 kg |
+| Base geometry | Cylinder, radius 0.11 m, height 0.10 m (diameter 0.22 m) |
+| Total mass | ~10.4 kg |
 | Drive type | Differential drive (2 driven wheels + 2 caster wheels) |
-| Wheel radius | 0.05 m |
-| Wheel separation | 0.34 m |
+| Wheel radius | 0.025 m (diameter 0.05 m) |
+| Wheel separation | 0.26 m |
 | Sensors | 2D LiDAR (`/scan`), IMU (`/imu/data`), Camera (`/camera/image_raw`) |
 | Max linear velocity | 0.8 m/s |
 | Max angular velocity | 1.8 rad/s |

@@ -261,7 +261,7 @@ The key parameters in [`route_runner.py`](file:///home/rahul/AMR/AMR-main/src/ag
 | `horizon` | 15 steps (1.5 s) | MPPI lookahead depth |
 | `num_samples` | 80 | Trajectory samples per tick (10 Hz) |
 | `w_collision` | 5000.0 | Hard collision cost weight |
-| `collision_radius` | 0.22 m | Hard safety footprint clearance (0.15m body + 0.07m margin) |
+| `collision_radius` | 0.18 m | Hard safety footprint clearance (0.11m body + 0.07m margin) |
 | `dynamic_repulsive_dist` | 0.85 m | Proactive repulsion bubble around moving obstacles |
 | `dynamic_w_repulsive` | 45.0 | Dynamic obstacle repulsion weight |
 | `static_repulsive_dist` | 0.45 m | Wall/shelf repulsion activation distance |

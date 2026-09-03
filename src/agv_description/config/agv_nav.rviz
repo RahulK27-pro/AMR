@@ -11,7 +11,7 @@ Panels:
         - /MarkerArray1
       Splitter Ratio: 0.5
     Tree Height: 232
-  - Class: nav2_rviz_plugins/Nav2Panel
+  - Class: nav2_rviz_plugins/Navigation 2
     Name: Navigation
   - Class: rviz_common/Views
     Expanded:
