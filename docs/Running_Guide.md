@@ -239,7 +239,7 @@ ros2 run agv_navigation obstacle_teleop
 
 ---
 
-## MPPI Tuning Reference
+## MPPI & Obstacle Avoidance Tuning Reference
 
 The key parameters in [`route_runner.py`](file:///home/rahul/AMR/AMR-main/src/agv_navigation/agv_navigation/route_runner.py):
 
@@ -248,11 +248,102 @@ The key parameters in [`route_runner.py`](file:///home/rahul/AMR/AMR-main/src/ag
 | `v_max` | 0.8 m/s | Top linear speed |
 | `w_max` | 1.8 rad/s | Max angular velocity |
 | `horizon` | 15 steps (1.5 s) | MPPI lookahead depth |
-| `num_samples` | 80 | Trajectory samples per tick |
+| `num_samples` | 80 | Trajectory samples per tick (10 Hz) |
 | `w_collision` | 5000.0 | Hard collision cost weight |
-| `w_repulsive` | 35.0 | Soft repulsion from obstacles |
-| `repulsive_dist` | 0.85 m | Repulsion activation distance |
-| `w_cross_track_nominal` | 6.0 | Path tracking tightness (normal) |
-| `w_cross_track_evasion` | 2.5 | Path tracking tightness (evasion) |
-| `yield_timeout` | 4.5 s | Seconds before dynamic re-route |
-| `collision_radius` | 0.30 m | Hard safety clearance |
+| `collision_radius` | 0.22 m | Hard safety footprint clearance (0.15m body + 0.07m margin) |
+| `dynamic_repulsive_dist` | 0.85 m | Proactive repulsion bubble around moving obstacles |
+| `dynamic_w_repulsive` | 45.0 | Dynamic obstacle repulsion weight |
+| `static_repulsive_dist` | 0.45 m | Wall/shelf repulsion activation distance |
+| `static_w_repulsive` | 80.0 | Quadratic wall repulsion weight |
+| `w_cross_track_nominal` | 6.0 | Centerline tracking tightness in open corridors |
+| `w_cross_track_evasion` | 0.5 | Relaxed centerline tracking during evasion |
+| `yield_timeout` | 4.5 s | Seconds to wait before Dijkstra re-route |
+
+---
+
+## Recording & Diagnostic Logs
+
+To diagnose dynamic obstacle avoidance, path tracking, room transitions, and decision-making, use the following logging commands.
+
+### Method 1: Live Route Runner Logging to Console and File
+
+Run `route_runner` in its terminal using `tee` so that all real-time brain decisions and telemetry are displayed on screen and simultaneously saved to a log file:
+
+```bash
+source install/setup.bash
+mkdir -p logs
+ros2 run agv_navigation route_runner | tee "logs/route_runner_$(date +%Y%m%d_%H%M%S).log"
+```
+
+---
+
+### Method 2: Record Full ROS 2 Bag (All Topics, Sensors, TF & Commands)
+
+Open a separate terminal and run this command before starting your navigation run:
+
+```bash
+source install/setup.bash
+mkdir -p logs
+ros2 bag record -a --exclude-topics /particle_cloud -o "logs/bag_$(date +%Y%m%d_%H%M%S)"
+```
+
+> **Note:** `--exclude-topics /particle_cloud` prevents the ROS 2 bag transport type conflict between AMCL (`nav2_msgs/ParticleCloud`) and RViz (`geometry_msgs/PoseArray`).
+
+**What this records:**
+- **Inputs:** `/scan` (LiDAR point ranges), `/goal_pose`, `/goal_sequence`, `/initialpose`, `/tf`, `/tf_static`
+- **Outputs:** `/cmd_vel` (motor velocities), `/agv_dense_path` (MPPI path), `/mission_progress`, `/odometry/filtered`
+- **Dynamic Obstacle:** `/dynamic_obstacle/cmd_vel`, `/dynamic_obstacle/odom`
+
+Press `Ctrl+C` in that terminal when your test completes to save the bag.
+
+---
+
+### Method 3: Snapshot All Node Console Logs After a Run
+
+After completing a simulation run, capture all individual ROS 2 node log files generated under `~/.ros/log/` into a timestamped directory:
+
+```bash
+LOG_DIR="logs/run_$(date +%Y%m%d_%H%M%S)" && mkdir -p "$LOG_DIR" && cp -r ~/.ros/log/latest/* "$LOG_DIR"/ && echo "All node logs saved to $LOG_DIR"
+```
+
+---
+
+## Analyzing Decision Traceability in Logs
+
+The navigation system uses a hierarchical brain architecture with explicit log tags to trace **who made each decision**:
+
+| Log Tag | Subsystem ("Brain") | Role & Decision Captured |
+|---|---|---|
+| `[BRAIN: MPPI_CONTROLLER]` | Tactical Controller | Softened centerline tracking (`w_cross_track = 0.5`) to swerve around a dynamic or static obstacle. |
+| `[BRAIN: STATE_MACHINE]` | Traffic Executive | Commanded `YIELD` (`v = 0.0`) when all trajectories are blocked in a narrow aisle; holds yield timer; resumes navigation when clear. |
+| `[BRAIN: DIJKSTRA_ROUTER]` | Global Planner | Commanded `ROUTE CHANGE`: penalized blocked edge (`+999.0`) and recalculated alternate topological path after 4.5s yield timeout. |
+| `[BRAIN: GOAL_ARRIVAL]` | Destination Executive | Detected arrival within destination threshold (`dist < 0.30m`), logged arrival error, and commanded full stop. |
+| `[BRAIN: MISSION_EXEC]` | Mission Orchestrator | Progressed to next waypoint in the multi-goal mission queue. |
+| `[LIDAR_SCAN: DYNAMIC_OBSTACLE]` | Perception / Tracking | Tracked moving obstacle with position `(x, y)`, velocity `(vx, vy)`, speed `(m/s)`, and distance to robot. |
+| `[TELEMETRY]` | Health / Status Monitor | Periodic (1.5s) snapshot of robot map pose, heading, closest node, distance to goal, motor command `(v, w)`, and state. |
+| `[DEVIATION ALERT]` | Graph Tracker | Alert when robot position drifts outside planned Dijkstra node sequence. |
+
+### Quick Analysis Filter Commands
+
+Filter and inspect specific behaviors directly from your saved run log:
+
+```bash
+# 1. Trace all high-level autonomous decisions:
+grep "\[BRAIN:" logs/route_runner_*.log
+
+# 2. Trace dynamic obstacle detection and velocity estimation:
+grep "\[LIDAR_SCAN:" logs/route_runner_*.log
+
+# 3. Trace tactical evasive swerves:
+grep "\[BRAIN: MPPI_CONTROLLER\]" logs/route_runner_*.log
+
+# 4. Trace corridor yields and rerouting detours:
+grep -E "\[BRAIN: STATE_MACHINE\]|\[BRAIN: DIJKSTRA_ROUTER\]" logs/route_runner_*.log
+
+# 5. Trace goal arrival and mission waypoint progression:
+grep -E "\[BRAIN: GOAL_ARRIVAL\]|\[BRAIN: MISSION_EXEC\]" logs/route_runner_*.log
+
+# 6. Trace any path deviations:
+grep "\[DEVIATION ALERT\]" logs/route_runner_*.log
+```
+

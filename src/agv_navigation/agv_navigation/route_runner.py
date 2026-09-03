@@ -91,6 +91,9 @@ class RouteRunner(Node):
         # Diagnostic rate-limiters & tracking
         self._last_block_log_time = 0.0
         self._last_turn_log_time = 0.0
+        self._last_dyn_log_time = 0.0
+        self._last_mppi_evade_log_time = 0.0
+        self._last_pose_log_time = 0.0
         self.last_snapped_node = None
 
         # Path storage
@@ -112,7 +115,7 @@ class RouteRunner(Node):
         # Obstacles
         self.obstacles = np.array([])  # Static and dynamic points in map frame
         self.prev_obstacle_clusters = []
-        self.dynamic_obstacles = []    # List of dicts: {'pos': (x,y), 'vel': (vx,vy), 'radius': r}
+        self.dynamic_obstacles = []    # List of dicts: {'pos': (x,y), 'vel': (vx,vy), 'speed': s, 'radius': r}
         self.last_scan_time = None
 
 
@@ -139,8 +142,12 @@ class RouteRunner(Node):
         self.w_heading = 3.0
         self.w_collision = 5000.0
         self.collision_radius = 0.22   # Safety hard clearance (m) — robot body radius 0.15 + 0.07 margin
-        self.w_repulsive = 35.0        # Smooth proactive repulsion from obstacles
-        self.repulsive_dist = 0.55     # Distance at which repulsion activates (m) — tuned for narrow corridors
+        
+        # Repulsion fields
+        self.dynamic_repulsive_dist = 0.85  # Proactive evasion bubble for moving obstacles (m)
+        self.dynamic_w_repulsive = 45.0     # Smooth proactive repulsion from dynamic obstacles
+        self.static_repulsive_dist = 0.45   # Wall repulsion activation distance (m)
+        self.static_w_repulsive = 80.0      # Quadratic steep wall repulsion
 
         self.w_cross_track_nominal = 6.0
         self.w_cross_track_evasion = 0.5   # Soften centerline tracking heavily to steer around obstacles
@@ -292,17 +299,29 @@ class RouteRunner(Node):
                 if best_prev is not None:
                     vel = (curr_c - best_prev) / dt
                     speed = np.linalg.norm(vel)
-                    # Classify as dynamic if moving between 0.1 m/s and 2.5 m/s
+                    # Classify as dynamic if moving between 0.10 m/s and 2.5 m/s
                     if 0.10 <= speed <= 2.5:
                         new_dynamic_obs.append({
                             'pos': curr_c,
                             'vel': vel,
+                            'speed': speed,
                             'radius': 0.35
                         })
 
         self.dynamic_obstacles = new_dynamic_obs
         self.prev_obstacle_clusters = current_clusters
         self.last_scan_time = now
+
+        # Real-time LiDAR dynamic obstacle detection logging (rate-limited to 1 Hz)
+        if len(self.dynamic_obstacles) > 0 and (now - self._last_dyn_log_time) > 1.0:
+            self._last_dyn_log_time = now
+            for i, dob in enumerate(self.dynamic_obstacles):
+                d_robot = math.hypot(dob['pos'][0] - self.current_x, dob['pos'][1] - self.current_y)
+                self.get_logger().info(
+                    f"[LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #{i+1} at map({dob['pos'][0]:.2f}, {dob['pos'][1]:.2f}) | "
+                    f"Vel=({dob['vel'][0]:.2f}, {dob['vel'][1]:.2f}) Speed={dob['speed']:.2f}m/s | "
+                    f"DistToRobot={d_robot:.2f}m | RobotPose=({self.current_x:.2f}, {self.current_y:.2f})"
+                )
 
     def densify_path(self, node_path, step_m=0.30):
         """Interpolate dense (x, y, theta) waypoints every step_m meters."""
@@ -502,7 +521,11 @@ class RouteRunner(Node):
                             edge["distance_m"] = 999.0
                             self.blocked_edges[(v, u)] = (orig_cost, now + 25.0)
 
-                    self.get_logger().warn(f"Temporarily closed blocked corridor edge: {u} <-> {v}")
+                    self.get_logger().warn(
+                        f"[BRAIN: DIJKSTRA_ROUTER] Commanded ROUTE CHANGE to avoid collision! "
+                        f"Blocked edge ({u} <-> {v}) temporarily penalized (+999.0 for 25s). "
+                        f"Recalculating global topological path from {start_node} to {self.target_node}..."
+                    )
             except ValueError:
                 pass
 
@@ -515,9 +538,15 @@ class RouteRunner(Node):
             self.publish_active_path()
             self.state = "NAVIGATING"
             self.yield_start_time = None
-            self.get_logger().info(f"DYNAMIC REROUTE SUCCESSFUL! New path: {self.node_path}")
+            self.get_logger().info(
+                f"[BRAIN: DIJKSTRA_ROUTER] DYNAMIC REROUTE SUCCESSFUL! "
+                f"New route: {self.node_path} ({len(self.path_plan)} waypoints). Resuming navigation."
+            )
         else:
-            self.get_logger().warn("No alternate route available around blockage. Will continue waiting...")
+            self.get_logger().warn(
+                f"[BRAIN: DIJKSTRA_ROUTER] No alternate route available around blockage from {start_node} to {self.target_node}. "
+                f"Robot remains YIELDING."
+            )
             self.state = "YIELDING"
             # Do NOT reset yield_start_time here — preserve the original blockage
             # onset time so the 4.5s yield_timeout continues counting correctly.
@@ -559,7 +588,8 @@ class RouteRunner(Node):
             if self.goal_queue:
                 # More goals remain — dequeue and navigate to next waypoint
                 self.get_logger().info(
-                    f"Waypoint {self.mission_current}/{self.mission_total} reached. "
+                    f"[BRAIN: MISSION_EXEC] Reached Waypoint {self.mission_current}/{self.mission_total} "
+                    f"at ({self.current_x:.2f}, {self.current_y:.2f}). "
                     f"Proceeding to next goal ({len(self.goal_queue)} remaining)."
                 )
                 self._dispatch_next_goal()
@@ -567,8 +597,9 @@ class RouteRunner(Node):
                 # Final goal reached — mission complete
                 total = self.mission_total if self.mission_total > 0 else 1
                 self.get_logger().info(
-                    f"FINAL DESTINATION REACHED! "
-                    f"Mission complete ({total} goal(s) visited)."
+                    f"[BRAIN: GOAL_ARRIVAL] FINAL DESTINATION REACHED at ({self.current_x:.2f}, {self.current_y:.2f})! "
+                    f"Target was ({final_x:.2f}, {final_y:.2f}) [Arrival Error: {dist_to_final:.3f}m]. "
+                    f"Brain commanded full stop (v=0, w=0). Mission complete ({total} goal(s) visited)."
                 )
                 self._publish_mission_progress("MISSION_COMPLETE")
                 self.mission_total = 0
@@ -621,8 +652,24 @@ class RouteRunner(Node):
                 )
 
         # Dynamically soften cross-track error to allow swerving around obstacles
-        if obstacle_blocking_path or len(self.dynamic_obstacles) > 0:
+        is_evading = False
+        evasion_causes = []
+        if len(self.dynamic_obstacles) > 0:
+            is_evading = True
+            evasion_causes.append(f"{len(self.dynamic_obstacles)} dynamic obstacle(s)")
+        if obstacle_blocking_path:
+            is_evading = True
+            evasion_causes.append("static obstacle near path")
+
+        if is_evading:
             self.w_cross_track = self.w_cross_track_evasion
+            if (now - self._last_mppi_evade_log_time) > 1.0:
+                self._last_mppi_evade_log_time = now
+                self.get_logger().info(
+                    f"[BRAIN: MPPI_CONTROLLER] Tactical evasion active ({', '.join(evasion_causes)}). "
+                    f"Brain tweaked controller: relaxed centerline weight w_cross_track {self.w_cross_track_nominal} -> {self.w_cross_track_evasion}. "
+                    f"Robot pose=({self.current_x:.2f}, {self.current_y:.2f}, {math.degrees(self.current_yaw):.1f}°)."
+                )
         else:
             self.w_cross_track = self.w_cross_track_nominal
 
@@ -632,10 +679,26 @@ class RouteRunner(Node):
 
         # --- MPPI Controller with Predictive Dynamic Rollout ---
         # 1. Sample control sequences
+        # Goal approach velocity scaling: smooth quadratic deceleration as robot nears destination
+        if dist_to_final < 1.2:
+            approach_scale = max(0.28, min(1.0, dist_to_final / 1.0))
+        else:
+            approach_scale = 1.0
+
+        # Dynamic obstacle proximity deceleration: if dynamic obstacle is ahead within 1.5m, scale v_mean down
+        dyn_slowdown = 1.0
+        for dob in self.dynamic_obstacles:
+            d_obs = math.hypot(dob['pos'][0] - self.current_x, dob['pos'][1] - self.current_y)
+            if d_obs < 1.5:
+                angle_to_obs = math.atan2(dob['pos'][1] - self.current_y, dob['pos'][0] - self.current_x)
+                angle_diff = abs(math.atan2(math.sin(angle_to_obs - self.current_yaw), math.cos(angle_to_obs - self.current_yaw)))
+                if angle_diff < math.radians(60):
+                    dyn_slowdown = min(dyn_slowdown, max(0.20, d_obs / 1.5))
+
         # Heading-Velocity Coupling: when heading error is large (> 30 deg), scale v_mean down toward 0
         # This allows pure in-place rotation so the robot doesn't take wide arcs or 360 loops into walls
         heading_alignment = max(0.0, math.cos(heading_error))
-        v_mean = 0.35 * (heading_alignment ** 2)
+        v_mean = 0.35 * (heading_alignment ** 2) * approach_scale * dyn_slowdown
 
         v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
         w_seq = np.random.normal(0.0, self.noise_w, (self.num_samples, self.horizon))
@@ -692,8 +755,8 @@ class RouteRunner(Node):
                 costs[col_mask] += self.w_collision
 
                 # Smooth proactive repulsion
-                rep_mask = dist_to_dyn < self.repulsive_dist
-                costs[rep_mask] += self.w_repulsive * (self.repulsive_dist - dist_to_dyn[rep_mask])
+                rep_mask = dist_to_dyn < self.dynamic_repulsive_dist
+                costs[rep_mask] += self.dynamic_w_repulsive * (self.dynamic_repulsive_dist - dist_to_dyn[rep_mask])
 
         # Collision & Repulsion from Static Obstacles (Walls, Shelves)
         if len(self.obstacles) > 0:
@@ -713,8 +776,8 @@ class RouteRunner(Node):
                     costs[col_mask] += self.w_collision
 
                     # Graduated repulsion field
-                    rep_mask = min_dists < 0.45  # Tightened from 0.65 to prevent corridor-wide repulsion
-                    costs[rep_mask] += 80.0 * ((0.45 - min_dists[rep_mask]) ** 2)
+                    rep_mask = min_dists < self.static_repulsive_dist
+                    costs[rep_mask] += self.static_w_repulsive * ((self.static_repulsive_dist - min_dists[rep_mask]) ** 2)
 
         # --- Traffic & Yielding Decision ---
         best_cost = np.min(costs)
@@ -725,31 +788,32 @@ class RouteRunner(Node):
             if self.state == "NAVIGATING":
                 self.state = "YIELDING"
                 self.yield_start_time = now
-                # Diagnostic: log which obstacle point triggered the block (rate-limited to 1 Hz)
-                if _blocking_diag and (now - self._last_block_log_time) > 1.0:
-                    ox, oy, dp, dr = _blocking_diag
-                    self.get_logger().warn(
-                        f"Narrow corridor blocked! "
-                        f"Obstacle at map({ox:.3f}, {oy:.3f}), "
-                        f"dist_to_path={dp:.3f}m, dist_to_robot={dr:.3f}m, "
-                        f"MPPI_best_cost={best_cost:.1f}"
-                    )
-                    self._last_block_log_time = now
+                ox, oy, dp, dr = _blocking_diag if _blocking_diag else (0.0, 0.0, 0.0, 0.0)
+                self.get_logger().warn(
+                    f"[BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). "
+                    f"Cause: Narrow passage blocked by obstacle at map({ox:.3f}, {oy:.3f}), "
+                    f"dist_to_path={dp:.3f}m, dist_to_robot={dr:.3f}m, MPPI_best_cost={best_cost:.1f}. "
+                    f"Holding position up to {self.yield_timeout:.1f}s before re-routing..."
+                )
+                self._last_block_log_time = now
                 self.cmd_pub.publish(Twist())
                 return
             elif self.state == "YIELDING":
                 elapsed = now - self.yield_start_time
                 if elapsed >= self.yield_timeout:
-                    self.get_logger().warn(f"Obstacle remained blocked for {elapsed:.1f}s. Triggering DYNAMIC REROUTE!")
+                    self.get_logger().warn(
+                        f"[BRAIN: STATE_MACHINE] Yield timeout ({elapsed:.1f}s >= {self.yield_timeout:.1f}s) exceeded! "
+                        f"Delegating to Dijkstra Brain for dynamic re-route."
+                    )
                     self.trigger_reroute()
                     return
                 else:
                     # Rate-limited diagnostic while waiting
-                    if _blocking_diag and (now - self._last_block_log_time) > 1.0:
-                        ox, oy, dp, dr = _blocking_diag
+                    if (now - self._last_block_log_time) > 1.0:
+                        ox, oy, dp, dr = _blocking_diag if _blocking_diag else (0.0, 0.0, 0.0, 0.0)
                         self.get_logger().warn(
-                            f"Still yielding ({elapsed:.1f}s): obstacle at map({ox:.3f}, {oy:.3f}), "
-                            f"dist_to_path={dp:.3f}m, dist_to_robot={dr:.3f}m"
+                            f"[BRAIN: STATE_MACHINE] Holding YIELD ({elapsed:.1f}s/{self.yield_timeout:.1f}s): "
+                            f"Obstacle at map({ox:.3f}, {oy:.3f}), dist_path={dp:.3f}m, dist_robot={dr:.3f}m."
                         )
                         self._last_block_log_time = now
                     self.cmd_pub.publish(Twist())
@@ -759,7 +823,10 @@ class RouteRunner(Node):
         # (Previously only checked all_colliding, causing oscillation when one MPPI
         # sample sneaked through while a wall was still <0.25 m from the path.)
         if self.state == "YIELDING" and (not all_colliding) and (not obstacle_blocking_path):
-            self.get_logger().info("Corridor cleared! Resuming navigation.")
+            self.get_logger().info(
+                f"[BRAIN: STATE_MACHINE] Corridor cleared! Resuming NAVIGATING mode. "
+                f"Robot at ({self.current_x:.2f}, {self.current_y:.2f})."
+            )
             self.state = "NAVIGATING"
             self.yield_start_time = None
 
@@ -771,7 +838,18 @@ class RouteRunner(Node):
         optimal_v = float(np.sum(weights * v_seq[:, 0]))
         optimal_w = float(np.sum(weights * w_seq[:, 0]))
 
-        # Turn Area & Off-Track Telemetry Logger
+        # Periodic High-Level Telemetry Logger (every 1.5s)
+        if (now - self._last_pose_log_time) > 1.5:
+            self._last_pose_log_time = now
+            min_obs_d = float(np.min(np.linalg.norm(self.obstacles - np.array([self.current_x, self.current_y]), axis=-1))) if len(self.obstacles) > 0 else 99.0
+            num_dyn = len(self.dynamic_obstacles)
+            self.get_logger().info(
+                f"[TELEMETRY] Pose=({self.current_x:.2f}, {self.current_y:.2f}, {math.degrees(self.current_yaw):.1f}°) | "
+                f"Node={snapped_node} | GoalDist={dist_to_final:.2f}m | "
+                f"Cmd=(v={optimal_v:.2f}m/s, w={optimal_w:.2f}rad/s) | MinObs={min_obs_d:.2f}m | DynObs={num_dyn} | State={self.state}"
+            )
+
+        # Turn Area & Sharp Steering Telemetry Logger
         abs_h_err_deg = math.degrees(abs(heading_error))
         if (abs_h_err_deg > 15.0 or abs(optimal_w) > 0.3) and (now - self._last_turn_log_time) > 0.8:
             self._last_turn_log_time = now
