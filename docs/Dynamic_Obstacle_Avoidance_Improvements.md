@@ -302,17 +302,19 @@ Based on telemetry analysis of narrow passage bottlenecks (`MinObs < 0.55m`), 4 
 
 ## Summary of Parameter Changes
 
-| Parameter | Initial Value | Tuned Value | Final Narrow Corridor Value | Reason |
+| Parameter | Initial Value | Tuned Value | Final Optimized Value | Reason |
 |---|---|---|---|---|
 | Evasion trigger range | `len(dyn_obs) > 0` (all) | `1.0m` | `1.0m` | Avoid path-following collapse for far obstacles |
 | Swerve Lock Exit | Instant reset (`0`) | Decrement naturally | Decrement naturally | Prevent rapid L/R direction flipping |
 | Static Repulsion Distance | `0.65m` | `0.45m` | `0.30m` | Open clearance channel in narrow corridors |
 | Static Repulsion Weight | `120.0` | `80.0` | `50.0` | Smoother gradient near warehouse walls & doors |
 | Swerve Bias Strength | `0.0 rad/s` (none) | `±0.35 rad/s` (fixed) | `±0.25 ~ 0.80 rad/s` (distance-scaled) | Stronger evasive push at close range |
-| Stuck Recovery Guard | None | Basic timer | Dedicated state bypass in `control_loop` | Prevent false re-triggers during backup |
+| Stuck Detector Threshold | `10 ticks (1.0s)` | `10 ticks (1.0s)` | `35 ticks (3.5s)` | Allow 90° corner turns to complete without interruption |
+| Stuck Detector Exemptions | None | `_recovery_phase` guard | `YIELDING` state & `_recovery_phase` | Prevent false triggers during intentional yields and backups |
+| Dynamic Speed Floor | `0.10 m/s` | `0.10 m/s` | `0.22 m/s` | Filter out static wall TF discretization jitter during rotation |
 | Max Tracked Speed | `2.5 m/s` | `2.0 m/s` | `2.0 m/s` | Filter LiDAR cluster teleportation noise |
 | Min Cluster Age | `1 frame` | `2 frames` | `2 frames` | Eliminate ghost single-frame detections |
-| `v_mean` Floor | `0.0 m/s` | `0.08 m/s` | `0.08 m/s` | Break freeze loop when heading error is high |
+| Velocity Coupling Exponent | `2.0` (abrupt stop) | `2.0` | `1.5` ($v_{\text{mean}}\ge 0.10\text{m/s}$) | Smooth curved cornering instead of stop-and-spin |
 
 ---
 

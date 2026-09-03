@@ -128,7 +128,7 @@ class RouteRunner(Node):
         # Fix 5 — Stuck detector + recovery maneuver
         self._stuck_counter = 0
         self._last_stuck_check_pos = None
-        self._stuck_threshold_ticks = 10  # ~1s of spinning-in-place triggers recovery
+        self._stuck_threshold_ticks = 35  # ~3.5s of zero translation triggers recovery (allows normal 90 deg turns)
         self._recovery_phase = None        # None, 'BACKUP', or 'REROUTE'
         self._recovery_start_time = None
         self._recovery_backup_dur = 1.5   # Seconds to reverse
@@ -321,9 +321,10 @@ class RouteRunner(Node):
                     vel = (curr_c - self.prev_obstacle_clusters[best_prev_idx]) / dt
                     speed = np.linalg.norm(vel)
                     # Require speed in realistic range AND cluster must be at least 2 scans old
+                    # Speed threshold 0.22 m/s filters out static wall TF discretization jitter during rotation
                     age = self._obs_age_map.get(best_prev_idx, 0) + 1
                     new_age_map[ci] = age
-                    if 0.10 <= speed <= 2.0 and age >= 2:
+                    if 0.22 <= speed <= 2.0 and age >= 2:
                         new_dynamic_obs.append({
                             'pos': curr_c,
                             'vel': vel,
@@ -779,10 +780,10 @@ class RouteRunner(Node):
                 if angle_diff < math.radians(60):
                     dyn_slowdown = min(dyn_slowdown, max(0.20, d_obs / 1.5))
 
-        # Heading-Velocity Coupling: when heading error is large (> 30 deg), scale v_mean down toward 0
-        # Fix 4 — Minimum velocity floor prevents full freeze when heading error > 60°
+        # Heading-Velocity Coupling: when heading error is large (> 30 deg), scale v_mean smoothly
+        # Exponent 1.5 and max floor 0.10 m/s allow smooth curved turns without stopping completely at corners
         heading_alignment = max(0.0, math.cos(heading_error))
-        v_mean = max(0.08, 0.35 * (heading_alignment ** 2) * approach_scale * dyn_slowdown)
+        v_mean = max(0.10, 0.40 * (heading_alignment ** 1.5) * approach_scale * dyn_slowdown)
 
         v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
 
@@ -977,15 +978,16 @@ class RouteRunner(Node):
                 f"HeadingErr={abs_h_err_deg:.1f}° | Cmd=(v={optimal_v:.2f}, w={optimal_w:.2f}) | MinObs={min_obs_d:.2f}m"
             )
 
-        # Fix 5 & B — Stuck detector: count ticks where robot spins but doesn't translate
-        if self._recovery_phase is None:
+        # Fix 5 & B — Stuck detector: count ticks where robot is halted (v < 0.05) and not translating
+        # Excluded during intentional YIELDING (where robot is waiting for traffic to pass up to 4.5s)
+        if self._recovery_phase is None and self.state != "YIELDING":
             if self._last_stuck_check_pos is not None:
                 moved = math.hypot(
                     self.current_x - self._last_stuck_check_pos[0],
                     self.current_y - self._last_stuck_check_pos[1]
                 )
-                is_spinning = abs(optimal_w) > 0.15
-                if moved < 0.03 and is_spinning:
+                is_halted = optimal_v < 0.05
+                if moved < 0.04 and is_halted:
                     self._stuck_counter += 1
                 else:
                     self._stuck_counter = 0
@@ -995,7 +997,7 @@ class RouteRunner(Node):
 
             if self._stuck_counter >= self._stuck_threshold_ticks:
                 self.get_logger().warn(
-                    f"[BRAIN: STUCK_DETECTOR] Stuck for {self._stuck_counter} ticks at "
+                    f"[BRAIN: STUCK_DETECTOR] Stuck for {self._stuck_counter} ticks ({self._stuck_counter*self.dt:.1f}s) at "
                     f"({self.current_x:.2f}, {self.current_y:.2f}). Triggering recovery."
                 )
                 self._stuck_counter = 0
