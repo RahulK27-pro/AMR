@@ -2,6 +2,7 @@
 build/
 install/
 log/
+logs/
 .colcon/
 circling_bug_bag/
 
