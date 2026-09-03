@@ -193,9 +193,20 @@ ros2 launch agv_description dynamic_obstacle.launch.py \
 # Launch without autonomous controller
 ros2 launch agv_description dynamic_obstacle.launch.py run_controller:=false x:=1.5 y:=0.0
 
+source /opt/ros/jazzy/setup.bash
+source ~/AMR/AMR-main/install/setup.bash
+ros2 launch agv_description dynamic_obstacle.launch.py run_controller:=false x:=1.5 y:=0.0
+
+
 # Drive it with WASD keyboard
 ros2 run agv_navigation obstacle_teleop
+
+source /opt/ros/jazzy/setup.bash
+source ~/AMR/AMR-main/install/setup.bash
+ros2 run agv_navigation obstacle_teleop
+
 ```
+
 
 **Controls:** `W/S` forward/back, `A/D` turn, `Q/E` forward-diag, `Space` stop, `+/-` speed.
 
