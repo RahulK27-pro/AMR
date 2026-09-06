@@ -3,7 +3,7 @@ from rclpy.node import Node
 from ament_index_python.packages import get_package_share_directory
 from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import Twist, PoseStamped
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from sensor_msgs.msg import LaserScan
 import tf2_ros
 from tf2_ros import Buffer, TransformListener, TransformException
@@ -23,6 +23,8 @@ class RouteRunner(Node):
         self.path_pub = self.create_publisher(Path, '/agv_dense_path', 10)  # Publish dense path for RViz
         # Mission progress publisher: JSON string of {current, total, goal_node, state}
         self.mission_pub = self.create_publisher(String, '/mission_progress', 10)
+        # App bridge: publish nav state so the Flutter / web dashboard can display it
+        self.agv_state_pub = self.create_publisher(String, '/agv_state', 10)
 
         # Subscribers
         self.odom_sub = self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)
@@ -32,6 +34,9 @@ class RouteRunner(Node):
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
         # Multi-goal sequence subscriber: expects JSON array of node IDs e.g. '["N5","N12","N40"]'
         self.seq_sub = self.create_subscription(String, '/goal_sequence', self.sequence_callback, 10)
+        # App bridge: emergency-stop command from Flutter / web dashboard
+        self.estop_sub = self.create_subscription(
+            Bool, '/agv_estop', self._estop_callback, 10)
 
         # TF Buffer and Listener for AMCL / SLAM localization (map -> base_link)
         self.tf_buffer = Buffer()
@@ -87,6 +92,7 @@ class RouteRunner(Node):
 
         # Navigation state machine: IDLE, PLANNING, NAVIGATING, YIELDING, RE_ROUTING
         self.state = "IDLE"
+        self._estop_active = False
 
         # Diagnostic rate-limiters & tracking
         self._last_block_log_time = 0.0
@@ -175,6 +181,31 @@ class RouteRunner(Node):
         # Control timer
         self.control_timer = self.create_timer(self.dt, self.control_loop)
         self.get_logger().info(f"Route Runner Active with KD-Tree ({len(self.node_ids)} nodes) & Dynamic Obstacle Avoidance.")
+
+    # ------------------------------------------------------------------
+    # App Bridge helpers
+    # ------------------------------------------------------------------
+
+    def _publish_agv_state(self, state_str: str):
+        """Publish the current nav state string to /agv_state for the app bridge."""
+        msg = String()
+        msg.data = state_str
+        self.agv_state_pub.publish(msg)
+
+    def _estop_callback(self, msg):
+        """Handle emergency-stop command from Flutter / web dashboard."""
+        if msg.data:
+            self._estop_active = True
+            self.state = "IDLE"
+            self.path_plan = []
+            self.goal_queue = []
+            self.cmd_pub.publish(Twist())  # zero velocity
+            self._publish_agv_state("ESTOP")
+            self.get_logger().warn("[APP_BRIDGE] E-STOP received — navigation halted.")
+        else:
+            self._estop_active = False
+            self._publish_agv_state("IDLE")
+            self.get_logger().info("[APP_BRIDGE] E-STOP cleared.")
 
     def _now_sec(self):
         """Return current ROS time as float seconds (sim-time aware)."""
@@ -463,6 +494,7 @@ class RouteRunner(Node):
         goal_y = msg.pose.position.y
 
         self.state = "PLANNING"
+        self._publish_agv_state("PLANNING")
         self.get_logger().info(f"Received Goal: ({goal_x:.2f}, {goal_y:.2f})")
 
         start_node = self.find_closest_node(self.current_x, self.current_y)
@@ -474,6 +506,7 @@ class RouteRunner(Node):
 
         if not self.node_path:
             self.state = "IDLE"
+            self._publish_agv_state("IDLE")
             return
 
         self.path_plan = self.densify_path(self.node_path, step_m=0.30)
@@ -481,6 +514,7 @@ class RouteRunner(Node):
 
         self.current_target_index = 1 if len(self.path_plan) > 1 else 0
         self.state = "NAVIGATING"
+        self._publish_agv_state("NAVIGATING")
         self.publish_active_path()
         self._publish_mission_progress()
 
@@ -665,6 +699,7 @@ class RouteRunner(Node):
         if dist_to_final < 0.30:
             self.cmd_pub.publish(Twist())
             self.state = "IDLE"
+            self._publish_agv_state("ARRIVED")
             if self.goal_queue:
                 # More goals remain — dequeue and navigate to next waypoint
                 self.get_logger().info(
