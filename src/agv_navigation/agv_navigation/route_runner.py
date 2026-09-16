@@ -125,6 +125,8 @@ class RouteRunner(Node):
         self.last_scan_time = None
         # Fix 1 — LiDAR age filter: track how many consecutive scans each cluster has been seen
         self._obs_age_map = {}         # Maps prev_cluster index -> age (consecutive scan count)
+        self._obs_start_pos_map = {}   # Maps prev_cluster index -> initial (x, y) centroid position
+        self._obs_vel_map = {}         # Maps prev_cluster index -> smoothed velocity vector
 
         # Traffic & Re-routing parameters
         self.yield_timeout = 4.5       # Seconds to wait for transient obstacles before re-routing
@@ -134,7 +136,7 @@ class RouteRunner(Node):
         # Fix 5 — Stuck detector + recovery maneuver
         self._stuck_counter = 0
         self._last_stuck_check_pos = None
-        self._stuck_threshold_ticks = 35  # ~3.5s of zero translation triggers recovery (allows normal 90 deg turns)
+        self._stuck_threshold_ticks = 25  # ~2.5s of zero translation / spin triggers recovery
         self._recovery_phase = None        # None, 'BACKUP', or 'REROUTE'
         self._recovery_start_time = None
         self._recovery_backup_dur = 1.5   # Seconds to reverse
@@ -166,16 +168,16 @@ class RouteRunner(Node):
         self.static_w_repulsive = 50.0      # Quadratic wall repulsion (smooth gradient in narrow passages)
 
         self.w_cross_track_nominal = 6.0
-        self.w_cross_track_evasion = 0.5   # Soften centerline tracking heavily to steer around obstacles
+        self.w_cross_track_evasion = 2.0   # Soften centerline tracking during evasion while preventing wandering
         self.w_cross_track = self.w_cross_track_nominal
 
         # Fix 2 — Distance-gated evasion: only relax w_cross_track for obstacles within this range
         self.evasion_range = 1.0       # metres; obstacles beyond this don't collapse path-following
 
-        # Fix 3 — Swerve side commitment: commit to one side for ~2s to avoid L/R oscillation
+        # Fix 3 — Swerve side commitment: commit to one side briefly to avoid L/R oscillation
         self._swerve_bias = 0.0           # Current angular bias added to MPPI w_seq mean (rad/s)
         self._swerve_lock_ticks = 0       # Ticks remaining on current committed swerve direction
-        self.swerve_lock_duration = 20    # Ticks (~2s at 10 Hz) to hold swerve commitment
+        self.swerve_lock_duration = 8     # Ticks (~0.8s at 10 Hz) to hold swerve commitment
         self.swerve_bias_strength = 0.35  # Angular bias magnitude (rad/s)
 
         # Control timer
@@ -334,9 +336,13 @@ class RouteRunner(Node):
                     current_clusters.append(centroid)
 
         # Estimate velocity by matching clusters with previous frame
-        # Fix 1 — LiDAR age filter: only promote clusters seen in >= 2 consecutive scans
+        # Enhanced filtering: require persistent translation (net displacement >= 0.18m over age >= 4 frames)
+        # to filter out stationary wall/doorpost discretization jitter
         new_dynamic_obs = []
-        new_age_map = {}  # Will replace self._obs_age_map after matching
+        new_age_map = {}
+        new_start_pos_map = {}
+        new_vel_map = {}
+
         if self.last_scan_time is not None and len(self.prev_obstacle_clusters) > 0:
             dt = max(0.05, min(0.3, now - self.last_scan_time))
             for ci, curr_c in enumerate(current_clusters):
@@ -349,29 +355,46 @@ class RouteRunner(Node):
                         best_prev_idx = pi
 
                 if best_prev_idx is not None:
-                    vel = (curr_c - self.prev_obstacle_clusters[best_prev_idx]) / dt
-                    speed = np.linalg.norm(vel)
-                    # Require speed in realistic range AND cluster must be at least 2 scans old
-                    # Speed threshold 0.22 m/s filters out static wall TF discretization jitter during rotation
+                    raw_vel = (curr_c - self.prev_obstacle_clusters[best_prev_idx]) / dt
+                    prev_v = self._obs_vel_map.get(best_prev_idx, raw_vel)
+                    # Low-pass filter velocity (0.6 current, 0.4 historical)
+                    smooth_vel = 0.6 * raw_vel + 0.4 * prev_v
+                    speed = float(np.linalg.norm(smooth_vel))
+
                     age = self._obs_age_map.get(best_prev_idx, 0) + 1
+                    start_pos = self._obs_start_pos_map.get(best_prev_idx, self.prev_obstacle_clusters[best_prev_idx])
+                    displacement = float(np.linalg.norm(curr_c - start_pos))
+
                     new_age_map[ci] = age
-                    if 0.22 <= speed <= 2.0 and age >= 2:
+                    new_start_pos_map[ci] = start_pos
+                    new_vel_map[ci] = smooth_vel
+
+                    # Only classify as dynamic obstacle if:
+                    # 1. Realistic moving speed: 0.30 m/s <= speed <= 2.2 m/s
+                    # 2. Tracked across at least 4 consecutive scans (>= 0.4s)
+                    # 3. Sustained physical displacement >= 0.18m from initial spot (eliminates stationary wall centroid jitter)
+                    if 0.30 <= speed <= 2.2 and age >= 4 and displacement >= 0.18:
                         new_dynamic_obs.append({
                             'pos': curr_c,
-                            'vel': vel,
+                            'vel': smooth_vel,
                             'speed': speed,
                             'radius': 0.35,
                             'age': age
                         })
                 else:
-                    # New unmatched cluster — age 0, not yet counted as dynamic
+                    # New unmatched cluster
                     new_age_map[ci] = 0
+                    new_start_pos_map[ci] = curr_c
+                    new_vel_map[ci] = np.zeros(2)
         else:
-            # No previous frame: initialise ages to 0 for all current clusters
             for ci in range(len(current_clusters)):
                 new_age_map[ci] = 0
+                new_start_pos_map[ci] = current_clusters[ci]
+                new_vel_map[ci] = np.zeros(2)
 
         self._obs_age_map = new_age_map
+        self._obs_start_pos_map = new_start_pos_map
+        self._obs_vel_map = new_vel_map
         self.dynamic_obstacles = new_dynamic_obs
         self.prev_obstacle_clusters = current_clusters
         self.last_scan_time = now
@@ -536,16 +559,17 @@ class RouteRunner(Node):
         """Finds target point along path arc-length to prevent corner cutting."""
         min_dist = float('inf')
         closest_idx = self.current_target_index
-        # Restrict search window to max 8 waypoints (~2.4m) ahead to prevent snapping across U-turns or thin shelf walls
+        # Search window from slightly behind current index to max 8 waypoints ahead
+        start_search = max(0, self.current_target_index - 2)
         search_window = min(len(self.path_plan), self.current_target_index + 8)
-        for i in range(self.current_target_index, search_window):
+        for i in range(start_search, search_window):
             px, py, _ = self.path_plan[i]
             dist = math.sqrt((px - self.current_x)**2 + (py - self.current_y)**2)
             if dist < min_dist:
                 min_dist = dist
                 closest_idx = i
 
-        self.current_target_index = max(self.current_target_index, closest_idx)
+        self.current_target_index = closest_idx
 
         # Accumulate arc-length along the path curve
         arc_length = 0.0
@@ -639,12 +663,14 @@ class RouteRunner(Node):
             self.get_logger().info(f"Restored graph edges: {restored}")
 
     def _execute_recovery(self):
-        """Fix 5 — Recovery maneuver: back up 0.3m then trigger Dijkstra reroute.
+        """Recovery maneuver: back up 0.3m then trigger Dijkstra reroute.
 
         Called by the stuck detector when the robot has been spinning in place
         without translating for _stuck_threshold_ticks consecutive control ticks.
         """
         now = self._now_sec()
+        self._swerve_bias = 0.0
+        self._swerve_lock_ticks = 0
         if self._recovery_phase is None:
             self._recovery_phase = "BACKUP"
             self._recovery_start_time = now
@@ -815,46 +841,76 @@ class RouteRunner(Node):
                 if angle_diff < math.radians(60):
                     dyn_slowdown = min(dyn_slowdown, max(0.20, d_obs / 1.5))
 
-        # Heading-Velocity Coupling: when heading error is large (> 30 deg), scale v_mean smoothly
-        # Exponent 1.5 and max floor 0.10 m/s allow smooth curved turns without stopping completely at corners
-        heading_alignment = max(0.0, math.cos(heading_error))
-        v_mean = max(0.10, 0.40 * (heading_alignment ** 1.5) * approach_scale * dyn_slowdown)
+        # Heading-Velocity Coupling:
+        # When heading error is large (> 75 deg), allow in-place rotation (v_mean -> 0) rather than driving forward off-course
+        abs_h_err = abs(heading_error)
+        if abs_h_err > math.radians(75):
+            v_mean = 0.0
+        else:
+            heading_alignment = max(0.0, math.cos(heading_error))
+            v_mean = max(0.08, 0.45 * (heading_alignment ** 1.5) * approach_scale * dyn_slowdown)
 
         v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
 
-        # Fix 3 & D — Swerve side commitment: bias MPPI angular sampling toward clear side with distance-scaling
+        # Swerve side commitment: check corridor clearance and cancel if already off heading
         if len(close_dyn) > 0 and is_evading:
-            if self._swerve_lock_ticks <= 0:
-                # Determine which side to pass based on cross-product of (robot→target) × (robot→obstacle)
+            # If already deviating (> 45 deg) from target heading, cancel swerve bias to prioritize path realignment
+            if abs_h_err > math.radians(45):
+                self._swerve_bias = 0.0
+                self._swerve_lock_ticks = 0
+            elif self._swerve_lock_ticks <= 0:
                 nearest = min(close_dyn, key=lambda d: math.hypot(
                     d['pos'][0] - self.current_x, d['pos'][1] - self.current_y))
                 dx_t = target_x - self.current_x
                 dy_t = target_y - self.current_y
                 dx_o = nearest['pos'][0] - self.current_x
                 dy_o = nearest['pos'][1] - self.current_y
-                cross = dx_t * dy_o - dy_t * dx_o  # >0 = obstacle on left → swerve right
+                cross = dx_t * dy_o - dy_t * dx_o  # >0 = obstacle on left -> swerve right
                 obs_dist = math.hypot(dx_o, dy_o)
-                # Fix D — Scale bias inversely with distance so closer obstacles produce stronger evasive push
-                raw_bias = self.swerve_bias_strength * (self.evasion_range / max(0.20, obs_dist))
-                bias_mag = min(0.80, max(0.25, raw_bias))
-                self._swerve_bias = -bias_mag if cross > 0 else bias_mag
-                self._swerve_lock_ticks = self.swerve_lock_duration
-                side_str = "RIGHT (obs on LEFT)" if cross > 0 else "LEFT (obs on RIGHT)"
-                self.get_logger().info(
-                    f"[BRAIN: SWERVE] Committed swerve {side_str} for {self.swerve_lock_duration} ticks | "
-                    f"bias={self._swerve_bias:+.2f} rad/s (dist={obs_dist:.2f}m) | "
-                    f"Nearest obs at ({nearest['pos'][0]:.2f}, {nearest['pos'][1]:.2f})"
-                )
+
+                # Check static clearance on the proposed swerve side
+                # Cross > 0 -> wants to steer right (negative w). Check right side static clearance.
+                proposed_bias_sign = -1.0 if cross > 0 else 1.0
+
+                # Verify we don't steer into a nearby wall
+                wall_clear = True
+                if len(self.obstacles) > 0:
+                    c_yaw = np.cos(self.current_yaw)
+                    s_yaw = np.sin(self.current_yaw)
+                    ox_rel = (self.obstacles[:, 0] - self.current_x) * c_yaw + (self.obstacles[:, 1] - self.current_y) * s_yaw
+                    oy_rel = -(self.obstacles[:, 0] - self.current_x) * s_yaw + (self.obstacles[:, 1] - self.current_y) * c_yaw
+                    side_mask = (oy_rel < 0) if proposed_bias_sign < 0 else (oy_rel > 0)
+                    close_side = np.sqrt(ox_rel[side_mask]**2 + oy_rel[side_mask]**2)
+                    if len(close_side) > 0 and np.min(close_side) < 0.40:
+                        wall_clear = False
+
+                if wall_clear:
+                    raw_bias = self.swerve_bias_strength * (self.evasion_range / max(0.20, obs_dist))
+                    bias_mag = min(0.60, max(0.20, raw_bias))
+                    self._swerve_bias = proposed_bias_sign * bias_mag
+                    self._swerve_lock_ticks = self.swerve_lock_duration
+                    side_str = "RIGHT (obs on LEFT)" if cross > 0 else "LEFT (obs on RIGHT)"
+                    self.get_logger().info(
+                        f"[BRAIN: SWERVE] Committed swerve {side_str} for {self.swerve_lock_duration} ticks | "
+                        f"bias={self._swerve_bias:+.2f} rad/s (dist={obs_dist:.2f}m) | "
+                        f"Nearest obs at ({nearest['pos'][0]:.2f}, {nearest['pos'][1]:.2f})"
+                    )
+                else:
+                    self._swerve_bias = 0.0
+                    self._swerve_lock_ticks = 0
             else:
                 self._swerve_lock_ticks -= 1
         else:
-            # Fix A — Do NOT abruptly zero the lock! Count down naturally so brief range exits don't flip direction
             if self._swerve_lock_ticks > 0:
                 self._swerve_lock_ticks -= 1
             else:
                 self._swerve_bias = 0.0
 
-        w_seq = np.random.normal(self._swerve_bias, self.noise_w, (self.num_samples, self.horizon))
+        # MPPI Angular Sampling Prior: blend proportional heading guidance with evasion bias
+        kp_heading = 1.4
+        w_guidance = kp_heading * heading_error
+        w_mean = float(np.clip(w_guidance + self._swerve_bias, -self.w_max, self.w_max))
+        w_seq = np.random.normal(w_mean, self.noise_w, (self.num_samples, self.horizon))
         v_seq = np.clip(v_seq, self.v_min, self.v_max)
         w_seq = np.clip(w_seq, -self.w_max, self.w_max)
 
@@ -1013,7 +1069,7 @@ class RouteRunner(Node):
                 f"HeadingErr={abs_h_err_deg:.1f}° | Cmd=(v={optimal_v:.2f}, w={optimal_w:.2f}) | MinObs={min_obs_d:.2f}m"
             )
 
-        # Fix 5 & B — Stuck detector: count ticks where robot is halted (v < 0.05) and not translating
+        # Fix 5 & B — Stuck detector: count ticks where robot is not translating (halted or spinning in place)
         # Excluded during intentional YIELDING (where robot is waiting for traffic to pass up to 4.5s)
         if self._recovery_phase is None and self.state != "YIELDING":
             if self._last_stuck_check_pos is not None:
@@ -1021,8 +1077,9 @@ class RouteRunner(Node):
                     self.current_x - self._last_stuck_check_pos[0],
                     self.current_y - self._last_stuck_check_pos[1]
                 )
-                is_halted = optimal_v < 0.05
-                if moved < 0.04 and is_halted:
+                is_spinning = abs(optimal_w) > 0.20
+                is_halted = optimal_v < 0.06
+                if moved < 0.05 and (is_halted or is_spinning):
                     self._stuck_counter += 1
                 else:
                     self._stuck_counter = 0
@@ -1037,6 +1094,8 @@ class RouteRunner(Node):
                 )
                 self._stuck_counter = 0
                 self._last_stuck_check_pos = None
+                self._swerve_bias = 0.0
+                self._swerve_lock_ticks = 0
                 self._execute_recovery()
                 return
 
