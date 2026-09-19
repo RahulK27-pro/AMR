@@ -253,6 +253,18 @@ html, body, #root {
 }
 
 /* ---- Map View ---- */
+.map-viewport {
+  flex: 1;
+  position: relative;
+  background: #080c16;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  cursor: crosshair;
+}
+
+/* Legacy alias kept for any remaining references */
 .map-container {
   flex: 1;
   position: relative;

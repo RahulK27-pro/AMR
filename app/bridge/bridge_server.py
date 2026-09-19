@@ -44,6 +44,13 @@ from nav_msgs.msg import Odometry, Path as NavPath
 from sensor_msgs.msg import LaserScan, Imu
 from std_msgs.msg import String, Bool
 
+# TF2 for map-frame pose lookup
+try:
+    import tf2_ros
+    _TF2_AVAILABLE = True
+except ImportError:
+    _TF2_AVAILABLE = False
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -55,8 +62,10 @@ import uvicorn
 # Config — map image path (static pre-computed PNG)
 # ---------------------------------------------------------------------------
 _WORKSPACE_ROOT = Path(os.environ.get("AMR_WS", Path.home() / "AMR" / "AMR-main"))
-_MAP_PNG_PATH = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "graph_visualization.png"
-_GRAPH_JSON_PATH = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_graph.json"
+# Use the clean architectural floorplan (no graph clutter burned in)
+_MAP_PNG_PATH       = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "clean_warehouse_map.png"
+_MAP_PNG_GRAPH_PATH = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "graph_visualization.png"
+_GRAPH_JSON_PATH    = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_graph.json"
 
 # Calibrated Map metadata from warehouse_map.yaml (resolution, origin)
 # resolution: metres per pixel
@@ -98,6 +107,20 @@ class AmrBridgeNode(Node):
         self.create_subscription(String,    '/obstacle_alert',    self._alert_cb,   10)
         self.create_subscription(Imu,       '/imu/data',          self._imu_cb,     10)
         self.create_subscription(String,    '/mission_progress',  self._mission_cb, 10)
+        # AMCL pose — authoritative map-frame localization (replaces raw odom for pose display)
+        self.create_subscription(
+            PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 10
+        )
+
+        # TF2 buffer for map->base_link lookups
+        self._amcl_pose_received = False
+        if _TF2_AVAILABLE:
+            self._tf_buffer   = tf2_ros.Buffer()
+            self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
+            # Timer: try TF lookup at 10 Hz when no AMCL yet
+            self.create_timer(0.1, self._tf_pose_cb)
+        else:
+            self.get_logger().warn('tf2_ros not available — falling back to /odometry/filtered')
 
         # --- Telemetry state ---
         self.pose             = {'x': 0.0, 'y': 0.0, 'yaw': 0.0}
@@ -116,12 +139,37 @@ class AmrBridgeNode(Node):
     # -------- Subscriber callbacks --------
 
     def _odom_cb(self, msg):
-        self.pose['x']   = msg.pose.pose.position.x
-        self.pose['y']   = msg.pose.pose.position.y
-        q = msg.pose.pose.orientation
-        self.pose['yaw'] = self._quat_to_yaw(q)
+        # Use odom only for velocity; pose comes from AMCL / TF (map frame)
         self.velocity['linear']  = msg.twist.twist.linear.x
         self.velocity['angular'] = msg.twist.twist.angular.z
+        # Fallback: update pose from odom only if AMCL has never fired
+        if not self._amcl_pose_received:
+            self.pose['x']   = msg.pose.pose.position.x
+            self.pose['y']   = msg.pose.pose.position.y
+            q = msg.pose.pose.orientation
+            self.pose['yaw'] = self._quat_to_yaw(q)
+
+    def _amcl_cb(self, msg):
+        """AMCL pose — map-frame, highest-confidence source for robot position."""
+        self._amcl_pose_received = True
+        self.pose['x']   = msg.pose.pose.position.x
+        self.pose['y']   = msg.pose.pose.position.y
+        self.pose['yaw'] = self._quat_to_yaw(msg.pose.pose.orientation)
+
+    def _tf_pose_cb(self):
+        """10 Hz TF lookup: map->base_link as secondary map-frame source."""
+        if not _TF2_AVAILABLE or self._amcl_pose_received:
+            return
+        try:
+            tf = self._tf_buffer.lookup_transform(
+                'map', 'base_link', rclpy.time.Time()
+            )
+            t = tf.transform.translation
+            self.pose['x']   = t.x
+            self.pose['y']   = t.y
+            self.pose['yaw'] = self._quat_to_yaw(tf.transform.rotation)
+        except Exception:
+            pass  # Quietly fall through to odom fallback
 
     def _scan_cb(self, msg):
         self.scan_ranges    = list(msg.ranges)
@@ -412,9 +460,15 @@ async def get_map_metadata():
 
 @app.get('/api/map/raw')
 async def get_map_raw():
+    """Serve the clean architectural floorplan (no graph overlay)."""
     if not _MAP_PNG_PATH.exists():
         return JSONResponse({'error': 'Map file not found'}, status_code=404)
     return FileResponse(_MAP_PNG_PATH, media_type='image/png')
+
+@app.get('/api/map/clean')
+async def get_map_clean():
+    """Alias for /api/map/raw — explicitly returns the clean floorplan."""
+    return await get_map_raw()
 
 @app.get('/api/graph')
 async def get_graph():

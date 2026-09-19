@@ -1,126 +1,168 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import bridge from '../services/amrBridge';
 
-// Calibrated Map constants matching warehouse_map.yaml & warehouse_graph.json
-const DEFAULT_MAP_RES = 0.05;
+// ── Map constants (warehouse_map.yaml calibration) ──────────────────────────
+const DEFAULT_MAP_RES  = 0.05;
 const DEFAULT_ORIGIN_X = -7.397;
 const DEFAULT_ORIGIN_Y = -6.596;
-const MAP_WIDTH_PX = 329;
-const MAP_HEIGHT_PX = 275;
+const MAP_WIDTH_PX     = 329;
+const MAP_HEIGHT_PX    = 275;
+
+// Breadcrumb trail settings
+const TRAIL_MAX_POINTS = 120;   // ~24 s at 5 Hz
+const TRAIL_MIN_DIST   = 0.05;  // metres — min movement before adding a crumb
+
+// LERP smoothing: lower = smoother but slower response; 0.18 @ 60fps ≈ 100ms settle
+const LERP_FACTOR = 0.18;
 
 export default function MapView({ telemetry, selectedNodes = [], onSelectNode }) {
-  const canvasRef = useRef(null);
+  const canvasRef    = useRef(null);
   const containerRef = useRef(null);
 
-  // Map metadata & graph
+  // ── Map state ─────────────────────────────────────────────────────────────
   const [meta, setMeta] = useState({
     resolution: DEFAULT_MAP_RES,
-    origin_x: DEFAULT_ORIGIN_X,
-    origin_y: DEFAULT_ORIGIN_Y,
-    width: MAP_WIDTH_PX,
-    height: MAP_HEIGHT_PX,
+    origin_x:   DEFAULT_ORIGIN_X,
+    origin_y:   DEFAULT_ORIGIN_Y,
+    width:      MAP_WIDTH_PX,
+    height:     MAP_HEIGHT_PX,
   });
   const [graphNodes, setGraphNodes] = useState([]);
-  const [mapImage, setMapImage] = useState(null);
+  const [mapImage,   setMapImage]   = useState(null);
 
-  // Viewport transforms (Pan & Zoom)
+  // ── Viewport (pan & zoom) ─────────────────────────────────────────────────
   const [zoom, setZoom] = useState(1.8);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const isDraggingRef = useRef(false);
-  const dragStartRef = useRef({ x: 0, y: 0 });
-  const panStartRef = useRef({ x: 0, y: 0 });
+  const [pan,  setPan]  = useState({ x: 0, y: 0 });
+  const isDraggingRef   = useRef(false);
+  const dragStartRef    = useRef({ x: 0, y: 0 });
+  const panStartRef     = useRef({ x: 0, y: 0 });
 
-  // UI layer toggles
-  const [showGraph, setShowGraph] = useState(false);
-  const [showLidar, setShowLidar] = useState(true);
-  const [showPath, setShowPath] = useState(true);
-  const [hoveredNode, setHoveredNode] = useState(null);
-  const [cursorWorld, setCursorWorld] = useState(null);
+  // ── UI layer toggles ──────────────────────────────────────────────────────
+  const [showGraph,  setShowGraph]  = useState(false);
+  const [showLidar,  setShowLidar]  = useState(true);
+  const [showPath,   setShowPath]   = useState(true);
+  const [showTrail,  setShowTrail]  = useState(true);
+  const [autoFollow, setAutoFollow] = useState(false);
+
+  // ── Interaction state ─────────────────────────────────────────────────────
+  const [hoveredNode,  setHoveredNode]  = useState(null);
+  const [cursorWorld,  setCursorWorld]  = useState(null);
   const [goalFeedback, setGoalFeedback] = useState(null);
-  const [lastGoal, setLastGoal] = useState(null);
+  const [lastGoal,     setLastGoal]     = useState(null);
 
-  // ── 1. Fetch metadata, raw map image & graph nodes on mount ──
+  // ── Smoothed robot pose (LERP target) ─────────────────────────────────────
+  // Stored in a ref so the 60fps render loop reads the latest without re-renders
+  const smoothPoseRef = useRef({ x: 0, y: 0, yaw: 0 });
+  const rawPoseRef    = useRef({ x: 0, y: 0, yaw: 0 });
+
+  // ── Breadcrumb trail ──────────────────────────────────────────────────────
+  const trailRef = useRef([]); // [{ px, py }, …] in map-pixel coords
+
+  // ── Pulsing goal animation ────────────────────────────────────────────────
+  const pulseRef = useRef(0); // incremented each frame
+
+  // ── Auto-follow pan ref (mutated by render loop, applied in state) ────────
+  const autoFollowPanRef = useRef(null);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 1. Load map image & graph on mount
+  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
 
-    // Fetch metadata
     bridge.getMapMetadata().then((data) => {
       if (data && mounted) {
         setMeta({
           resolution: data.resolution || DEFAULT_MAP_RES,
-          origin_x: data.origin_x ?? DEFAULT_ORIGIN_X,
-          origin_y: data.origin_y ?? DEFAULT_ORIGIN_Y,
-          width: data.width || MAP_WIDTH_PX,
-          height: data.height || MAP_HEIGHT_PX,
+          origin_x:   data.origin_x   ?? DEFAULT_ORIGIN_X,
+          origin_y:   data.origin_y   ?? DEFAULT_ORIGIN_Y,
+          width:      data.width       || MAP_WIDTH_PX,
+          height:     data.height      || MAP_HEIGHT_PX,
         });
       }
     });
 
-    // Fetch topological graph nodes
     bridge.getGraphData().then((data) => {
-      if (data?.nodes && mounted) {
-        setGraphNodes(data.nodes);
-      }
+      if (data?.nodes && mounted) setGraphNodes(data.nodes);
     });
 
-    // Load base warehouse map image
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      if (mounted) setMapImage(img);
-    };
+    img.onload  = () => { if (mounted) setMapImage(img); };
     img.onerror = () => {
-      // Fallback to /api/map base64 if raw file endpoint is not directly serving
       bridge.getMapImage().then((res) => {
         if (res?.image && mounted) {
-          const fallbackImg = new Image();
-          fallbackImg.onload = () => mounted && setMapImage(fallbackImg);
-          fallbackImg.src = `data:image/jpeg;base64,${res.image}`;
+          const fb = new Image();
+          fb.onload = () => mounted && setMapImage(fb);
+          fb.src = `data:image/jpeg;base64,${res.image}`;
         }
       });
     };
     img.src = bridge.rawMapUrl;
 
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
-  // ── Coordinate Transforms ──
-  // World (m) -> Map Pixel (px)
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2. Track raw telemetry pose → trail & smooth pose ref
+  // ─────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!telemetry?.pose) return;
+    const { x, y, yaw } = telemetry.pose;
+
+    // Initialise smooth pose on first data
+    if (rawPoseRef.current.x === 0 && rawPoseRef.current.y === 0) {
+      smoothPoseRef.current = { x, y, yaw };
+    }
+    rawPoseRef.current = { x, y, yaw };
+
+    // Add breadcrumb if robot moved far enough
+    const res = meta.resolution || DEFAULT_MAP_RES;
+    const ox  = meta.origin_x   ?? DEFAULT_ORIGIN_X;
+    const oy  = meta.origin_y   ?? DEFAULT_ORIGIN_Y;
+    const ht  = meta.height      || MAP_HEIGHT_PX;
+    const px  = (x - ox) / res;
+    const py  = ht - (y - oy) / res;
+
+    const trail = trailRef.current;
+    const last  = trail[trail.length - 1];
+    if (!last || Math.hypot(px - last.px, py - last.py) >= TRAIL_MIN_DIST / res) {
+      trail.push({ px, py });
+      if (trail.length > TRAIL_MAX_POINTS) trail.shift();
+    }
+  }, [telemetry, meta]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Coordinate helpers
+  // ─────────────────────────────────────────────────────────────────────────
   const worldToPixel = useCallback(
-    (wx, wy) => {
-      const px = (wx - meta.origin_x) / meta.resolution;
-      const py = meta.height - (wy - meta.origin_y) / meta.resolution;
-      return { px, py };
-    },
+    (wx, wy) => ({
+      px: (wx - meta.origin_x) / meta.resolution,
+      py: meta.height - (wy - meta.origin_y) / meta.resolution,
+    }),
     [meta]
   );
 
-  // Canvas Screen (px) -> World (m)
   const screenToWorld = useCallback(
     (sx, sy, canvas) => {
       if (!canvas) return null;
-      const rect = canvas.getBoundingClientRect();
-      const clientX = sx - rect.left;
-      const clientY = sy - rect.top;
-
-      // Unapply pan & zoom:
-      // clientX = canvas.width/2 + (px - meta.width/2)*zoom + pan.x
-      const centerOffsetX = canvas.clientWidth / 2 + pan.x;
+      const rect      = canvas.getBoundingClientRect();
+      const centerOffsetX = canvas.clientWidth  / 2 + pan.x;
       const centerOffsetY = canvas.clientHeight / 2 + pan.y;
-
-      const px = (clientX - centerOffsetX) / zoom + meta.width / 2;
-      const py = (clientY - centerOffsetY) / zoom + meta.height / 2;
-
-      const wx = meta.origin_x + px * meta.resolution;
-      const wy = meta.origin_y + (meta.height - py) * meta.resolution;
-      return { wx, wy, px, py };
+      const px = (sx - rect.left  - centerOffsetX) / zoom + meta.width  / 2;
+      const py = (sy - rect.top   - centerOffsetY) / zoom + meta.height / 2;
+      return {
+        wx: meta.origin_x + px * meta.resolution,
+        wy: meta.origin_y + (meta.height - py) * meta.resolution,
+        px, py,
+      };
     },
     [meta, zoom, pan]
   );
 
-  // ── 2. Canvas 60 FPS Render Loop ──
+  // ─────────────────────────────────────────────────────────────────────────
+  // 3. 60 FPS Render Loop
+  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let animId;
     const canvas = canvasRef.current;
@@ -129,11 +171,11 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
 
     const render = () => {
       const dpr = window.devicePixelRatio || 1;
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight;
+      const w   = canvas.clientWidth;
+      const h   = canvas.clientHeight;
 
       if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-        canvas.width = w * dpr;
+        canvas.width  = w * dpr;
         canvas.height = h * dpr;
       }
 
@@ -141,218 +183,336 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, w, h);
 
-      // Apply Pan & Zoom around center of screen
+      // ── LERP smooth pose ────────────────────────────────────────────────
+      const raw = rawPoseRef.current;
+      const sp  = smoothPoseRef.current;
+
+      sp.x   += (raw.x   - sp.x)   * LERP_FACTOR;
+      sp.y   += (raw.y   - sp.y)   * LERP_FACTOR;
+      // Yaw LERP with angle wrapping
+      let dyaw = raw.yaw - sp.yaw;
+      if (dyaw >  Math.PI) dyaw -= 2 * Math.PI;
+      if (dyaw < -Math.PI) dyaw += 2 * Math.PI;
+      sp.yaw += dyaw * LERP_FACTOR;
+
+      const { px: rx, py: ry } = worldToPixel(sp.x, sp.y);
+
+      // ── Auto-follow: adjust pan so robot stays centred ─────────────────
+      if (autoFollow) {
+        // Where robot is in screen space (before pan applied)
+        const targetPanX = -(rx - meta.width  / 2) * zoom;
+        const targetPanY = -(ry - meta.height / 2) * zoom;
+        // Smooth follow pan
+        if (autoFollowPanRef.current === null) {
+          autoFollowPanRef.current = { x: targetPanX, y: targetPanY };
+        }
+        const fp = autoFollowPanRef.current;
+        fp.x += (targetPanX - fp.x) * 0.05;
+        fp.y += (targetPanY - fp.y) * 0.05;
+        // Apply to actual pan state only if noticeably different (avoids render storm)
+        setPan(prev => {
+          const dx = Math.abs(fp.x - prev.x);
+          const dy = Math.abs(fp.y - prev.y);
+          return (dx > 0.5 || dy > 0.5) ? { x: fp.x, y: fp.y } : prev;
+        });
+      } else {
+        autoFollowPanRef.current = null;
+      }
+
+      // ── Apply pan & zoom ────────────────────────────────────────────────
       ctx.translate(w / 2 + pan.x, h / 2 + pan.y);
       ctx.scale(zoom, zoom);
       ctx.translate(-meta.width / 2, -meta.height / 2);
 
-      // --- Layer 1: Base Map Image ---
+      // ── Layer 1: Base Map Image ─────────────────────────────────────────
       if (mapImage) {
         ctx.drawImage(mapImage, 0, 0, meta.width, meta.height);
       } else {
-        // Dark grid placeholder
-        ctx.fillStyle = '#111827';
+        // Charcoal grid placeholder
+        ctx.fillStyle = '#0b0f19';
         ctx.fillRect(0, 0, meta.width, meta.height);
-        ctx.strokeStyle = '#1f2937';
-        ctx.lineWidth = 1;
-        for (let x = 0; x < meta.width; x += 20) {
-          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, meta.height); ctx.stroke();
+        ctx.strokeStyle = '#1a2035';
+        ctx.lineWidth = 0.5;
+        const gridPx = 1 / meta.resolution; // 1 m grid
+        for (let gx = 0; gx < meta.width;  gx += gridPx) {
+          ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, meta.height); ctx.stroke();
         }
-        for (let y = 0; y < meta.height; y += 20) {
-          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(meta.width, y); ctx.stroke();
+        for (let gy = 0; gy < meta.height; gy += gridPx) {
+          ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(meta.width, gy); ctx.stroke();
         }
       }
 
-      // --- Layer 2: Topological Graph Nodes & Edges ---
+      // ── Layer 2: Topological Graph Nodes ───────────────────────────────
       if (showGraph && graphNodes.length > 0) {
-        // Draw subtle node points
-        for (let i = 0; i < graphNodes.length; i++) {
-          const n = graphNodes[i];
-          const isSelected = selectedNodes.includes(n.id);
-          const isHovered = hoveredNode?.id === n.id;
-
+        for (const n of graphNodes) {
+          const isSel   = selectedNodes.includes(n.id);
+          const isHover = hoveredNode?.id === n.id;
           ctx.beginPath();
-          ctx.arc(n.px, n.py, isSelected ? 4 : isHovered ? 3.5 : 1.5, 0, Math.PI * 2);
-          if (isSelected) {
-            ctx.fillStyle = '#00f0ff';
+          ctx.arc(n.px, n.py, isSel ? 4 : isHover ? 3.5 : 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = isSel ? '#00f0ff' : isHover ? '#ffaa00' : 'rgba(0,240,255,0.45)';
+          ctx.fill();
+          if (isSel) {
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.2;
-            ctx.fill();
+            ctx.lineWidth   = 1.2 / zoom;
             ctx.stroke();
-          } else if (isHovered) {
-            ctx.fillStyle = '#ffaa00';
-            ctx.fill();
-          } else {
-            ctx.fillStyle = 'rgba(0, 240, 255, 0.45)';
-            ctx.fill();
           }
         }
       }
 
-      // --- Layer 3: Dynamic MPPI Dense Path ---
-      const pathWaypoints = telemetry?.path || [];
-      if (showPath && pathWaypoints.length >= 2) {
+      // ── Layer 3: MPPI Dense Path ────────────────────────────────────────
+      const pathWpts = telemetry?.path || [];
+      if (showPath && pathWpts.length >= 2) {
         ctx.save();
-        ctx.strokeStyle = '#f43f5e';
-        ctx.lineWidth = 2.5 / zoom;
-        ctx.shadowColor = 'rgba(244, 63, 94, 0.8)';
-        ctx.shadowBlur = 8;
+        ctx.strokeStyle = 'rgba(244,63,94,0.9)';
+        ctx.lineWidth   = 2.5 / zoom;
+        ctx.shadowColor = 'rgba(244,63,94,0.7)';
+        ctx.shadowBlur  = 10;
+        ctx.setLineDash([4 / zoom, 3 / zoom]);
         ctx.beginPath();
-        for (let i = 0; i < pathWaypoints.length; i++) {
-          const { px, py } = worldToPixel(pathWaypoints[i][0], pathWaypoints[i][1]);
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
+        for (let i = 0; i < pathWpts.length; i++) {
+          const { px, py } = worldToPixel(pathWpts[i][0], pathWpts[i][1]);
+          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
         }
         ctx.stroke();
         ctx.restore();
       }
 
-      // --- Layer 4: Projected 2D LiDAR Obstacle Hits ---
-      const pose = telemetry?.pose || { x: 0, y: 0, yaw: 0 };
-      const scan = telemetry?.scan || [];
-      const angleMin = telemetry?.scan_angle_min ?? -Math.PI;
-      const angleInc = telemetry?.scan_angle_inc ?? 0.0174;
+      // ── Layer 4: LiDAR Obstacle Points ─────────────────────────────────
+      const pose     = telemetry?.pose || { x: 0, y: 0, yaw: 0 };
+      const scan     = telemetry?.scan || [];
+      const angMin   = telemetry?.scan_angle_min ?? -Math.PI;
+      const angInc   = telemetry?.scan_angle_inc ?? 0.0174;
 
       if (showLidar && scan.length > 0) {
         ctx.save();
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.85)';
+        ctx.fillStyle = 'rgba(239,68,68,0.8)';
         for (let i = 0; i < scan.length; i++) {
           const r = scan[i];
           if (r <= 0.05 || r > 8.0) continue;
-          const beamAngle = pose.yaw + (angleMin + i * angleInc);
-          const obsX = pose.x + r * Math.cos(beamAngle);
-          const obsY = pose.y + r * Math.sin(beamAngle);
-          const { px, py } = worldToPixel(obsX, obsY);
-
+          const angle = pose.yaw + (angMin + i * angInc);
+          const { px: opx, py: opy } = worldToPixel(
+            pose.x + r * Math.cos(angle),
+            pose.y + r * Math.sin(angle)
+          );
           ctx.beginPath();
-          ctx.arc(px, py, 1.2 / zoom, 0, Math.PI * 2);
+          ctx.arc(opx, opy, 1.2 / zoom, 0, Math.PI * 2);
           ctx.fill();
         }
         ctx.restore();
       }
 
-      // --- Layer 5: Target Goal Pin ---
-      if (lastGoal) {
-        const { px, py } = worldToPixel(lastGoal.x, lastGoal.y);
+      // ── Layer 5: Breadcrumb Trail ───────────────────────────────────────
+      const trail = trailRef.current;
+      if (showTrail && trail.length >= 2) {
         ctx.save();
-        ctx.strokeStyle = '#00ff88';
-        ctx.lineWidth = 2 / zoom;
+        for (let i = 1; i < trail.length; i++) {
+          const alpha = i / trail.length;
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(0, 212, 255, ${alpha * 0.55})`;
+          ctx.lineWidth   = (1.5 + alpha * 1.5) / zoom;
+          ctx.moveTo(trail[i - 1].px, trail[i - 1].py);
+          ctx.lineTo(trail[i].px,     trail[i].py);
+          ctx.stroke();
+        }
+        // Trailing glow dot at tail
+        const t0 = trail[0];
         ctx.beginPath();
-        ctx.arc(px, py, 6 / zoom, 0, Math.PI * 2);
+        ctx.arc(t0.px, t0.py, 2 / zoom, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0,212,255,0.3)';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // ── Layer 6: Pulsing Goal Destination Ring ──────────────────────────
+      if (lastGoal) {
+        const { px: gx, py: gy } = worldToPixel(lastGoal.x, lastGoal.y);
+        pulseRef.current += 0.05;
+        const pulse = 0.5 + 0.5 * Math.sin(pulseRef.current);
+
+        ctx.save();
+        // Outer pulsing ring
+        ctx.beginPath();
+        ctx.arc(gx, gy, (8 + pulse * 4) / zoom, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0,255,136,${0.4 + pulse * 0.4})`;
+        ctx.lineWidth   = 2 / zoom;
+        ctx.shadowColor = 'rgba(0,255,136,0.6)';
+        ctx.shadowBlur  = 12;
+        ctx.stroke();
+
+        // Inner solid ring
+        ctx.beginPath();
+        ctx.arc(gx, gy, 5 / zoom, 0, Math.PI * 2);
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth   = 1.5 / zoom;
+        ctx.shadowBlur  = 6;
         ctx.stroke();
 
         // Crosshair
+        ctx.strokeStyle = 'rgba(0,255,136,0.7)';
+        ctx.lineWidth   = 1 / zoom;
+        ctx.shadowBlur  = 0;
+        const ch = 12 / zoom;
         ctx.beginPath();
-        ctx.moveTo(px - 10 / zoom, py); ctx.lineTo(px + 10 / zoom, py);
-        ctx.moveTo(px, py - 10 / zoom); ctx.lineTo(px, py + 10 / zoom);
+        ctx.moveTo(gx - ch, gy); ctx.lineTo(gx + ch, gy);
+        ctx.moveTo(gx, gy - ch); ctx.lineTo(gx, gy + ch);
         ctx.stroke();
         ctx.restore();
       }
 
-      // --- Layer 6: Robot Pose & Footprint ---
-      const robotPixel = worldToPixel(pose.x, pose.y);
-      const robotRadiusPx = 0.18 / meta.resolution; // 0.18m collision radius in px
+      // ── Layer 7: Robot — Headlight Cone ────────────────────────────────
+      const robotYaw    = sp.yaw;
+      const headlightLen = 30 / zoom;  // ~1.5 m in world
+      const coneAngle   = Math.PI / 5; // 36° half-angle
 
       ctx.save();
-      // Body footprint circle
+      const coneGrad = ctx.createRadialGradient(rx, ry, 0, rx, ry, headlightLen);
+      coneGrad.addColorStop(0,   'rgba(255,255,200,0.25)');
+      coneGrad.addColorStop(0.5, 'rgba(255,255,180,0.10)');
+      coneGrad.addColorStop(1,   'rgba(255,255,150,0)');
+      ctx.fillStyle = coneGrad;
       ctx.beginPath();
-      ctx.arc(robotPixel.px, robotPixel.py, robotRadiusPx, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0, 240, 255, 0.25)';
+      ctx.moveTo(rx, ry);
+      // ROS yaw: 0 = east (+x), positive = CCW. Canvas y is flipped.
+      const coneDir = -robotYaw; // convert ROS to canvas angle
+      ctx.arc(rx, ry, headlightLen, coneDir - coneAngle, coneDir + coneAngle);
+      ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = '#00f0ff';
-      ctx.lineWidth = 1.8 / zoom;
-      ctx.shadowColor = '#00f0ff';
-      ctx.shadowBlur = 10;
+      ctx.restore();
+
+      // ── Layer 8: Robot — Body, Arrow & Status Beacon ───────────────────
+      const robotRadiusPx = 0.18 / meta.resolution;
+
+      // Determine status colour from nav_state
+      const navState  = telemetry?.nav_state || 'IDLE';
+      const statusClr =
+        navState === 'NAVIGATING' ? '#00ff9d' :
+        navState === 'YIELDING'   ? '#ff8c00' :
+        navState === 'ESTOP'      ? '#ff3355' :
+        navState === 'ARRIVED'    ? '#ffd700' :
+        navState === 'PLANNING'   ? '#3b82f6' :
+        '#4a5580'; // IDLE
+
+      ctx.save();
+
+      // Safety clearance ring (faint)
+      ctx.beginPath();
+      ctx.arc(rx, ry, robotRadiusPx, 0, Math.PI * 2);
+      ctx.fillStyle   = `${statusClr}18`;
+      ctx.fill();
+      ctx.strokeStyle = `${statusClr}60`;
+      ctx.lineWidth   = 1 / zoom;
       ctx.stroke();
 
-      // Heading indicator arrow
-      const arrowLength = robotRadiusPx + 10 / zoom;
-      const endX = robotPixel.px + arrowLength * Math.cos(pose.yaw);
-      const endY = robotPixel.py - arrowLength * Math.sin(pose.yaw);
-
+      // Robot body disc
       ctx.beginPath();
-      ctx.moveTo(robotPixel.px, robotPixel.py);
-      ctx.lineTo(endX, endY);
-      ctx.strokeStyle = '#ffaa00';
-      ctx.lineWidth = 2.5 / zoom;
+      ctx.arc(rx, ry, robotRadiusPx * 0.65, 0, Math.PI * 2);
+      ctx.fillStyle   = 'rgba(0,212,255,0.22)';
+      ctx.fill();
+      ctx.strokeStyle = '#00d4ff';
+      ctx.lineWidth   = 1.8 / zoom;
+      ctx.shadowColor = '#00d4ff';
+      ctx.shadowBlur  = 14;
       ctx.stroke();
 
-      // Center core dot
+      // Heading direction arrow
+      const arrowLen = robotRadiusPx + 12 / zoom;
+      const arrowEnd = {
+        x: rx + arrowLen * Math.cos(-robotYaw), // canvas: CW positive
+        y: ry + arrowLen * Math.sin(-robotYaw),
+      };
       ctx.beginPath();
-      ctx.arc(robotPixel.px, robotPixel.py, 3 / zoom, 0, Math.PI * 2);
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(arrowEnd.x, arrowEnd.y);
+      ctx.strokeStyle = statusClr;
+      ctx.lineWidth   = 2.5 / zoom;
+      ctx.shadowColor = statusClr;
+      ctx.shadowBlur  = 12;
+      ctx.stroke();
+
+      // Arrowhead
+      const aw = 5 / zoom;
+      const ang = Math.atan2(arrowEnd.y - ry, arrowEnd.x - rx);
+      ctx.beginPath();
+      ctx.moveTo(arrowEnd.x, arrowEnd.y);
+      ctx.lineTo(
+        arrowEnd.x - aw * Math.cos(ang - 0.5),
+        arrowEnd.y - aw * Math.sin(ang - 0.5)
+      );
+      ctx.lineTo(
+        arrowEnd.x - aw * Math.cos(ang + 0.5),
+        arrowEnd.y - aw * Math.sin(ang + 0.5)
+      );
+      ctx.closePath();
+      ctx.fillStyle = statusClr;
+      ctx.fill();
+
+      // Centre core dot
+      ctx.beginPath();
+      ctx.arc(rx, ry, 3 / zoom, 0, Math.PI * 2);
       ctx.fillStyle = '#ffffff';
+      ctx.shadowBlur = 0;
       ctx.fill();
-      ctx.restore();
+
+      // Status beacon pulsing ring (outermost)
+      if (navState !== 'IDLE') {
+        const bp = 0.5 + 0.5 * Math.sin(pulseRef.current * 1.8);
+        ctx.beginPath();
+        ctx.arc(rx, ry, robotRadiusPx + (3 + bp * 4) / zoom, 0, Math.PI * 2);
+        ctx.strokeStyle = `${statusClr}${Math.round(40 + bp * 60).toString(16)}`;
+        ctx.lineWidth   = 1.5 / zoom;
+        ctx.stroke();
+      }
 
       ctx.restore();
+      ctx.restore(); // undo pan/zoom transform
+
       animId = requestAnimationFrame(render);
     };
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
   }, [
-    mapImage,
-    meta,
-    zoom,
-    pan,
-    telemetry,
-    showGraph,
-    showLidar,
-    showPath,
-    graphNodes,
-    selectedNodes,
-    hoveredNode,
-    lastGoal,
-    worldToPixel,
+    mapImage, meta, zoom, pan, telemetry,
+    showGraph, showLidar, showPath, showTrail,
+    graphNodes, selectedNodes, hoveredNode,
+    lastGoal, autoFollow, worldToPixel,
   ]);
 
-  // ── Pan & Zoom Event Handlers ──
+  // ─────────────────────────────────────────────────────────────────────────
+  // Pan & Zoom event handlers
+  // ─────────────────────────────────────────────────────────────────────────
   const handleWheel = (e) => {
     e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-    setZoom((prev) => Math.min(Math.max(prev * zoomFactor, 0.5), 8.0));
+    setZoom(prev => Math.min(Math.max(prev * (e.deltaY < 0 ? 1.15 : 0.87), 0.5), 10));
   };
 
   const handleMouseDown = (e) => {
-    // Right-click or middle-click or Space/Shift drags the canvas
     if (e.button === 1 || e.button === 2 || e.shiftKey || e.altKey) {
       e.preventDefault();
       isDraggingRef.current = true;
-      dragStartRef.current = { x: e.clientX, y: e.clientY };
-      panStartRef.current = { ...pan };
+      dragStartRef.current  = { x: e.clientX, y: e.clientY };
+      panStartRef.current   = { ...pan };
     }
   };
 
   const handleMouseMove = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     if (isDraggingRef.current) {
-      const dx = e.clientX - dragStartRef.current.x;
-      const dy = e.clientY - dragStartRef.current.y;
       setPan({
-        x: panStartRef.current.x + dx,
-        y: panStartRef.current.y + dy,
+        x: panStartRef.current.x + e.clientX - dragStartRef.current.x,
+        y: panStartRef.current.y + e.clientY - dragStartRef.current.y,
       });
       return;
     }
-
-    // Coordinate hover detection
     const world = screenToWorld(e.clientX, e.clientY, canvas);
     if (world) {
       setCursorWorld({ x: world.wx, y: world.wy });
-
-      // Check if hovering near a graph node (within 6px radius)
       if (showGraph && graphNodes.length > 0) {
-        let nearest = null;
-        let minDist = 7 / zoom;
-        for (let i = 0; i < graphNodes.length; i++) {
-          const n = graphNodes[i];
-          const dist = Math.hypot(n.px - world.px, n.py - world.py);
-          if (dist < minDist) {
-            minDist = dist;
-            nearest = n;
-          }
+        let nearest = null, minDist = 7 / zoom;
+        for (const n of graphNodes) {
+          const d = Math.hypot(n.px - world.px, n.py - world.py);
+          if (d < minDist) { minDist = d; nearest = n; }
         }
         setHoveredNode(nearest);
       } else {
@@ -361,46 +521,32 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
     }
   };
 
-  const handleMouseUp = () => {
-    isDraggingRef.current = false;
-  };
+  const handleMouseUp  = () => { isDraggingRef.current = false; };
 
   const handleClick = async (e) => {
-    if (isDraggingRef.current) return;
-    if (e.button !== 0) return; // Only left click
-
+    if (isDraggingRef.current || e.button !== 0) return;
     const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const world = screenToWorld(e.clientX, e.clientY, canvas);
+    const world  = screenToWorld(e.clientX, e.clientY, canvas);
     if (!world) return;
 
-    // 1. If clicking on a topological node
     if (showGraph && hoveredNode) {
-      if (onSelectNode) {
-        onSelectNode(hoveredNode.id);
-        setGoalFeedback(`Added Waypoint ${hoveredNode.id}`);
-        setTimeout(() => setGoalFeedback(null), 2500);
-      }
+      onSelectNode?.(hoveredNode.id);
+      setGoalFeedback(`Added Waypoint ${hoveredNode.id}`);
+      setTimeout(() => setGoalFeedback(null), 2500);
       return;
     }
-
-    // 2. Otherwise: send 2D navigation goal
-    const targetX = world.wx;
-    const targetY = world.wy;
-    setLastGoal({ x: targetX, y: targetY });
-    setGoalFeedback(`Dispatching goal (${targetX.toFixed(2)}, ${targetY.toFixed(2)})…`);
-
-    const ok = await bridge.sendGoal(targetX, targetY);
-    setGoalFeedback(ok ? `Goal active → (${targetX.toFixed(2)}, ${targetY.toFixed(2)})` : 'Goal rejected');
+    setLastGoal({ x: world.wx, y: world.wy });
+    setGoalFeedback(`Dispatching goal (${world.wx.toFixed(2)}, ${world.wy.toFixed(2)})…`);
+    const ok = await bridge.sendGoal(world.wx, world.wy);
+    setGoalFeedback(ok ? `Goal active → (${world.wx.toFixed(2)}, ${world.wy.toFixed(2)})` : 'Goal rejected');
     setTimeout(() => setGoalFeedback(null), 3000);
   };
 
-  const handleResetView = () => {
-    setZoom(1.8);
-    setPan({ x: 0, y: 0 });
-  };
+  const handleResetView = () => { setZoom(1.8); setPan({ x: 0, y: 0 }); };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div
       ref={containerRef}
@@ -412,62 +558,72 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
       onWheel={handleWheel}
       onClick={handleClick}
       style={{
-        position: 'relative',
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden',
-        background: '#090d16',
+        position:     'relative',
+        width:        '100%',
+        height:       '100%',
+        overflow:     'hidden',
+        background:   '#080c16',
         borderRadius: 12,
-        cursor: isDraggingRef.current ? 'grabbing' : hoveredNode ? 'pointer' : 'crosshair',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
+        cursor:       isDraggingRef.current ? 'grabbing' : hoveredNode ? 'pointer' : 'crosshair',
+        border:       '1px solid rgba(255,255,255,0.08)',
       }}
     >
-      <canvas
-        ref={canvasRef}
-        style={{ width: '100%', height: '100%', display: 'block' }}
-      />
+      <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
 
-      {/* ── Top Floating HUD ── */}
+      {/* ── Top HUD bar ── */}
       <div className="map-hud-top">
         <div className="hud-badge">
           <span className="hud-dot" />
-          <span>Vector Map 60 FPS</span>
+          <span>Live Map · 60 FPS</span>
         </div>
 
-        {/* Layer Toggles */}
         <div className="hud-controls">
           <button
+            className={`btn-toggle ${autoFollow ? 'active' : ''}`}
+            onClick={(e) => { e.stopPropagation(); setAutoFollow(f => !f); }}
+            title="Auto-follow: keep robot centred in viewport"
+          >
+            🎥 Follow
+          </button>
+          <button
+            className={`btn-toggle ${showTrail ? 'active' : ''}`}
+            onClick={(e) => { e.stopPropagation(); setShowTrail(t => !t); }}
+            title="Toggle breadcrumb motion trail"
+          >
+            ✦ Trail
+          </button>
+          <button
             className={`btn-toggle ${showGraph ? 'active' : ''}`}
-            onClick={(e) => { e.stopPropagation(); setShowGraph(!showGraph); }}
-            title="Toggle Topological Graph Nodes (Click node to add to mission)"
+            onClick={(e) => { e.stopPropagation(); setShowGraph(g => !g); }}
+            title="Toggle topological waypoint nodes"
           >
             🗺️ Nodes {graphNodes.length > 0 && `(${graphNodes.length})`}
           </button>
           <button
             className={`btn-toggle ${showLidar ? 'active' : ''}`}
-            onClick={(e) => { e.stopPropagation(); setShowLidar(!showLidar); }}
-            title="Toggle 2D LiDAR Obstacle Hits"
+            onClick={(e) => { e.stopPropagation(); setShowLidar(l => !l); }}
+            title="Toggle LiDAR obstacle hits"
           >
             🔴 LiDAR
           </button>
           <button
             className={`btn-toggle ${showPath ? 'active' : ''}`}
-            onClick={(e) => { e.stopPropagation(); setShowPath(!showPath); }}
-            title="Toggle MPPI Dense Path"
+            onClick={(e) => { e.stopPropagation(); setShowPath(p => !p); }}
+            title="Toggle planned MPPI path"
           >
             〰️ Path
           </button>
         </div>
       </div>
 
-      {/* ── Zoom Controls ── */}
+      {/* ── Zoom controls ── */}
       <div className="map-hud-zoom">
-        <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(z * 1.25, 8.0)); }}>+</button>
-        <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(z * 0.8, 0.5)); }}>−</button>
+        <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(z * 1.25, 10)); }}>+</button>
+        <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(z * 0.8,  0.5)); }}>−</button>
         <button className="btn-icon btn-reset" onClick={(e) => { e.stopPropagation(); handleResetView(); }} title="Reset View">⊙</button>
       </div>
 
-      {/* ── Hover Coordinates & Node Tooltip ── */}
+      {/* ── Bottom HUD ── */}
       <div className="map-hud-bottom">
         <div className="hud-coords">
           {hoveredNode ? (
@@ -475,25 +631,24 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
               📍 Node {hoveredNode.id}: ({hoveredNode.x.toFixed(2)}, {hoveredNode.y.toFixed(2)}) m
             </span>
           ) : cursorWorld ? (
-            <span>
-              Cursor: ({cursorWorld.x.toFixed(2)}, {cursorWorld.y.toFixed(2)}) m
-            </span>
+            <span>Cursor: ({cursorWorld.x.toFixed(2)}, {cursorWorld.y.toFixed(2)}) m</span>
           ) : (
             <span>
               Robot: ({(telemetry?.pose?.x ?? 0).toFixed(2)}, {(telemetry?.pose?.y ?? 0).toFixed(2)}) m
+              &nbsp;·&nbsp;{((telemetry?.pose?.yaw ?? 0) * 180 / Math.PI).toFixed(1)}°
             </span>
           )}
         </div>
         <div className="hud-hint">
-          {showGraph ? 'Click node to add to sequence • Click map to navigate • Drag to pan' : 'Click map to navigate • Shift+Drag to pan • Scroll to zoom'}
+          {showGraph
+            ? 'Click node to queue waypoint · Click floor to navigate · Shift+Drag to pan'
+            : 'Click floor to navigate · Shift+Drag to pan · Scroll to zoom'}
         </div>
       </div>
 
-      {/* ── Goal Feedback Toast ── */}
+      {/* ── Goal feedback toast ── */}
       {goalFeedback && (
-        <div className="map-feedback-toast">
-          {goalFeedback}
-        </div>
+        <div className="map-feedback-toast">{goalFeedback}</div>
       )}
     </div>
   );
