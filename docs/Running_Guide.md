@@ -167,6 +167,48 @@ Example progress output:
 
 ---
 
+### Option D — Interactive Web Dashboard & Mobile Control App (Recommended)
+
+The AMR includes a full-stack web and mobile application suite with a **60 FPS Vector Canvas Map**, interactive waypoint picker, control interlocks, live decision timeline, and dynamic obstacle simulation.
+
+#### 1. Start the Bridge Server (Terminal 4)
+```bash
+cd ~/AMR/AMR-main/app/bridge
+chmod +x run_bridge.sh
+./run_bridge.sh
+```
+*Bridge starts at `http://0.0.0.0:8000` with REST endpoints and WebSocket stream `/ws/telemetry`.*
+
+#### 2. Start the React Web Dashboard (Terminal 5)
+```bash
+cd ~/AMR/AMR-main/app/web_dashboard
+chmod +x run_dashboard.sh
+./run_dashboard.sh
+```
+*(Or run `npm run dev` directly).*
+Open **`http://localhost:5173`** in your browser.
+
+#### 3. Features & Controls in the Dashboard
+- **60 FPS Canvas Vector Map**:
+  - Smooth pan (right-click / shift-drag) and zoom (scroll wheel).
+  - Left-click anywhere on the floorplan to send a navigation goal.
+  - Toggle **"🗺️ Nodes"** in the top map HUD to show all 756 graph nodes; click nodes directly on the map to add them to your mission sequence.
+  - Live overlays of robot footprint ($0.18\text{ m}$ clearance), heading ray, `/agv_dense_path` polyline, and projected 2D LiDAR obstacle hits.
+- **Control Mode Interlock**:
+  - Automatically switches to **`AUTONOMOUS NAV`** during active runs, locking the teleop joystick to prevent accidental collisions.
+  - Tap **"Override to Manual"** or toggle to **`Manual Drive`** to unlock joystick teleop with speed throttle slider.
+- **Mission Queue Manager**:
+  - View ordered waypoints (`[1] N0 ➔ [2] N5 ➔ [3] N12`), remove individual nodes, or use quick presets (*North Aisle*, *Aisle Loop*, *Docking*).
+  - Click **"▶ Dispatch Mission Sequence"** to run the mission.
+- **Dynamic Obstacle Simulation Tester**:
+  - Collapsible control pad to drive the obstacle (`/dynamic_obstacle/cmd_vel`) directly into the robot's path to test MPPI evasive swerves, corridor yielding, and Dijkstra rerouting.
+- **Live Diagnostics Timeline**:
+  - Automatically logs autonomous brain decisions (`PLANNING`, `NAVIGATING`, `YIELDING`, `REROUTE`, `ARRIVED`, `ESTOP`) with timestamps and filters.
+- **Emergency Stop (E-STOP)**:
+  - Prominent red button that immediately halts all motors and asserts `/agv_estop: True`. Click "Clear E-Stop & Resume" to recover.
+
+---
+
 ## Testing Dynamic Obstacles
 
 ### Spawn an Autonomous Obstacle

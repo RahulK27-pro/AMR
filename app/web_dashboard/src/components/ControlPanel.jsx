@@ -5,49 +5,58 @@ import bridge from '../services/amrBridge';
 const MAX_LINEAR  = 0.8;
 const MAX_ANGULAR = 1.8;
 
-/**
- * ControlPanel — right sidebar with:
- *  - Virtual joystick (nipplejs) → continuous cmd_vel
- *  - E-STOP and clear buttons
- *  - Manual goal input (X, Y coordinates)
- *  - Goal sequence input (comma-separated node IDs)
- *  - Quick preset actions
- */
-export default function ControlPanel({ telemetry }) {
+export default function ControlPanel({
+  telemetry,
+  selectedNodes = [],
+  setSelectedNodes,
+}) {
   const joystickRef = useRef(null);
   const managerRef  = useRef(null);
   const cmdTimerRef = useRef(null);
   const cmdRef      = useRef({ linear: 0, angular: 0 });
 
-  const [goalX, setGoalX]   = useState('');
-  const [goalY, setGoalY]   = useState('');
-  const [seqInput, setSeqInput] = useState('');
-  const [speed, setSpeed]   = useState(1.0); // velocity scale factor
+  // Mode Interlock: 'auto' | 'manual'
+  const [controlMode, setControlMode] = useState('auto');
+
+  // Goal & sequence states
+  const [goalX, setGoalX] = useState('');
+  const [goalY, setGoalY] = useState('');
+  const [speed, setSpeed] = useState(0.8);
   const [estopActive, setEstopActive] = useState(false);
 
+  // Dynamic Obstacle Simulation Panel state
+  const [showObstacleControls, setShowObstacleControls] = useState(false);
+  const [obsSpeed, setObsSpeed] = useState(0.45);
+
   const navState = telemetry?.nav_state;
+
   useEffect(() => {
     setEstopActive(navState === 'ESTOP');
+    // If robot starts actively navigating or planning, default to auto mode
+    if (navState === 'NAVIGATING' || navState === 'PLANNING') {
+      setControlMode('auto');
+    }
   }, [navState]);
 
-  // ---- Joystick ----
+  // ── Joystick Setup ──
   useEffect(() => {
     if (!joystickRef.current) return;
+
     const manager = nipplejs.create({
-      zone:   joystickRef.current,
-      mode:   'static',
+      zone: joystickRef.current,
+      mode: 'static',
       position: { left: '50%', top: '50%' },
-      color:  '#00d4ff',
-      size:   130,
+      color: controlMode === 'manual' ? '#00f0ff' : '#4b5563',
+      size: 130,
       restJoystick: true,
     });
     managerRef.current = manager;
 
     manager.on('move', (_, data) => {
+      if (controlMode !== 'manual') return;
       if (!data.vector) return;
-      // nipplejs: vector.x = right (+), vector.y = up (+)
-      const linearRaw  = data.vector.y;  // forward
-      const angularRaw = -data.vector.x; // left turn = positive
+      const linearRaw  = data.vector.y;
+      const angularRaw = -data.vector.x;
       const f = data.force ? Math.min(data.force, 1) : 1;
       cmdRef.current = {
         linear:  linearRaw  * f * MAX_LINEAR  * speed,
@@ -57,11 +66,13 @@ export default function ControlPanel({ telemetry }) {
 
     manager.on('end', () => {
       cmdRef.current = { linear: 0, angular: 0 };
-      bridge.sendCmdVel(0, 0);
+      if (controlMode === 'manual') {
+        bridge.sendCmdVel(0, 0);
+      }
     });
 
-    // Send cmd_vel at 10 Hz while joystick active
     cmdTimerRef.current = setInterval(() => {
+      if (controlMode !== 'manual') return;
       const { linear, angular } = cmdRef.current;
       if (linear !== 0 || angular !== 0) {
         bridge.sendCmdVel(linear, angular);
@@ -72,10 +83,9 @@ export default function ControlPanel({ telemetry }) {
       manager.destroy();
       clearInterval(cmdTimerRef.current);
     };
-  }, [speed]);
+  }, [speed, controlMode]);
 
-  // ---- Handlers ----
-
+  // ── Handlers ──
   const handleEstop = async () => {
     await bridge.sendStop();
     setEstopActive(true);
@@ -90,13 +100,8 @@ export default function ControlPanel({ telemetry }) {
     const x = parseFloat(goalX);
     const y = parseFloat(goalY);
     if (isNaN(x) || isNaN(y)) return;
+    setControlMode('auto');
     await bridge.sendGoal(x, y);
-  };
-
-  const handleSendSequence = async () => {
-    const nodes = seqInput.split(',').map(s => s.trim()).filter(Boolean);
-    if (nodes.length === 0) return;
-    await bridge.sendGoalSequence(nodes);
   };
 
   const handleInitialPose = async () => {
@@ -106,19 +111,39 @@ export default function ControlPanel({ telemetry }) {
     await bridge.sendInitialPose(x, y, 0);
   };
 
+  const handleRemoveNode = (index) => {
+    if (setSelectedNodes) {
+      setSelectedNodes(selectedNodes.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleClearNodes = () => {
+    if (setSelectedNodes) setSelectedNodes([]);
+  };
+
+  const handleDispatchMission = async () => {
+    if (selectedNodes.length === 0) return;
+    setControlMode('auto');
+    await bridge.sendGoalSequence(selectedNodes);
+  };
+
+  const applyPreset = (presetNodes) => {
+    if (setSelectedNodes) setSelectedNodes(presetNodes);
+  };
+
+  // Obstacle teleop
+  const sendObstacle = (linear, angular) => {
+    bridge.sendObstacleCmdVel(linear, angular);
+  };
+
   return (
     <div className="flex-col" style={{ gap: 12 }}>
 
-      {/* E-STOP */}
+      {/* ── 1. EMERGENCY STOP ── */}
       {estopActive ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{
-            padding: '12px', borderRadius: 10, textAlign: 'center',
-            background: 'rgba(255,51,85,0.1)', border: '1px solid var(--accent-red)',
-            color: 'var(--accent-red)', fontWeight: 700, fontSize: 13,
-            letterSpacing: '0.05em'
-          }}>⛔ E-STOP ACTIVE</div>
-          <button className="btn btn--ghost btn--full" onClick={handleEstopClear}>
+        <div className="estop-banner-active">
+          <div className="estop-text">⛔ EMERGENCY STOP ACTIVE</div>
+          <button className="btn btn--success btn--full mt-sm" onClick={handleEstopClear}>
             ✓ Clear E-Stop &amp; Resume
           </button>
         </div>
@@ -128,84 +153,201 @@ export default function ControlPanel({ telemetry }) {
         </button>
       )}
 
-      {/* Joystick */}
+      {/* ── 2. CONTROL MODE SWITCHER (INTERLOCK) ── */}
       <div className="card">
-        <div className="card__title">🕹 Teleop Joystick</div>
-        <div style={{ position: 'relative', height: 160, marginTop: 8 }}>
-          <div ref={joystickRef} className="joystick-zone"
-            style={{ width: '100%', height: '100%' }} />
+        <div className="card__title flex-row" style={{ justifyContent: 'space-between' }}>
+          <span>🕹️ Control Interlock</span>
+          <span className={`badge ${controlMode === 'auto' ? 'badge--cyan' : 'badge--yellow'}`}>
+            {controlMode === 'auto' ? 'AUTONOMOUS' : 'MANUAL TELEOP'}
+          </span>
         </div>
-        {/* Speed scale */}
-        <div style={{ marginTop: 12 }}>
+
+        <div className="mode-toggle-group mt-sm">
+          <button
+            className={`btn-mode ${controlMode === 'auto' ? 'active' : ''}`}
+            onClick={() => {
+              setControlMode('auto');
+              bridge.sendCmdVel(0, 0);
+            }}
+          >
+            🤖 Autonomous
+          </button>
+          <button
+            className={`btn-mode ${controlMode === 'manual' ? 'active' : ''}`}
+            onClick={() => setControlMode('manual')}
+          >
+            🎮 Manual Drive
+          </button>
+        </div>
+
+        {/* Teleop Joystick Zone */}
+        <div style={{ position: 'relative', height: 160, marginTop: 12 }}>
+          <div
+            ref={joystickRef}
+            className="joystick-zone"
+            style={{
+              width: '100%',
+              height: '100%',
+              opacity: controlMode === 'manual' ? 1 : 0.35,
+              pointerEvents: controlMode === 'manual' ? 'auto' : 'none',
+            }}
+          />
+          {controlMode === 'auto' && (
+            <div className="joystick-lock-overlay">
+              <span>🔒 Joystick Locked in Auto Mode</span>
+              <button
+                className="btn btn--xs btn--ghost mt-xs"
+                onClick={() => setControlMode('manual')}
+              >
+                Override to Manual
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Speed throttle slider */}
+        <div style={{ marginTop: 10 }}>
           <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
-            <span className="text-dim text-xs">Speed</span>
-            <span className="text-mono" style={{ fontSize: 12, color: 'var(--accent-cyan)' }}>
-              {Math.round(speed * 100)}%
+            <span className="text-dim text-xs">Drive Speed Throttle</span>
+            <span className="text-mono text-xs" style={{ color: 'var(--accent-cyan)' }}>
+              {Math.round(speed * 100)}% ({(MAX_LINEAR * speed).toFixed(2)} m/s)
             </span>
           </div>
           <input
-            type="range" min="0.1" max="1" step="0.05"
+            type="range"
+            min="0.1"
+            max="1.0"
+            step="0.05"
             value={speed}
-            onChange={e => setSpeed(Number(e.target.value))}
+            disabled={controlMode !== 'manual'}
+            onChange={(e) => setSpeed(Number(e.target.value))}
             style={{ width: '100%', accentColor: 'var(--accent-cyan)' }}
           />
         </div>
-        <button className="btn btn--ghost btn--full mt-sm"
-          onClick={() => bridge.sendCmdVel(0, 0)}>
-          ■ Stop
+
+        {/* Manual quick actions */}
+        {controlMode === 'manual' && (
+          <div className="quick-actions-grid mt-sm">
+            <button className="btn btn--ghost btn--sm" onClick={() => bridge.sendCmdVel(0.35 * speed, 0)}>↑ Fwd</button>
+            <button className="btn btn--ghost btn--sm" onClick={() => bridge.sendCmdVel(-0.35 * speed, 0)}>↓ Rev</button>
+            <button className="btn btn--ghost btn--sm" onClick={() => bridge.sendCmdVel(0, 0.9 * speed)}>↺ Left</button>
+            <button className="btn btn--ghost btn--sm" onClick={() => bridge.sendCmdVel(0, -0.9 * speed)}>↻ Right</button>
+            <button className="btn btn--ghost btn--sm" style={{ gridColumn: 'span 4', color: '#ff3355' }} onClick={() => bridge.sendCmdVel(0, 0)}>■ Stop Motors</button>
+          </div>
+        )}
+      </div>
+
+      {/* ── 3. TOPOLOGICAL MISSION BUILDER ── */}
+      <div className="card">
+        <div className="card__title flex-row" style={{ justifyContent: 'space-between' }}>
+          <span>📋 Mission Waypoints</span>
+          {selectedNodes.length > 0 && (
+            <button className="btn-link text-xs" onClick={handleClearNodes}>
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div className="waypoint-queue-container mt-sm">
+          {selectedNodes.length === 0 ? (
+            <div className="text-dim text-xs" style={{ textAlign: 'center', padding: '12px 6px' }}>
+              No waypoints selected. Turn on <b>"🗺️ Nodes"</b> on the map and click nodes, or use a preset below.
+            </div>
+          ) : (
+            <div className="waypoint-chip-list">
+              {selectedNodes.map((nodeId, idx) => (
+                <span key={`${nodeId}-${idx}`} className="waypoint-chip">
+                  <span className="chip-idx">{idx + 1}</span>
+                  <span className="chip-name">{nodeId}</span>
+                  <button
+                    className="chip-remove"
+                    onClick={() => handleRemoveNode(idx)}
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Mission Presets */}
+        <div className="preset-row mt-sm">
+          <span className="text-dim text-xs">Presets:</span>
+          <button className="btn-preset" onClick={() => applyPreset(['N0', 'N5', 'N12'])}>North Aisle</button>
+          <button className="btn-preset" onClick={() => applyPreset(['N3', 'N8', 'N15', 'N2'])}>Aisle Loop</button>
+          <button className="btn-preset" onClick={() => applyPreset(['N1', 'N10', 'N4'])}>Docking</button>
+        </div>
+
+        <button
+          className="btn btn--success btn--full mt-sm"
+          disabled={selectedNodes.length === 0}
+          onClick={handleDispatchMission}
+        >
+          ▶ Dispatch Mission Sequence ({selectedNodes.length})
         </button>
       </div>
 
-      {/* Goal input */}
+      {/* ── 4. MANUAL COORDINATE DISPATCH ── */}
       <div className="card">
-        <div className="card__title">🎯 Send Goal</div>
-        <div className="flex-row mt-sm">
-          <input className="input-field" placeholder="X (m)"
-            value={goalX} onChange={e => setGoalX(e.target.value)} />
-          <input className="input-field" placeholder="Y (m)"
-            value={goalY} onChange={e => setGoalY(e.target.value)} />
+        <div className="card__title">🎯 Coordinate Dispatch</div>
+        <div className="flex-row mt-sm" style={{ gap: 8 }}>
+          <input
+            className="input-field"
+            placeholder="X (m)"
+            value={goalX}
+            onChange={(e) => setGoalX(e.target.value)}
+          />
+          <input
+            className="input-field"
+            placeholder="Y (m)"
+            value={goalY}
+            onChange={(e) => setGoalY(e.target.value)}
+          />
         </div>
-        <div className="flex-row mt-sm">
-          <button className="btn btn--primary btn--full" onClick={handleSendGoal}>▶ Navigate</button>
-          <button className="btn btn--ghost" onClick={handleInitialPose} title="Set AMCL initial pose">📍 Init</button>
+        <div className="flex-row mt-sm" style={{ gap: 8 }}>
+          <button className="btn btn--primary btn--full" onClick={handleSendGoal}>
+            ▶ Navigate
+          </button>
+          <button className="btn btn--ghost" onClick={handleInitialPose} title="Set AMCL Initial Pose">
+            📍 Init AMCL
+          </button>
         </div>
       </div>
 
-      {/* Goal sequence */}
+      {/* ── 5. DYNAMIC OBSTACLE SIMULATOR TESTER ── */}
       <div className="card">
-        <div className="card__title">📋 Goal Sequence</div>
-        <input
-          className="input-field mt-sm"
-          placeholder="N5, N12, N40, …"
-          value={seqInput}
-          onChange={e => setSeqInput(e.target.value)}
-        />
-        <button className="btn btn--success btn--full mt-sm" onClick={handleSendSequence}>
-          ▶ Run Sequence
-        </button>
-      </div>
-
-      {/* Quick actions */}
-      <div className="card">
-        <div className="card__title">⚡ Quick Actions</div>
-        <div className="flex-col mt-sm" style={{ gap: 6 }}>
-          <button className="btn btn--ghost btn--full"
-            onClick={() => bridge.sendCmdVel(0.3, 0)}>
-            ↑ Forward (slow)
-          </button>
-          <button className="btn btn--ghost btn--full"
-            onClick={() => bridge.sendCmdVel(-0.3, 0)}>
-            ↓ Reverse (slow)
-          </button>
-          <button className="btn btn--ghost btn--full"
-            onClick={() => bridge.sendCmdVel(0, 0.8)}>
-            ↺ Rotate Left
-          </button>
-          <button className="btn btn--ghost btn--full"
-            onClick={() => bridge.sendCmdVel(0, -0.8)}>
-            ↻ Rotate Right
-          </button>
+        <div
+          className="card__title flex-row cursor-pointer"
+          style={{ justifyContent: 'space-between' }}
+          onClick={() => setShowObstacleControls(!showObstacleControls)}
+        >
+          <span>🚧 Dynamic Obstacle Tester</span>
+          <span className="text-xs text-dim">{showObstacleControls ? '▲ Hide' : '▼ Test'}</span>
         </div>
+
+        {showObstacleControls && (
+          <div className="obstacle-tester-body mt-sm">
+            <div className="text-dim text-xs" style={{ lineHeight: 1.4 }}>
+              Simulate human/cart traffic to trigger AMR <b>MPPI Evasion (&lt;0.85m)</b>, <b>Corridor Yielding</b>, and <b>Dijkstra Re-routing (&gt;4.5s)</b>.
+            </div>
+
+            <div className="obstacle-pad-grid mt-sm">
+              <button className="btn btn--ghost btn--sm" onClick={() => sendObstacle(obsSpeed, 0)}>↑ Fwd</button>
+              <button className="btn btn--ghost btn--sm" onClick={() => sendObstacle(-obsSpeed, 0)}>↓ Back</button>
+              <button className="btn btn--ghost btn--sm" onClick={() => sendObstacle(0, 0.8)}>↺ Turn L</button>
+              <button className="btn btn--ghost btn--sm" onClick={() => sendObstacle(0, -0.8)}>↻ Turn R</button>
+              <button
+                className="btn btn--ghost btn--sm"
+                style={{ gridColumn: 'span 4', color: '#ff3355' }}
+                onClick={() => sendObstacle(0, 0)}
+              >
+                ■ Stop Obstacle
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
     </div>

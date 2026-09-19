@@ -56,14 +56,15 @@ import uvicorn
 # ---------------------------------------------------------------------------
 _WORKSPACE_ROOT = Path(os.environ.get("AMR_WS", Path.home() / "AMR" / "AMR-main"))
 _MAP_PNG_PATH = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "graph_visualization.png"
+_GRAPH_JSON_PATH = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_graph.json"
 
-# Map metadata from warehouse_map.yaml (resolution, origin) — used to convert
-# robot (x,y) in metres to pixel coordinates for the overlay.
+# Calibrated Map metadata from warehouse_map.yaml (resolution, origin)
 # resolution: metres per pixel
 MAP_RESOLUTION = 0.05          # 0.05 m/px
-MAP_ORIGIN_X   = -8.3          # map frame X at pixel (0,0)
-MAP_ORIGIN_Y   = -7.3          # map frame Y at pixel (0,0)
-MAP_HEIGHT_PX  = 275           # rows in the PGM
+MAP_ORIGIN_X   = -7.397        # map frame X at pixel (0,0)
+MAP_ORIGIN_Y   = -6.596        # map frame Y at pixel (0,0)
+MAP_WIDTH_PX   = 329           # cols in the PNG
+MAP_HEIGHT_PX  = 275           # rows in the PNG
 
 
 def world_to_pixel(wx: float, wy: float):
@@ -82,11 +83,12 @@ class AmrBridgeNode(Node):
         super().__init__('amr_web_bridge')
 
         # --- Publishers ---
-        self.cmd_pub        = self.create_publisher(Twist,                      '/cmd_vel',       10)
-        self.goal_pub       = self.create_publisher(PoseStamped,                '/goal_pose',     10)
-        self.estop_pub      = self.create_publisher(Bool,                       '/agv_estop',     10)
-        self.init_pose_pub  = self.create_publisher(PoseWithCovarianceStamped,  '/initialpose',   10)
-        self.seq_pub        = self.create_publisher(String,                     '/goal_sequence', 10)
+        self.cmd_pub          = self.create_publisher(Twist,                      '/cmd_vel',       10)
+        self.goal_pub         = self.create_publisher(PoseStamped,                '/goal_pose',     10)
+        self.estop_pub        = self.create_publisher(Bool,                       '/agv_estop',     10)
+        self.init_pose_pub    = self.create_publisher(PoseWithCovarianceStamped,  '/initialpose',   10)
+        self.seq_pub          = self.create_publisher(String,                     '/goal_sequence', 10)
+        self.obstacle_cmd_pub = self.create_publisher(Twist,                      '/dynamic_obstacle/cmd_vel', 10)
 
         # --- Subscribers ---
         self.create_subscription(Odometry,  '/odometry/filtered', self._odom_cb,    10)
@@ -109,6 +111,7 @@ class AmrBridgeNode(Node):
         self.obstacle_alert: Optional[str] = None
         self.imu              = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0}
         self.mission          = {}
+        self._cached_graph: Optional[dict] = None
 
     # -------- Subscriber callbacks --------
 
@@ -197,6 +200,37 @@ class AmrBridgeNode(Node):
         s = String()
         s.data = json.dumps(nodes)
         self.seq_pub.publish(s)
+
+    def publish_obstacle_cmd_vel(self, linear: float, angular: float):
+        t = Twist()
+        t.linear.x  = float(linear)
+        t.angular.z = float(angular)
+        self.obstacle_cmd_pub.publish(t)
+
+    def get_graph_data(self) -> dict:
+        if self._cached_graph is None and _GRAPH_JSON_PATH.exists():
+            try:
+                with open(_GRAPH_JSON_PATH, 'r') as f:
+                    raw = json.load(f)
+                nodes = [
+                    {
+                        'id': n['id'],
+                        'x': n['x'],
+                        'y': n['y'],
+                        'px': n.get('px'),
+                        'py': n.get('py')
+                    }
+                    for n in raw.get('nodes', [])
+                ]
+                self._cached_graph = {
+                    'nodes': nodes,
+                    'total_nodes': len(nodes),
+                    'total_edges': len(raw.get('edges', []))
+                }
+            except Exception as e:
+                self.get_logger().error(f"Failed to load graph: {e}")
+                return {'nodes': [], 'total_nodes': 0, 'total_edges': 0}
+        return self._cached_graph or {'nodes': [], 'total_nodes': 0, 'total_edges': 0}
 
     # -------- Snapshot --------
 
@@ -364,6 +398,34 @@ async def post_initial_pose(req: InitialPoseRequest):
 async def post_goal_sequence(req: GoalSequenceRequest):
     if node:
         node.publish_goal_sequence(req.nodes)
+    return {'ok': True}
+
+@app.get('/api/map/metadata')
+async def get_map_metadata():
+    return {
+        'resolution': MAP_RESOLUTION,
+        'origin_x': MAP_ORIGIN_X,
+        'origin_y': MAP_ORIGIN_Y,
+        'width': MAP_WIDTH_PX,
+        'height': MAP_HEIGHT_PX,
+    }
+
+@app.get('/api/map/raw')
+async def get_map_raw():
+    if not _MAP_PNG_PATH.exists():
+        return JSONResponse({'error': 'Map file not found'}, status_code=404)
+    return FileResponse(_MAP_PNG_PATH, media_type='image/png')
+
+@app.get('/api/graph')
+async def get_graph():
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    return node.get_graph_data()
+
+@app.post('/api/obstacle/cmd_vel')
+async def post_obstacle_cmd_vel(req: CmdVelRequest):
+    if node:
+        node.publish_obstacle_cmd_vel(req.linear, req.angular)
     return {'ok': True}
 
 # -------- WebSocket --------

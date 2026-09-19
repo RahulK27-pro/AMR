@@ -430,3 +430,405 @@ html, body, #root {
 .mt-sm      { margin-top: var(--gap-sm); }
 .mt-md      { margin-top: var(--gap-md); }
 .divider    { height: 1px; background: var(--border); margin: var(--gap-sm) 0; }
+.cursor-pointer { cursor: pointer; }
+
+/* ---- Center Bottom Grid ---- */
+.center-bottom-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 12px;
+  min-height: 190px;
+}
+
+/* ---- Map HUD & Vector Viewport ---- */
+.map-hud-top {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.hud-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(10, 13, 20, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--accent-cyan);
+  pointer-events: auto;
+}
+
+.hud-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 8px var(--accent-cyan);
+  animation: pulse 2s infinite;
+}
+
+.hud-controls {
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.btn-toggle {
+  background: rgba(10, 13, 20, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-toggle:hover {
+  border-color: var(--border-bright);
+  color: var(--text-primary);
+}
+
+.btn-toggle.active {
+  background: rgba(0, 212, 255, 0.15);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
+}
+
+.map-hud-zoom {
+  position: absolute;
+  top: 60px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10;
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 13, 20, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  background: var(--bg-elevated);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.map-hud-bottom {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.hud-coords {
+  background: rgba(10, 13, 20, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  font-family: var(--text-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.hud-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(10, 13, 20, 0.7);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.map-feedback-toast {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 212, 255, 0.18);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--accent-cyan);
+  color: var(--accent-cyan);
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  font-family: var(--text-mono);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.25);
+  animation: slideIn 0.2s ease;
+  z-index: 20;
+}
+
+/* ---- Mode Switcher ---- */
+.mode-toggle-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--bg-base);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.btn-mode {
+  padding: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-mode.active {
+  background: var(--bg-elevated);
+  color: var(--accent-cyan);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.joystick-lock-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 13, 20, 0.75);
+  backdrop-filter: blur(3px);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: center;
+  padding: 12px;
+}
+
+/* ---- Badges ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.badge--cyan   { background: rgba(0, 212, 255, 0.15); color: var(--accent-cyan); border: 1px solid rgba(0, 212, 255, 0.4); }
+.badge--yellow { background: rgba(255, 215, 0, 0.15); color: var(--accent-yellow); border: 1px solid rgba(255, 215, 0, 0.4); }
+.badge--green  { background: rgba(0, 255, 157, 0.15); color: var(--accent-green); border: 1px solid rgba(0, 255, 157, 0.4); }
+.badge--red    { background: rgba(255, 51, 85, 0.15); color: var(--accent-red); border: 1px solid rgba(255, 51, 85, 0.4); }
+
+/* ---- Waypoint Queue ---- */
+.waypoint-queue-container {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  min-height: 50px;
+}
+
+.waypoint-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.waypoint-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  padding: 3px 8px;
+  border-radius: 14px;
+  font-family: var(--text-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.chip-idx {
+  background: var(--accent-cyan);
+  color: var(--bg-base);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.chip-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  margin-left: 2px;
+}
+.chip-remove:hover { color: var(--accent-red); }
+
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-preset {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-preset:hover {
+  border-color: var(--accent-cyan);
+  color: var(--text-primary);
+}
+
+.btn-link {
+  background: transparent;
+  border: none;
+  color: var(--accent-cyan);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ---- Quick Actions Grid ---- */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.btn--sm {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+/* ---- Dynamic Obstacle Tester ---- */
+.obstacle-tester-body {
+  background: rgba(255, 140, 0, 0.04);
+  border: 1px solid rgba(255, 140, 0, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+}
+
+.obstacle-pad-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+/* ---- Event Log ---- */
+.event-log-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.event-log-list {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.event-log-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--bg-surface);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  font-size: 12px;
+  animation: slideIn 0.2s ease;
+}
+
+.event-time {
+  font-size: 10px;
+  color: var(--text-dim);
+  min-width: 55px;
+}
+
+.event-message {
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.btn-filter {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-filter.active, .btn-filter:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-cyan);
+}
+
+/* ---- E-STOP Active Banner ---- */
+.estop-banner-active {
+  padding: 14px;
+  border-radius: var(--radius-md);
+  text-align: center;
+  background: rgba(255, 51, 85, 0.15);
+  border: 2px solid var(--accent-red);
+  box-shadow: 0 0 25px rgba(255, 51, 85, 0.4);
+}
+
+.estop-text {
+  color: var(--accent-red);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  animation: pulse 1.5s infinite;
+}
+
