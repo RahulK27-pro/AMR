@@ -190,9 +190,9 @@ class AmrBridgeService {
 
   // ---- Mapping Pipeline (Phase 1) ----
   async getMappingStatus() { return this._get('/api/mapping/status'); }
-  async startMapping(mapName = 'warehouse_01') {
-    this.emitEvent('info', `Started mapping pipeline: "${mapName}"`);
-    return this._post('/api/mapping/start', { map_name: mapName });
+  async startMapping(mapName = 'warehouse_01', world = 'test1.world', runExplore = false) {
+    this.emitEvent('info', `Started mapping pipeline: "${mapName}" (world: ${world}, explore: ${runExplore ? 'autonomous' : 'manual'})`);
+    return this._post('/api/mapping/start', { map_name: mapName, world, run_explore: runExplore });
   }
   async stopMapping() {
     this.emitEvent('warn', 'Stopped mapping session');

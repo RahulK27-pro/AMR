@@ -9,6 +9,7 @@ export default function ControlPanel({
   telemetry,
   selectedNodes = [],
   setSelectedNodes,
+  onOpenMapping,
 }) {
   const joystickRef = useRef(null);
   const managerRef  = useRef(null);
@@ -138,6 +139,35 @@ export default function ControlPanel({
 
   return (
     <div className="flex-col" style={{ gap: 12 }}>
+
+      {/* ── AMR Operational Pipeline Quick Access ── */}
+      {onOpenMapping && (
+        <div
+          className="card"
+          style={{
+            padding: '10px 14px',
+            background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.08), rgba(0, 255, 157, 0.05))',
+            borderColor: 'rgba(0, 212, 255, 0.3)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-cyan)' }}>
+              AMR Pipeline
+            </div>
+            <div className="text-dim text-xs">Phase 1: Map New Place</div>
+          </div>
+          <button
+            className="btn btn--primary btn--sm"
+            onClick={onOpenMapping}
+            style={{ padding: '6px 12px', fontSize: 12, fontWeight: 700 }}
+          >
+            🗺️ Map
+          </button>
+        </div>
+      )}
 
       {/* ── 1. EMERGENCY STOP ── */}
       {estopActive ? (

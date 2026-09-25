@@ -207,6 +207,22 @@ Open **`http://localhost:5173`** in your browser.
 - **Emergency Stop (E-STOP)**:
   - Prominent red button that immediately halts all motors and asserts `/agv_estop: True`. Click "Clear E-Stop & Resume" to recover.
 
+#### 4. AMR Operational Pipeline — Phase 1: Map New Place
+1. In the Web Dashboard top navigation bar or right sidebar, click **"🗺️ Map New Place"**.
+2. **Environment & World Target**:
+   - The default simulation world is configured as **`test1.world`** (14 m × 10 m enclosed indoor warehouse facility with corridors, rooms, and shelves).
+   - Enter your target map name (e.g. `test1_map` or `test1`).
+3. **Exploration Mode (No Wild Runs)**:
+   - **`🎮 Manual Drive` (Default)**: Prevents autonomous run-aways. Gives you direct keyboard (`W/A/S/D`, Arrow keys, Space) and on-screen D-Pad teleoperation with a speed slider (0.10–0.80 m/s) to systematically map the environment.
+   - **`🤖 Auto Explore` (Optional)**: Launches `explore_lite` for automatic frontier exploration.
+4. **Duplicate Gazebo Protection**:
+   - The bridge manager automatically checks `pgrep -f "gz sim"`. If Gazebo Harmonic is already open, it sets `run_sim:=false` to avoid starting duplicate Gazebo simulators and clock conflicts.
+5. **Start & Monitor Mapping**:
+   - Click **`🚀 START MAPPING`**. SLAM Toolbox starts building the occupancy grid.
+   - The live `/map` occupancy stream renders on the right viewport with smooth drag-to-pan, scroll-wheel zoom, and SLAM telemetry stats.
+6. **Complete Mapping**:
+   - Once all areas are covered, click **`⏹ STOP MAPPING`**.
+
 ---
 
 ## Testing Dynamic Obstacles

@@ -101,20 +101,35 @@ class MappingManager:
         self.proc: Optional[subprocess.Popen] = None
         self.lock = threading.Lock()
 
-    def start(self, map_name: str = 'warehouse_01'):
+    def start(self, map_name: str = 'warehouse_01', world: str = 'test1.world', run_explore: bool = False):
         with self.lock:
             if map_name and map_name.strip():
                 self.map_name = map_name.strip()
             self.state = 'MAPPING'
             self.start_time = time.time()
             self.stop_time = None
+            self.target_world = world if world.endswith('.world') else f"{world}.world"
+            self.run_explore = run_explore
+
+            # Check if gz sim is already running on the machine
+            gz_already_running = False
+            try:
+                res = subprocess.run(['pgrep', '-f', 'gz sim'], stdout=subprocess.PIPE)
+                if res.returncode == 0 and res.stdout.strip():
+                    gz_already_running = True
+            except Exception:
+                pass
+
+            run_sim_flag = 'false' if gz_already_running else 'true'
+            run_explore_flag = 'true' if run_explore else 'false'
 
             # Spawn mapping_session.launch.py in background if not already started
             if self.proc is None or self.proc.poll() is not None:
                 cmd = (
                     f"source /opt/ros/jazzy/setup.bash && "
                     f"source {self.ws_root}/install/setup.bash && "
-                    f"ros2 launch agv_description mapping_session.launch.py use_rviz:=false"
+                    f"ros2 launch agv_description mapping_session.launch.py "
+                    f"world:={self.target_world} run_sim:={run_sim_flag} run_explore:={run_explore_flag} use_rviz:=false"
                 )
                 try:
                     self.proc = subprocess.Popen(
@@ -183,6 +198,8 @@ class MappingManager:
             return {
                 'state': self.state,
                 'map_name': self.map_name,
+                'world': getattr(self, 'target_world', 'test1.world'),
+                'run_explore': getattr(self, 'run_explore', False),
                 'elapsed_sec': round(elapsed, 1),
                 'elapsed_str': elapsed_str,
                 'has_map_data': has_map_data,
@@ -571,6 +588,8 @@ class GoalSequenceRequest(BaseModel):
 
 class StartMappingRequest(BaseModel):
     map_name: str = 'warehouse_01'
+    world: str = 'test1.world'
+    run_explore: bool = False
 
 # -------- REST endpoints --------
 
@@ -668,7 +687,7 @@ async def get_mapping_status():
 
 @app.post('/api/mapping/start')
 async def post_mapping_start(req: StartMappingRequest = StartMappingRequest()):
-    mapping_mgr.start(req.map_name)
+    mapping_mgr.start(map_name=req.map_name, world=req.world, run_explore=req.run_explore)
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
     return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info)}

@@ -29,7 +29,7 @@ export default function App() {
   const angleInc = telemetry?.scan_angle_inc ?? 0.0174;
 
   return (
-    <div className="dashboard-layout">
+    <div className={`dashboard-layout ${currentView === 'mapping' ? 'dashboard-layout--mapping' : ''}`}>
       {/* ── Top Bar ── */}
       <StatusBar
         telemetry={telemetry}
@@ -38,10 +38,12 @@ export default function App() {
       />
 
       {currentView === 'mapping' ? (
-        <MappingScreen
-          telemetry={telemetry}
-          onReturnToDashboard={() => setCurrentView('dashboard')}
-        />
+        <main className="mapping-screen-wrapper">
+          <MappingScreen
+            telemetry={telemetry}
+            onReturnToDashboard={() => setCurrentView('dashboard')}
+          />
+        </main>
       ) : (
         <>
           {/* ── Left: Telemetry Data ── */}
@@ -86,6 +88,7 @@ export default function App() {
               telemetry={telemetry}
               selectedNodes={selectedNodes}
               setSelectedNodes={setSelectedNodes}
+              onOpenMapping={() => setCurrentView('mapping')}
             />
           </aside>
         </>
