@@ -31,9 +31,9 @@ fi
 # Export workspace root so bridge_server can find map PNG
 export AMR_WS="$WS_ROOT"
 
-# Install Python deps if missing
+# Install Python deps if missing (includes websockets for uvicorn WebSocket support)
 echo "[bridge] Checking Python dependencies..."
-if ! python3 -c "import fastapi, uvicorn, pydantic, PIL, numpy" 2>/dev/null; then
+if ! python3 -c "import fastapi, uvicorn, pydantic, PIL, numpy, websockets" 2>/dev/null; then
     pip install --break-system-packages -q -r "$SCRIPT_DIR/requirements.txt" 2>/dev/null || \
     pip install -q -r "$SCRIPT_DIR/requirements.txt"
 fi

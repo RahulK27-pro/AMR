@@ -114,11 +114,16 @@ class AmrBridgeNode(Node):
 
         # TF2 buffer for map->base_link lookups
         self._amcl_pose_received = False
+        self._tf_buffer   = None
+        self._tf_listener = None
         if _TF2_AVAILABLE:
-            self._tf_buffer   = tf2_ros.Buffer()
-            self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
-            # Timer: try TF lookup at 10 Hz when no AMCL yet
-            self.create_timer(0.1, self._tf_pose_cb)
+            try:
+                self._tf_buffer   = tf2_ros.Buffer()
+                self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
+                # Timer: try TF lookup at 10 Hz when no AMCL yet
+                self.create_timer(0.1, self._tf_pose_cb)
+            except Exception as e:
+                self.get_logger().warn(f'tf2_ros init failed: {e} — falling back to /odometry/filtered')
         else:
             self.get_logger().warn('tf2_ros not available — falling back to /odometry/filtered')
 
@@ -158,7 +163,7 @@ class AmrBridgeNode(Node):
 
     def _tf_pose_cb(self):
         """10 Hz TF lookup: map->base_link as secondary map-frame source."""
-        if not _TF2_AVAILABLE or self._amcl_pose_received:
+        if not _TF2_AVAILABLE or self._amcl_pose_received or self._tf_buffer is None:
             return
         try:
             tf = self._tf_buffer.lookup_transform(
@@ -530,15 +535,34 @@ async def _startup():
 
 def _ros_thread():
     global node
-    rclpy.init()
-    node = AmrBridgeNode()
-    executor = SingleThreadedExecutor()
-    executor.add_node(node)
     try:
-        executor.spin()
+        rclpy.init()
+        node = AmrBridgeNode()
+        executor = SingleThreadedExecutor()
+        executor.add_node(node)
+        try:
+            executor.spin()
+        except Exception:
+            pass
+        finally:
+            # Null out tf2 listener BEFORE destroying node to prevent core dump
+            try:
+                if node._tf_listener is not None:
+                    node._tf_listener = None
+                    node._tf_buffer   = None
+            except Exception:
+                pass
+            try:
+                node.destroy_node()
+            except Exception:
+                pass
+    except Exception as e:
+        print(f'[bridge] ROS thread error: {e}')
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
