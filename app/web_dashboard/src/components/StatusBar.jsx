@@ -4,7 +4,7 @@ import bridge from '../services/amrBridge';
 /**
  * StatusBar — top header bar showing connection state, bridge URL, and key global info.
  */
-export default function StatusBar({ telemetry }) {
+export default function StatusBar({ telemetry, currentView = 'dashboard', onViewChange }) {
   const [status, setStatus] = useState('connecting');
   const [host, setHost]     = useState(window.location.hostname);
   const [port, setPort]     = useState('8000');
@@ -36,7 +36,9 @@ export default function StatusBar({ telemetry }) {
   return (
     <header className="status-bar">
       {/* Logo */}
-      <span className="status-bar__logo">⬡ AMR CONTROL</span>
+      <span className="status-bar__logo" onClick={() => onViewChange && onViewChange('dashboard')} style={{ cursor: 'pointer' }}>
+        ⬡ AMR CONTROL
+      </span>
 
       {/* Connection status */}
       <div className="status-bar__pill" title={`ws://${host}:${port}/ws/telemetry`}>
@@ -52,6 +54,32 @@ export default function StatusBar({ telemetry }) {
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />
         {navState}
       </div>
+
+      {/* Dedicated Pipeline Entry Point: Map New Place */}
+      {onViewChange && (
+        <div className="status-bar__view-toggle">
+          {currentView === 'mapping' ? (
+            <button
+              id="btn-nav-dashboard"
+              className="btn btn--outline"
+              onClick={() => onViewChange('dashboard')}
+              title="Return to Live Monitoring Dashboard"
+              style={{ fontWeight: 600, padding: '6px 14px' }}
+            >
+              📊 Live Dashboard
+            </button>
+          ) : (
+            <button
+              id="btn-nav-map-new-place"
+              className="btn btn--map-entry"
+              onClick={() => onViewChange('mapping')}
+              title="Open Dedicated Mapping Workflow"
+            >
+              🗺️ Map New Place
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="status-bar__sep" />
 

@@ -30,17 +30,20 @@ import io
 import json
 import math
 import os
+import signal
+import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import List, Optional
 
+from PIL import Image, ImageDraw
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 from geometry_msgs.msg import Twist, PoseStamped, PoseWithCovarianceStamped, Quaternion
-from nav_msgs.msg import Odometry, Path as NavPath
+from nav_msgs.msg import Odometry, Path as NavPath, OccupancyGrid
 from sensor_msgs.msg import LaserScan, Imu
 from std_msgs.msg import String, Bool
 
@@ -84,6 +87,114 @@ def world_to_pixel(wx: float, wy: float):
 
 
 # ---------------------------------------------------------------------------
+# Mapping Process & State Manager (Phase 1)
+# ---------------------------------------------------------------------------
+
+class MappingManager:
+    """Manages the lifecycle of mapping sessions (SLAM Toolbox + explore_lite)."""
+    def __init__(self, workspace_root: Path):
+        self.ws_root = workspace_root
+        self.state = 'READY'  # 'READY' | 'MAPPING' | 'STOPPED'
+        self.map_name = 'warehouse_01'
+        self.start_time: Optional[float] = None
+        self.stop_time: Optional[float] = None
+        self.proc: Optional[subprocess.Popen] = None
+        self.lock = threading.Lock()
+
+    def start(self, map_name: str = 'warehouse_01'):
+        with self.lock:
+            if map_name and map_name.strip():
+                self.map_name = map_name.strip()
+            self.state = 'MAPPING'
+            self.start_time = time.time()
+            self.stop_time = None
+
+            # Spawn mapping_session.launch.py in background if not already started
+            if self.proc is None or self.proc.poll() is not None:
+                cmd = (
+                    f"source /opt/ros/jazzy/setup.bash && "
+                    f"source {self.ws_root}/install/setup.bash && "
+                    f"ros2 launch agv_description mapping_session.launch.py use_rviz:=false"
+                )
+                try:
+                    self.proc = subprocess.Popen(
+                        cmd,
+                        shell=True,
+                        executable='/bin/bash',
+                        cwd=str(self.ws_root),
+                        preexec_fn=os.setsid,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                except Exception as e:
+                    print(f"[MappingManager] Failed to launch mapping_session: {e}")
+            return True
+
+    def stop(self):
+        with self.lock:
+            self.state = 'STOPPED'
+            self.stop_time = time.time()
+            if self.proc and self.proc.poll() is None:
+                try:
+                    os.killpg(os.getpgid(self.proc.pid), signal.SIGINT)
+                    try:
+                        self.proc.wait(timeout=3.0)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
+                except Exception as e:
+                    print(f"[MappingManager] Stop proc error: {e}")
+                self.proc = None
+            return True
+
+    def redo(self):
+        with self.lock:
+            if self.proc and self.proc.poll() is None:
+                try:
+                    os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
+                except Exception:
+                    pass
+                self.proc = None
+            self.state = 'READY'
+            self.start_time = None
+            self.stop_time = None
+            return True
+
+    def get_status(self, has_map_data: bool = False, map_info: Optional[dict] = None) -> dict:
+        with self.lock:
+            elapsed = 0.0
+            if self.state == 'MAPPING' and self.start_time:
+                elapsed = time.time() - self.start_time
+            elif self.state == 'STOPPED' and self.start_time and self.stop_time:
+                elapsed = self.stop_time - self.start_time
+
+            mins = int(elapsed // 60)
+            secs = int(elapsed % 60)
+            elapsed_str = f"{mins:02d}:{secs:02d}"
+
+            if has_map_data and self.state == 'MAPPING':
+                map_status_text = "Receiving map data... (SLAM Toolbox active)"
+            elif self.state == 'MAPPING':
+                map_status_text = "Mapping in progress... Initializing SLAM Toolbox..."
+            elif self.state == 'STOPPED':
+                map_status_text = "Mapping stopped. Ready for map verification."
+            else:
+                map_status_text = "Ready to start mapping"
+
+            return {
+                'state': self.state,
+                'map_name': self.map_name,
+                'elapsed_sec': round(elapsed, 1),
+                'elapsed_str': elapsed_str,
+                'has_map_data': has_map_data,
+                'map_status_text': map_status_text,
+                'map_info': map_info or {},
+            }
+
+
+mapping_mgr = MappingManager(_WORKSPACE_ROOT)
+
+
+# ---------------------------------------------------------------------------
 # ROS 2 bridge node
 # ---------------------------------------------------------------------------
 
@@ -100,17 +211,19 @@ class AmrBridgeNode(Node):
         self.obstacle_cmd_pub = self.create_publisher(Twist,                      '/dynamic_obstacle/cmd_vel', 10)
 
         # --- Subscribers ---
-        self.create_subscription(Odometry,  '/odometry/filtered', self._odom_cb,    10)
-        self.create_subscription(LaserScan, '/scan',              self._scan_cb,    10)
-        self.create_subscription(String,    '/agv_state',         self._state_cb,   10)
-        self.create_subscription(NavPath,   '/agv_dense_path',    self._path_cb,    10)
-        self.create_subscription(String,    '/obstacle_alert',    self._alert_cb,   10)
-        self.create_subscription(Imu,       '/imu/data',          self._imu_cb,     10)
-        self.create_subscription(String,    '/mission_progress',  self._mission_cb, 10)
+        self.create_subscription(Odometry,      '/odometry/filtered', self._odom_cb,    10)
+        self.create_subscription(LaserScan,     '/scan',              self._scan_cb,    10)
+        self.create_subscription(String,        '/agv_state',         self._state_cb,   10)
+        self.create_subscription(NavPath,       '/agv_dense_path',    self._path_cb,    10)
+        self.create_subscription(String,        '/obstacle_alert',    self._alert_cb,   10)
+        self.create_subscription(Imu,           '/imu/data',          self._imu_cb,     10)
+        self.create_subscription(String,        '/mission_progress',  self._mission_cb, 10)
         # AMCL pose — authoritative map-frame localization (replaces raw odom for pose display)
         self.create_subscription(
             PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 10
         )
+        # Live /map subscription from SLAM Toolbox
+        self.create_subscription(OccupancyGrid, '/map', self._map_cb, 10)
 
         # TF2 buffer for map->base_link lookups
         self._amcl_pose_received = False
@@ -140,6 +253,17 @@ class AmrBridgeNode(Node):
         self.imu              = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0}
         self.mission          = {}
         self._cached_graph: Optional[dict] = None
+
+        # --- Live SLAM map state ---
+        self._live_map_width = 0
+        self._live_map_height = 0
+        self._live_map_resolution = 0.05
+        self._live_map_origin_x = 0.0
+        self._live_map_origin_y = 0.0
+        self._has_live_map = False
+        self._last_map_time = 0.0
+        self._map_msg_count = 0
+        self._live_map_b64: Optional[str] = None
 
     # -------- Subscriber callbacks --------
 
@@ -211,6 +335,35 @@ class AmrBridgeNode(Node):
             self.mission = json.loads(msg.data)
         except Exception:
             pass
+
+    def _map_cb(self, msg: OccupancyGrid):
+        """Callback for live /map occupancy grid (from SLAM Toolbox or map_server)."""
+        try:
+            self._live_map_width = msg.info.width
+            self._live_map_height = msg.info.height
+            self._live_map_resolution = msg.info.resolution
+            self._live_map_origin_x = msg.info.origin.position.x
+            self._live_map_origin_y = msg.info.origin.position.y
+            self._has_live_map = True
+            self._last_map_time = time.time()
+            self._map_msg_count += 1
+
+            w = msg.info.width
+            h = msg.info.height
+            if w > 0 and h > 0 and len(msg.data) == w * h:
+                raw_data = np.array(msg.data, dtype=np.int8).reshape((h, w))
+                # -1 = unknown (dark slate), 0 = free (deep blue/black), >50 = occupied (cyan)
+                rgb = np.zeros((h, w, 3), dtype=np.uint8)
+                rgb[raw_data == -1] = [26, 32, 46]     # unknown
+                rgb[raw_data == 0]  = [12, 16, 28]     # free space
+                rgb[raw_data > 50]  = [0, 212, 255]    # wall / occupied
+                rgb = np.flipud(rgb)
+                pil_img = Image.fromarray(rgb)
+                buf = io.BytesIO()
+                pil_img.save(buf, format='PNG')
+                self._live_map_b64 = base64.b64encode(buf.getvalue()).decode()
+        except Exception as e:
+            self.get_logger().error(f"Error processing /map: {e}")
 
     # -------- Publisher helpers --------
 
@@ -285,6 +438,20 @@ class AmrBridgeNode(Node):
                 return {'nodes': [], 'total_nodes': 0, 'total_edges': 0}
         return self._cached_graph or {'nodes': [], 'total_nodes': 0, 'total_edges': 0}
 
+    def get_live_map_info(self) -> dict:
+        return {
+            'width': self._live_map_width,
+            'height': self._live_map_height,
+            'resolution': self._live_map_resolution,
+            'origin_x': round(self._live_map_origin_x, 3),
+            'origin_y': round(self._live_map_origin_y, 3),
+            'msg_count': self._map_msg_count,
+            'last_update': round(self._last_map_time, 2)
+        }
+
+    def get_live_map_image_b64(self) -> Optional[str]:
+        return self._live_map_b64
+
     # -------- Snapshot --------
 
     def telemetry_snapshot(self) -> dict:
@@ -308,6 +475,7 @@ class AmrBridgeNode(Node):
             'scan':            scan_ds,
             'scan_angle_min':  round(self.scan_angle_min, 4),
             'scan_angle_inc':  round(self.scan_angle_inc, 4),
+            'mapping':         mapping_mgr.get_status(self._has_live_map, self.get_live_map_info()),
             'ts':              round(time.time(), 3),
         }
 
@@ -401,6 +569,9 @@ class InitialPoseRequest(BaseModel):
 class GoalSequenceRequest(BaseModel):
     nodes: list
 
+class StartMappingRequest(BaseModel):
+    map_name: str = 'warehouse_01'
+
 # -------- REST endpoints --------
 
 @app.get('/api/status')
@@ -486,6 +657,48 @@ async def post_obstacle_cmd_vel(req: CmdVelRequest):
     if node:
         node.publish_obstacle_cmd_vel(req.linear, req.angular)
     return {'ok': True}
+
+# -------- Mapping REST endpoints (Phase 1) --------
+
+@app.get('/api/mapping/status')
+async def get_mapping_status():
+    has_map = node._has_live_map if node else False
+    map_info = node.get_live_map_info() if node else {}
+    return mapping_mgr.get_status(has_map, map_info)
+
+@app.post('/api/mapping/start')
+async def post_mapping_start(req: StartMappingRequest = StartMappingRequest()):
+    mapping_mgr.start(req.map_name)
+    has_map = node._has_live_map if node else False
+    map_info = node.get_live_map_info() if node else {}
+    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info)}
+
+@app.post('/api/mapping/stop')
+async def post_mapping_stop():
+    mapping_mgr.stop()
+    has_map = node._has_live_map if node else False
+    map_info = node.get_live_map_info() if node else {}
+    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info)}
+
+@app.post('/api/mapping/redo')
+async def post_mapping_redo():
+    mapping_mgr.redo()
+    has_map = node._has_live_map if node else False
+    map_info = node.get_live_map_info() if node else {}
+    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info)}
+
+@app.get('/api/mapping/live_map')
+async def get_mapping_live_map():
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    b64 = node.get_live_map_image_b64()
+    return {
+        'has_data': node._has_live_map and b64 is not None,
+        'image': b64,
+        'encoding': 'png/base64',
+        'info': node.get_live_map_info(),
+        'pose': node.pose
+    }
 
 # -------- WebSocket --------
 

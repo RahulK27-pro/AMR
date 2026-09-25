@@ -187,6 +187,22 @@ class AmrBridgeService {
   async getMapMetadata() { return this._get('/api/map/metadata'); }
   async getGraphData()   { return this._get('/api/graph'); }
   async getStatus()      { return this._get('/api/status'); }
+
+  // ---- Mapping Pipeline (Phase 1) ----
+  async getMappingStatus() { return this._get('/api/mapping/status'); }
+  async startMapping(mapName = 'warehouse_01') {
+    this.emitEvent('info', `Started mapping pipeline: "${mapName}"`);
+    return this._post('/api/mapping/start', { map_name: mapName });
+  }
+  async stopMapping() {
+    this.emitEvent('warn', 'Stopped mapping session');
+    return this._post('/api/mapping/stop');
+  }
+  async redoMapping() {
+    this.emitEvent('info', 'Reset mapping session (Redo)');
+    return this._post('/api/mapping/redo');
+  }
+  async getLiveMap() { return this._get('/api/mapping/live_map'); }
 }
 
 const bridge = new AmrBridgeService();

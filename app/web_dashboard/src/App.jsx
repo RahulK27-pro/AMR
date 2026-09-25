@@ -6,10 +6,12 @@ import MapView from './components/MapView';
 import ScanRing from './components/ScanRing';
 import ControlPanel from './components/ControlPanel';
 import EventLog from './components/EventLog';
+import MappingScreen from './components/MappingScreen';
 
 export default function App() {
   const [telemetry, setTelemetry] = useState(null);
   const [selectedNodes, setSelectedNodes] = useState([]);
+  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'mapping'
 
   useEffect(() => {
     const unsub = bridge.onTelemetry(setTelemetry);
@@ -29,52 +31,65 @@ export default function App() {
   return (
     <div className="dashboard-layout">
       {/* ── Top Bar ── */}
-      <StatusBar telemetry={telemetry} />
+      <StatusBar
+        telemetry={telemetry}
+        currentView={currentView}
+        onViewChange={setCurrentView}
+      />
 
-      {/* ── Left: Telemetry Data ── */}
-      <aside className="panel-left">
-        <TelemetryPanel telemetry={telemetry} />
-      </aside>
+      {currentView === 'mapping' ? (
+        <MappingScreen
+          telemetry={telemetry}
+          onReturnToDashboard={() => setCurrentView('dashboard')}
+        />
+      ) : (
+        <>
+          {/* ── Left: Telemetry Data ── */}
+          <aside className="panel-left">
+            <TelemetryPanel telemetry={telemetry} />
+          </aside>
 
-      {/* ── Centre: 60 FPS Vector Map + Polar Radar + Event Timeline ── */}
-      <main className="panel-center">
-        {/* Dynamic Vector Map */}
-        <div style={{ flex: 1, minHeight: 440, position: 'relative' }}>
-          <MapView
-            telemetry={telemetry}
-            selectedNodes={selectedNodes}
-            onSelectNode={handleSelectNode}
-          />
-        </div>
-
-        {/* Center Bottom Grid: LiDAR Scan + Diagnostics Timeline */}
-        <div className="center-bottom-grid">
-          {/* Polar LiDAR Ring */}
-          <div className="card scan-card">
-            <div className="card__title">📡 360° LiDAR Radar</div>
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '6px 0' }}>
-              <ScanRing
-                scan={scan}
-                angleMin={angleMin}
-                angleInc={angleInc}
-                size={180}
+          {/* ── Centre: 60 FPS Vector Map + Polar Radar + Event Timeline ── */}
+          <main className="panel-center">
+            {/* Dynamic Vector Map */}
+            <div style={{ flex: 1, minHeight: 440, position: 'relative' }}>
+              <MapView
+                telemetry={telemetry}
+                selectedNodes={selectedNodes}
+                onSelectNode={handleSelectNode}
               />
             </div>
-          </div>
 
-          {/* Autonomous Decisions Event Log */}
-          <EventLog />
-        </div>
-      </main>
+            {/* Center Bottom Grid: LiDAR Scan + Diagnostics Timeline */}
+            <div className="center-bottom-grid">
+              {/* Polar LiDAR Ring */}
+              <div className="card scan-card">
+                <div className="card__title">📡 360° LiDAR Radar</div>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '6px 0' }}>
+                  <ScanRing
+                    scan={scan}
+                    angleMin={angleMin}
+                    angleInc={angleInc}
+                    size={180}
+                  />
+                </div>
+              </div>
 
-      {/* ── Right: Control Panel, Mode Interlocks, Mission Queue ── */}
-      <aside className="panel-right">
-        <ControlPanel
-          telemetry={telemetry}
-          selectedNodes={selectedNodes}
-          setSelectedNodes={setSelectedNodes}
-        />
-      </aside>
+              {/* Autonomous Decisions Event Log */}
+              <EventLog />
+            </div>
+          </main>
+
+          {/* ── Right: Control Panel, Mode Interlocks, Mission Queue ── */}
+          <aside className="panel-right">
+            <ControlPanel
+              telemetry={telemetry}
+              selectedNodes={selectedNodes}
+              setSelectedNodes={setSelectedNodes}
+            />
+          </aside>
+        </>
+      )}
     </div>
   );
 }
