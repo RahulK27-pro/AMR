@@ -214,7 +214,40 @@ class AmrBridgeService {
     this.emitEvent('info', 'Resumed autonomous exploration');
     return this._post('/api/mapping/explore/resume');
   }
-  async getLiveMap() { return this._get('/api/mapping/live_map'); }
+  async getLiveMap(clean = false) { 
+    return this._get(`/api/mapping/live_map?clean=${clean ? 'true' : 'false'}`); 
+  }
+
+  // ---- Map Verification & Saving (Phase 2) ----
+  async getMapVerification() {
+    return this._get('/api/mapping/verify');
+  }
+
+  async saveMap(mapName) {
+    this.emitEvent('info', `Saving and verifying map: "${mapName}"...`);
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mapping/save`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ map_name: mapName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('success', `Map "${mapName}" successfully verified & saved to disk!`);
+        return { ok: true, report: data.report };
+      }
+      const errMsg = data?.error || 'Failed to save map';
+      this.emitEvent('critical', `Map save failed: ${errMsg}`);
+      return { ok: false, error: errMsg };
+    } catch (err) {
+      this.emitEvent('critical', `Map save error: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async getSavedMaps() {
+    return this._get('/api/mapping/saved_maps');
+  }
 }
 
 const bridge = new AmrBridgeService();

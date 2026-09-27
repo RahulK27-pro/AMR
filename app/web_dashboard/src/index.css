@@ -967,6 +967,18 @@ html, body, #root {
   box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
 }
 
+.stepper-step--completed {
+  background: rgba(0, 255, 157, 0.12);
+  border: 1px solid var(--accent-green);
+  color: var(--accent-green);
+  box-shadow: 0 0 8px rgba(0, 255, 157, 0.15);
+}
+
+.stepper-step--completed .step-num {
+  background: var(--accent-green);
+  color: var(--bg-base);
+}
+
 .stepper-step--pending {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -1506,6 +1518,256 @@ html, body, #root {
   backdrop-filter: blur(6px);
   border-top: 1px solid var(--border);
   z-index: 5;
+}
+
+/* ==========================================================================
+   Phase 2: Map Verification & Saving Styles
+   ========================================================================== */
+
+.verification-audit-card {
+  padding: var(--gap-md);
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.04), rgba(12, 16, 28, 0.85));
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.audit-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.audit-metric-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.audit-metric-box__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.audit-metric-box__val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.audit-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(12, 16, 28, 0.6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.audit-check-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.audit-check-row__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.audit-check-row__badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.badge--pass {
+  background: rgba(0, 255, 157, 0.15);
+  color: var(--accent-green);
+  border: 1px solid rgba(0, 255, 157, 0.3);
+}
+
+.badge--warn {
+  background: rgba(255, 184, 0, 0.15);
+  color: var(--accent-amber);
+  border: 1px solid rgba(255, 184, 0, 0.3);
+}
+
+.save-config-card {
+  padding: var(--gap-md);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn--save-map {
+  background: linear-gradient(135deg, #059669, #10b981);
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 12px;
+  color: #fff;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.btn--save-map:hover:not(:disabled) {
+  filter: brightness(1.15);
+  box-shadow: 0 0 24px rgba(16, 185, 129, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn--proceed-graph {
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 12px;
+  color: #fff;
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.45);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn--proceed-graph:hover:not(:disabled) {
+  filter: brightness(1.2);
+  box-shadow: 0 0 30px rgba(37, 99, 235, 0.7);
+  transform: translateY(-1px);
+}
+
+.save-success-banner {
+  background: rgba(0, 255, 157, 0.08);
+  border: 1px solid rgba(0, 255, 157, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.save-success-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-green);
+}
+
+.saved-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(10, 13, 20, 0.6);
+  border-radius: 4px;
+}
+
+.saved-file-item {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.save-error-banner {
+  background: rgba(220, 38, 38, 0.12);
+  border: 1px solid rgba(220, 38, 38, 0.4);
+  color: var(--accent-red);
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+}
+
+/* Phase 3 readiness view */
+.phase3-ready-card {
+  padding: var(--gap-md);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(12, 16, 28, 0.9));
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.phase3-meta-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+
+.phase3-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Viewport toolbar enhancements */
+.view-mode-pill-group {
+  display: flex;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.btn-view-pill {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-view-pill:hover {
+  color: var(--text-primary);
+}
+
+.btn-view-pill--active {
+  background: rgba(0, 212, 255, 0.18);
+  color: var(--accent-cyan);
+}
+
+/* Canvas metric grid overlay */
+.mapping-canvas-grid-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  z-index: 2;
 }
 
 

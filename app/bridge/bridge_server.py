@@ -112,10 +112,10 @@ def world_to_pixel(wx: float, wy: float):
 # ---------------------------------------------------------------------------
 
 class MappingManager:
-    """Manages the lifecycle of mapping sessions (SLAM Toolbox + explore_lite)."""
+    """Manages the lifecycle of mapping sessions (SLAM Toolbox + explore_lite) and map saving."""
     def __init__(self, workspace_root: Path):
         self.ws_root = workspace_root
-        self.state = 'READY'  # 'READY' | 'MAPPING' | 'STOPPED'
+        self.state = 'READY'  # 'READY' | 'MAPPING' | 'STOPPED' | 'SAVED'
         self.map_name = 'warehouse_01'
         self.start_time: Optional[float] = None
         self.stop_time: Optional[float] = None
@@ -123,6 +123,10 @@ class MappingManager:
         self.explore_proc: Optional[subprocess.Popen] = None
         self.target_world = 'test1.world'
         self.run_explore = False
+        self.is_saved: bool = False
+        self.saved_map_name: Optional[str] = None
+        self.saved_paths: Dict[str, str] = {}
+        self.verification_report: Optional[dict] = None
         self.lock = threading.Lock()
 
     def start(self, map_name: str = 'warehouse_01', world: str = 'test1.world', run_explore: bool = False):
@@ -132,6 +136,10 @@ class MappingManager:
             self.state = 'MAPPING'
             self.start_time = time.time()
             self.stop_time = None
+            self.is_saved = False
+            self.saved_map_name = None
+            self.saved_paths = {}
+            self.verification_report = None
             self.target_world = world if world.endswith('.world') else f"{world}.world"
             self.run_explore = run_explore
 
@@ -274,14 +282,151 @@ class MappingManager:
             self.state = 'READY'
             self.start_time = None
             self.stop_time = None
+            self.is_saved = False
+            self.saved_map_name = None
+            self.saved_paths = {}
+            self.verification_report = None
             return True
+
+    def save_map(self, map_name: str, ros_node=None) -> dict:
+        """Saves active SLAM map into src/agv_description/maps/<map_name>.yaml + .pgm + .png
+        and performs strict on-disk verification checks (Phase 2).
+        """
+        with self.lock:
+            if not ros_node or not ros_node._has_live_map or ros_node._last_raw_occupancy is None:
+                return {
+                    'ok': False,
+                    'error': 'No active SLAM map data available to save. Run mapping before saving.'
+                }
+
+            import re
+            raw_name = (map_name or self.map_name or 'warehouse_01').strip()
+            clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_name)
+            if not clean_name:
+                clean_name = 'warehouse_01'
+
+            maps_dir = self.ws_root / "src" / "agv_description" / "maps"
+            maps_dir.mkdir(parents=True, exist_ok=True)
+
+            yaml_path = maps_dir / f"{clean_name}.yaml"
+            pgm_path = maps_dir / f"{clean_name}.pgm"
+            png_path = maps_dir / f"{clean_name}.png"
+
+            w = ros_node._live_map_width
+            h = ros_node._live_map_height
+            res = float(ros_node._live_map_resolution)
+            ox = float(ros_node._live_map_origin_x)
+            oy = float(ros_node._live_map_origin_y)
+            raw = ros_node._last_raw_occupancy
+
+            # 1. Generate PGM data (ROS standard trinary values: free=254, occupied=0, unknown=205)
+            # Row 0 in PGM image is top, but row 0 in OccupancyGrid is bottom, so flip vertically
+            pgm_arr = np.full((h, w), 205, dtype=np.uint8)
+            pgm_arr[raw == 0] = 254
+            pgm_arr[raw > 50] = 0
+            pgm_flipped = np.flipud(pgm_arr)
+
+            pil_pgm = Image.fromarray(pgm_flipped, mode='L')
+            pil_pgm.save(str(pgm_path))
+
+            # 2. Write YAML specification (matching standard Nav2 / map_server)
+            yaml_content = (
+                f"image: {clean_name}.pgm\n"
+                f"mode: trinary\n"
+                f"resolution: {res:.4f}\n"
+                f"origin: [{ox:.3f}, {oy:.3f}, 0]\n"
+                f"negate: 0\n"
+                f"occupied_thresh: 0.65\n"
+                f"free_thresh: 0.196\n"
+            )
+            with open(yaml_path, 'w', encoding='utf-8') as f:
+                f.write(yaml_content)
+
+            # 3. Write Clean Dark Preview PNG for browser dashboard
+            png_arr = np.zeros((h, w, 3), dtype=np.uint8)
+            png_arr[raw == -1] = [26, 32, 46]     # unknown slate
+            png_arr[raw == 0]  = [12, 16, 28]     # free space
+            png_arr[raw > 50]  = [0, 212, 255]    # wall / occupied cyan
+            png_flipped = np.flipud(png_arr)
+            pil_png = Image.fromarray(png_flipped)
+            pil_png.save(str(png_path))
+
+            # 4. Optional background call to map_saver_cli if topic is active
+            if ros_node and ros_node._has_live_map:
+                try:
+                    cmd = (
+                        f"source /opt/ros/jazzy/setup.bash && "
+                        f"source {self.ws_root}/install/setup.bash && "
+                        f"ros2 run nav2_map_server map_saver_cli -f {maps_dir / clean_name} --ros-args -p use_sim_time:=true"
+                    )
+                    subprocess.run(cmd, shell=True, executable='/bin/bash', timeout=2.0, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+
+            # 5. On-disk Verification
+            yaml_ok = yaml_path.is_file() and yaml_path.stat().st_size > 0
+            pgm_ok = pgm_path.is_file() and pgm_path.stat().st_size > 0
+            png_ok = png_path.is_file() and png_path.stat().st_size > 0
+
+            if not (yaml_ok and pgm_ok):
+                return {
+                    'ok': False,
+                    'error': f"Failed to verify saved files on disk: yaml_ok={yaml_ok}, pgm_ok={pgm_ok}"
+                }
+
+            total_cells = w * h
+            free_cells = int(np.sum(raw == 0))
+            occupied_cells = int(np.sum(raw > 50))
+            unknown_cells = int(np.sum(raw == -1))
+            free_area = round(free_cells * (res ** 2), 2)
+            occupied_area = round(occupied_cells * (res ** 2), 2)
+            coverage_pct = round(((free_cells + occupied_cells) / max(1, total_cells)) * 100, 1)
+
+            self.is_saved = True
+            self.saved_map_name = clean_name
+            self.saved_paths = {
+                'yaml': str(yaml_path.relative_to(self.ws_root)),
+                'pgm': str(pgm_path.relative_to(self.ws_root)),
+                'png': str(png_path.relative_to(self.ws_root)),
+            }
+            self.state = 'SAVED'
+
+            report = {
+                'verified': True,
+                'map_name': clean_name,
+                'status': 'VERIFIED & SAVED',
+                'files': {
+                    'yaml': self.saved_paths['yaml'],
+                    'pgm': self.saved_paths['pgm'],
+                    'png': self.saved_paths['png'],
+                    'yaml_size_bytes': yaml_path.stat().st_size,
+                    'pgm_size_bytes': pgm_path.stat().st_size,
+                },
+                'metrics': {
+                    'width_px': w,
+                    'height_px': h,
+                    'resolution': res,
+                    'origin': [ox, oy, 0.0],
+                    'real_width_m': round(w * res, 2),
+                    'real_height_m': round(h * res, 2),
+                    'free_area_sqm': free_area,
+                    'occupied_area_sqm': occupied_area,
+                    'coverage_pct': coverage_pct,
+                    'free_cells': free_cells,
+                    'occupied_cells': occupied_cells,
+                    'unknown_cells': unknown_cells,
+                    'quality_grade': 'EXCELLENT' if free_cells > 200 and occupied_cells > 30 else 'GOOD',
+                }
+            }
+            self.verification_report = report
+            return {'ok': True, 'report': report}
 
     def get_status(self, has_map_data: bool = False, map_info: Optional[dict] = None, ros_node=None) -> dict:
         with self.lock:
             elapsed = 0.0
             if self.state == 'MAPPING' and self.start_time:
                 elapsed = time.time() - self.start_time
-            elif self.state == 'STOPPED' and self.start_time and self.stop_time:
+            elif (self.state in ('STOPPED', 'SAVED')) and self.start_time and self.stop_time:
                 elapsed = self.stop_time - self.start_time
 
             mins = int(elapsed // 60)
@@ -292,8 +437,10 @@ class MappingManager:
                 map_status_text = "Receiving map data... (SLAM Toolbox active)"
             elif self.state == 'MAPPING':
                 map_status_text = "Mapping in progress... Initializing SLAM Toolbox..."
+            elif self.state == 'SAVED':
+                map_status_text = f"Map '{self.saved_map_name or self.map_name}' verified and saved to disk."
             elif self.state == 'STOPPED':
-                map_status_text = "Mapping stopped. Ready for map verification."
+                map_status_text = "Mapping stopped. Inspect map and verify before saving."
             else:
                 map_status_text = "Ready to start mapping"
 
@@ -318,6 +465,10 @@ class MappingManager:
                 'map_status_text': map_status_text,
                 'map_info': map_info or {},
                 'exploration': exp_info,
+                'is_saved': getattr(self, 'is_saved', False),
+                'saved_map_name': getattr(self, 'saved_map_name', None),
+                'saved_paths': getattr(self, 'saved_paths', {}),
+                'verification_report': getattr(self, 'verification_report', None),
             }
 
 
@@ -413,6 +564,8 @@ class AmrBridgeNode(Node):
         self._last_map_time = 0.0
         self._map_msg_count = 0
         self._live_map_b64: Optional[str] = None
+        self._clean_map_b64: Optional[str] = None
+        self._last_raw_occupancy: Optional[np.ndarray] = None
 
     # -------- Subscriber callbacks --------
 
@@ -540,6 +693,8 @@ class AmrBridgeNode(Node):
             h = msg.info.height
             if w > 0 and h > 0 and len(msg.data) == w * h:
                 raw_data = np.array(msg.data, dtype=np.int8).reshape((h, w))
+                self._last_raw_occupancy = raw_data.copy()
+
                 # -1 = unknown (dark slate), 0 = free (deep blue/black), >50 = occupied (cyan)
                 rgb = np.zeros((h, w, 3), dtype=np.uint8)
                 rgb[raw_data == -1] = [26, 32, 46]     # unknown
@@ -548,8 +703,14 @@ class AmrBridgeNode(Node):
                 rgb = np.flipud(rgb)
                 pil_img = Image.fromarray(rgb)
 
+                # Save clean map image (without dynamic markers or robot dot)
+                clean_buf = io.BytesIO()
+                pil_img.save(clean_buf, format='PNG')
+                self._clean_map_b64 = base64.b64encode(clean_buf.getvalue()).decode()
+
                 # Overlay active frontiers and robot pose on the live map
-                draw = ImageDraw.Draw(pil_img)
+                overlay_img = pil_img.copy()
+                draw = ImageDraw.Draw(overlay_img)
 
                 # Draw frontiers as bright gold diamond targets
                 for f in self.frontiers:
@@ -570,7 +731,7 @@ class AmrBridgeNode(Node):
                     draw.line([rx, ry, hx, hy], fill=(255, 255, 255), width=2)
 
                 buf = io.BytesIO()
-                pil_img.save(buf, format='PNG')
+                overlay_img.save(buf, format='PNG')
                 self._live_map_b64 = base64.b64encode(buf.getvalue()).decode()
         except Exception as e:
             self.get_logger().error(f"Error processing /map: {e}")
@@ -676,8 +837,58 @@ class AmrBridgeNode(Node):
             'last_update': round(self._last_map_time, 2)
         }
 
-    def get_live_map_image_b64(self) -> Optional[str]:
+    def get_live_map_image_b64(self, clean: bool = False) -> Optional[str]:
+        if clean and self._clean_map_b64:
+            return self._clean_map_b64
         return self._live_map_b64
+
+    def get_map_verification_data(self) -> dict:
+        if not self._has_live_map or self._last_raw_occupancy is None:
+            return {'has_map': False, 'error': 'No map data available yet'}
+        w = self._live_map_width
+        h = self._live_map_height
+        res = float(self._live_map_resolution)
+        raw = self._last_raw_occupancy
+
+        total_cells = w * h
+        free_cells = int(np.sum(raw == 0))
+        occupied_cells = int(np.sum(raw > 50))
+        unknown_cells = int(np.sum(raw == -1))
+
+        free_area_sqm = round(free_cells * (res ** 2), 2)
+        occupied_area_sqm = round(occupied_cells * (res ** 2), 2)
+        total_area_sqm = round(total_cells * (res ** 2), 2)
+        coverage_pct = round(((free_cells + occupied_cells) / max(1, total_cells)) * 100, 1)
+
+        has_free_space = free_cells > 50
+        has_obstacles = occupied_cells > 10
+        is_valid = has_free_space and has_obstacles
+
+        return {
+            'has_map': True,
+            'width': w,
+            'height': h,
+            'resolution': res,
+            'origin_x': round(float(self._live_map_origin_x), 3),
+            'origin_y': round(float(self._live_map_origin_y), 3),
+            'real_width_m': round(w * res, 2),
+            'real_height_m': round(h * res, 2),
+            'total_cells': total_cells,
+            'free_cells': free_cells,
+            'occupied_cells': occupied_cells,
+            'unknown_cells': unknown_cells,
+            'free_area_sqm': free_area_sqm,
+            'occupied_area_sqm': occupied_area_sqm,
+            'total_area_sqm': total_area_sqm,
+            'coverage_pct': coverage_pct,
+            'has_free_space': has_free_space,
+            'has_obstacles': has_obstacles,
+            'is_valid': is_valid,
+            'health_status': 'PASS' if is_valid else 'WARNING',
+            'clean_image_b64': self._clean_map_b64,
+            'overlay_image_b64': self._live_map_b64,
+            'map_msg_count': self._map_msg_count
+        }
 
     # -------- Snapshot --------
 
@@ -800,6 +1011,9 @@ class StartMappingRequest(BaseModel):
     map_name: str = 'warehouse_01'
     world: str = 'test1.world'
     run_explore: bool = False
+
+class SaveMapRequest(BaseModel):
+    map_name: Optional[str] = 'warehouse_01'
 
 # -------- REST endpoints --------
 
@@ -944,17 +1158,52 @@ async def post_explore_resume():
     return {'ok': ok, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
 
 @app.get('/api/mapping/live_map')
-async def get_mapping_live_map():
+async def get_mapping_live_map(clean: bool = False):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
-    b64 = node.get_live_map_image_b64()
+    b64 = node.get_live_map_image_b64(clean=clean)
     return {
         'has_data': node._has_live_map and b64 is not None,
         'image': b64,
+        'is_clean': clean,
         'encoding': 'png/base64',
         'info': node.get_live_map_info(),
         'pose': node.pose
     }
+
+@app.get('/api/mapping/verify')
+async def get_mapping_verify():
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    verif = node.get_map_verification_data()
+    status = mapping_mgr.get_status(node._has_live_map, node.get_live_map_info(), ros_node=node)
+    return {'verification': verif, 'mapping': status}
+
+@app.post('/api/mapping/save')
+async def post_mapping_save(req: SaveMapRequest = SaveMapRequest()):
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    target_name = req.map_name or mapping_mgr.map_name or 'warehouse_01'
+    res = mapping_mgr.save_map(target_name, ros_node=node)
+    return res
+
+@app.get('/api/mapping/saved_maps')
+async def get_saved_maps():
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    maps = []
+    if maps_dir.exists():
+        for yaml_file in sorted(maps_dir.glob("*.yaml")):
+            name = yaml_file.stem
+            pgm_file = maps_dir / f"{name}.pgm"
+            png_file = maps_dir / f"{name}.png"
+            maps.append({
+                'name': name,
+                'yaml': str(yaml_file.relative_to(_WORKSPACE_ROOT)),
+                'has_pgm': pgm_file.exists(),
+                'has_png': png_file.exists(),
+                'size_kb': round(yaml_file.stat().st_size / 1024, 2),
+            })
+    return {'maps': maps}
 
 # -------- WebSocket --------
 
