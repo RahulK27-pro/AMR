@@ -212,14 +212,18 @@ Open **`http://localhost:5173`** in your browser.
 2. **Environment & World Target**:
    - The default simulation world is configured as **`test1.world`** (14 m × 10 m enclosed indoor warehouse facility with corridors, rooms, and shelves).
    - Enter your target map name (e.g. `test1_map` or `test1`).
-3. **Exploration Mode (No Wild Runs)**:
-   - **`🎮 Manual Drive` (Default)**: Prevents autonomous run-aways. Gives you direct keyboard (`W/A/S/D`, Arrow keys, Space) and on-screen D-Pad teleoperation with a speed slider (0.10–0.80 m/s) to systematically map the environment.
-   - **`🤖 Auto Explore` (Optional)**: Launches `explore_lite` for automatic frontier exploration.
+3. **Exploration Mode & Seamless Switching**:
+   - **`🎮 Manual Drive` (Default)**: Direct keyboard (`W/A/S/D`, Arrow keys, Space) and on-screen D-Pad teleoperation with speed slider (0.10–0.80 m/s) to systematically map the environment.
+   - **`🤖 Auto Explore`**: Launches or resumes `explore_lite` for autonomous frontier exploration.
+   - **On-The-Fly Switching**: You can toggle between `Manual Drive` and `Auto Explore` at any time during an active mapping session without restarting the system.
+   - **Pause / Resume Exploration**: Dedicated controls allow pausing autonomous navigation (`/explore/resume`) for manual inspection and resuming whenever desired.
+   - **Safety Interlock**: Pressing E-STOP immediately halts all motors and pauses autonomous frontier exploration.
 4. **Duplicate Gazebo Protection**:
    - The bridge manager automatically checks `pgrep -f "gz sim"`. If Gazebo Harmonic is already open, it sets `run_sim:=false` to avoid starting duplicate Gazebo simulators and clock conflicts.
 5. **Start & Monitor Mapping**:
-   - Click **`🚀 START MAPPING`**. SLAM Toolbox starts building the occupancy grid.
-   - The live `/map` occupancy stream renders on the right viewport with smooth drag-to-pan, scroll-wheel zoom, and SLAM telemetry stats.
+   - Click **`🚀 START MAPPING`**. SLAM Toolbox builds the occupancy grid.
+   - When Auto Explore is active, discovered frontiers are tracked in real-time (`explore/frontiers`) and rendered directly onto the live SLAM occupancy map with robot heading indicators.
+   - The right viewport provides real-time SLAM streaming, smooth drag-to-pan, and scroll-wheel zoom.
 6. **Complete Mapping**:
    - Once all areas are covered, click **`⏹ STOP MAPPING`**.
 

@@ -19,13 +19,20 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const mappingData = telemetry?.mapping ?? {};
   const [mapName, setMapName] = useState(mappingData.map_name || 'warehouse_01');
   const [world, setWorld] = useState('test1.world');
-  const [runExplore, setRunExplore] = useState(false); // default: false (manual teleop mapping, no wild runs)
+  const [runExplore, setRunExplore] = useState(Boolean(mappingData.run_explore));
   const [status, setStatus] = useState(mappingData.state || 'READY'); // 'READY' | 'MAPPING' | 'STOPPED'
   const [elapsedSec, setElapsedSec] = useState(mappingData.elapsed_sec || 0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [liveMapImg, setLiveMapImg] = useState(null);
   const [teleopSpeed, setTeleopSpeed] = useState(0.4); // m/s safe mapping speed
   const [activeDir, setActiveDir] = useState(null); // 'fwd' | 'back' | 'left' | 'right' | null
+
+  // Autonomous exploration state from telemetry
+  const exploration = mappingData.exploration || {};
+  const exploreStatusLabel = exploration.status_label || (runExplore ? 'Ready to explore' : 'Manual mode');
+  const frontiersCount = exploration.frontiers_count || 0;
+  const exploreIsPaused = Boolean(exploration.is_paused);
+  const exploreIsActive = Boolean(exploration.is_exploring);
 
   // Viewport pan & zoom
   const [zoom, setZoom] = useState(1.0);
@@ -44,6 +51,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       }
       if (telemetry.mapping.map_name) {
         setMapName(telemetry.mapping.map_name);
+      }
+      if (telemetry.mapping.run_explore != null) {
+        setRunExplore(Boolean(telemetry.mapping.run_explore));
       }
     }
   }, [telemetry?.mapping]);
@@ -150,6 +160,41 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  // Handle switching exploration mode dynamically
+  const handleSwitchMode = async (enableExplore) => {
+    setRunExplore(enableExplore);
+    if (status === 'MAPPING') {
+      setIsProcessing(true);
+      try {
+        if (enableExplore) {
+          await bridge.startAutoExplore();
+        } else {
+          await bridge.pauseAutoExplore();
+        }
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+  };
+
+  const handlePauseExplore = async () => {
+    setIsProcessing(true);
+    try {
+      await bridge.pauseAutoExplore();
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleResumeExplore = async () => {
+    setIsProcessing(true);
+    try {
+      await bridge.resumeAutoExplore();
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Actions
@@ -332,8 +377,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 <button
                   type="button"
                   className={`btn-mode-toggle ${!runExplore ? 'btn-mode-toggle--active' : ''}`}
-                  onClick={() => setRunExplore(false)}
-                  disabled={status === 'MAPPING'}
+                  onClick={() => handleSwitchMode(false)}
+                  disabled={isProcessing}
                   title="Manual driving with joystick/keys so robot doesn't run wild"
                 >
                   🎮 Manual Drive
@@ -341,8 +386,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 <button
                   type="button"
                   className={`btn-mode-toggle ${runExplore ? 'btn-mode-toggle--active' : ''}`}
-                  onClick={() => setRunExplore(true)}
-                  disabled={status === 'MAPPING'}
+                  onClick={() => handleSwitchMode(true)}
+                  disabled={isProcessing}
                   title="Autonomous frontier exploration with explore_lite"
                 >
                   🤖 Auto Explore
@@ -461,8 +506,67 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             </div>
           </div>
 
-          {/* Card 2: Manual Driving Keypad (active during Manual Mode) */}
-          {!runExplore && (
+          {/* Card 2: Manual Keypad OR Autonomous Explorer */}
+          {runExplore ? (
+            <div className="card auto-explore-card">
+              <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="card__title" style={{ fontSize: 13 }}>
+                  🤖 Autonomous Frontier Explorer
+                </div>
+                <span className="world-tag-badge">explore_lite</span>
+              </div>
+
+              {/* Status display */}
+              <div className="explore-status-box mt-xs">
+                <div className="flex-row" style={{ alignItems: 'center', gap: 8 }}>
+                  <span className={`dot ${exploreIsPaused ? 'dot--warning' : (exploreIsActive ? 'dot--pulsing' : 'dot--connected')}`} />
+                  <span className="text-sm" style={{ fontWeight: 600 }}>{exploreStatusLabel}</span>
+                </div>
+                <div className="text-dim text-xs mt-xs" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>🎯 Discovered Frontiers:</span>
+                  <span className="world-tag-badge text-mono" style={{ fontSize: 10, padding: '1px 6px' }}>{frontiersCount}</span>
+                </div>
+              </div>
+
+              {/* Action Controls for Exploration */}
+              {status === 'MAPPING' && (
+                <div className="flex-col mt-sm" style={{ gap: 8 }}>
+                  <div className="flex-row" style={{ gap: 8 }}>
+                    {exploreIsPaused ? (
+                      <button
+                        className="btn btn--primary btn--sm"
+                        style={{ flex: 1, padding: '8px 12px' }}
+                        onClick={handleResumeExplore}
+                        disabled={isProcessing}
+                      >
+                        ▶ Resume Exploration
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn--outline btn--sm"
+                        style={{ flex: 1, padding: '8px 12px' }}
+                        onClick={handlePauseExplore}
+                        disabled={isProcessing}
+                      >
+                        ⏸ Pause Exploration
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    onClick={() => handleSwitchMode(false)}
+                    title="Switch to Manual Drive"
+                  >
+                    🎮 Switch to Manual Keypad
+                  </button>
+                </div>
+              )}
+
+              <div className="explore-info-footer text-dim text-xs mt-xs">
+                Autonomous planner generates progressive nearest-first frontier targets to systematically clear unseen spaces via Nav2 MPPI.
+              </div>
+            </div>
+          ) : (
             <div className="card teleop-mapping-card">
               <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="card__title" style={{ fontSize: 13 }}>
@@ -581,6 +685,11 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
               {status === 'MAPPING' && (
                 <span className="live-pill">
                   <span className="pulse-dot" /> STREAMING /map
+                </span>
+              )}
+              {runExplore && (
+                <span className="world-tag-badge" style={{ fontSize: 10, padding: '2px 8px' }}>
+                  🎯 Frontiers: {frontiersCount}
                 </span>
               )}
             </div>

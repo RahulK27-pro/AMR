@@ -202,6 +202,18 @@ class AmrBridgeService {
     this.emitEvent('info', 'Reset mapping session (Redo)');
     return this._post('/api/mapping/redo');
   }
+  async startAutoExplore() {
+    this.emitEvent('info', 'Started autonomous frontier exploration');
+    return this._post('/api/mapping/explore/start');
+  }
+  async pauseAutoExplore() {
+    this.emitEvent('warn', 'Paused autonomous exploration');
+    return this._post('/api/mapping/explore/pause');
+  }
+  async resumeAutoExplore() {
+    this.emitEvent('info', 'Resumed autonomous exploration');
+    return this._post('/api/mapping/explore/resume');
+  }
   async getLiveMap() { return this._get('/api/mapping/live_map'); }
 }
 

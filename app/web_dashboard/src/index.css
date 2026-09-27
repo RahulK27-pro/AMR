@@ -1265,6 +1265,31 @@ html, body, #root {
   border: 1px solid rgba(0, 255, 157, 0.2);
 }
 
+/* ---- Autonomous Exploration Card ---- */
+.auto-explore-card {
+  padding: var(--gap-md);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.05), rgba(12, 16, 28, 0.8));
+  border: 1px solid rgba(0, 212, 255, 0.25);
+}
+
+.explore-status-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+}
+
+.explore-info-footer {
+  line-height: 1.4;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+
 /* ---- Teleop D-Pad Keypad ---- */
 .teleop-mapping-card {
   padding: var(--gap-md);

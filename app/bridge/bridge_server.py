@@ -32,10 +32,11 @@ import math
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict, Any
 
 from PIL import Image, ImageDraw
 import numpy as np
@@ -46,6 +47,26 @@ from geometry_msgs.msg import Twist, PoseStamped, PoseWithCovarianceStamped, Qua
 from nav_msgs.msg import Odometry, Path as NavPath, OccupancyGrid
 from sensor_msgs.msg import LaserScan, Imu
 from std_msgs.msg import String, Bool
+
+# Ensure local install packages (like explore_lite_msgs) are on sys.path
+_WS_BOOTSTRAP = Path(os.environ.get("AMR_WS", Path.home() / "AMR" / "AMR-main"))
+_py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
+_explore_site = _WS_BOOTSTRAP / "install" / "explore_lite_msgs" / "lib" / _py_ver / "site-packages"
+if _explore_site.exists() and str(_explore_site) not in sys.path:
+    sys.path.insert(0, str(_explore_site))
+
+# Exploration messages (explore_lite)
+try:
+    from explore_lite_msgs.msg import ExploreStatus
+    _EXPLORE_MSGS_AVAILABLE = True
+except ImportError:
+    _EXPLORE_MSGS_AVAILABLE = False
+
+try:
+    from visualization_msgs.msg import MarkerArray, Marker
+    _MARKER_MSGS_AVAILABLE = True
+except ImportError:
+    _MARKER_MSGS_AVAILABLE = False
 
 # TF2 for map-frame pose lookup
 try:
@@ -99,6 +120,9 @@ class MappingManager:
         self.start_time: Optional[float] = None
         self.stop_time: Optional[float] = None
         self.proc: Optional[subprocess.Popen] = None
+        self.explore_proc: Optional[subprocess.Popen] = None
+        self.target_world = 'test1.world'
+        self.run_explore = False
         self.lock = threading.Lock()
 
     def start(self, map_name: str = 'warehouse_01', world: str = 'test1.world', run_explore: bool = False):
@@ -145,10 +169,73 @@ class MappingManager:
                     print(f"[MappingManager] Failed to launch mapping_session: {e}")
             return True
 
+    def start_auto_explore(self, ros_node=None):
+        """Dynamically activate explore_lite if not already running."""
+        with self.lock:
+            self.run_explore = True
+            is_running = False
+            try:
+                res = subprocess.run(['pgrep', '-f', 'explore_node'], stdout=subprocess.PIPE)
+                if res.returncode == 0 and res.stdout.strip():
+                    is_running = True
+            except Exception:
+                pass
+
+            if is_running:
+                if ros_node:
+                    ros_node.publish_explore_resume(True)
+                return True
+
+            if self.state == 'MAPPING':
+                cmd = (
+                    f"source /opt/ros/jazzy/setup.bash && "
+                    f"source {self.ws_root}/install/setup.bash && "
+                    f"ros2 run explore_lite explore --ros-args -r __node:=explore_node "
+                    f"--params-file {self.ws_root}/src/agv_description/config/nav2_params_explore.yaml "
+                    f"-p use_sim_time:=true"
+                )
+                try:
+                    self.explore_proc = subprocess.Popen(
+                        cmd,
+                        shell=True,
+                        executable='/bin/bash',
+                        cwd=str(self.ws_root),
+                        preexec_fn=os.setsid,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    print("[MappingManager] Spawning explore_node dynamically...")
+                except Exception as e:
+                    print(f"[MappingManager] Failed to spawn explore_node: {e}")
+            return True
+
+    def pause_auto_explore(self, ros_node=None):
+        """Pause exploration without killing the node, allowing manual driving."""
+        with self.lock:
+            self.run_explore = False
+            if ros_node:
+                ros_node.publish_explore_resume(False)
+            return True
+
+    def resume_auto_explore(self, ros_node=None):
+        """Resume exploration."""
+        with self.lock:
+            self.run_explore = True
+            if ros_node:
+                ros_node.publish_explore_resume(True)
+            return True
+
     def stop(self):
         with self.lock:
             self.state = 'STOPPED'
             self.stop_time = time.time()
+            self.run_explore = False
+            if self.explore_proc and self.explore_proc.poll() is None:
+                try:
+                    os.killpg(os.getpgid(self.explore_proc.pid), signal.SIGTERM)
+                except Exception:
+                    pass
+                self.explore_proc = None
             if self.proc and self.proc.poll() is None:
                 try:
                     os.killpg(os.getpgid(self.proc.pid), signal.SIGINT)
@@ -159,22 +246,37 @@ class MappingManager:
                 except Exception as e:
                     print(f"[MappingManager] Stop proc error: {e}")
                 self.proc = None
+            try:
+                subprocess.run(['pkill', '-f', 'explore_node'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
             return True
 
     def redo(self):
         with self.lock:
+            self.run_explore = False
+            if self.explore_proc and self.explore_proc.poll() is None:
+                try:
+                    os.killpg(os.getpgid(self.explore_proc.pid), signal.SIGTERM)
+                except Exception:
+                    pass
+                self.explore_proc = None
             if self.proc and self.proc.poll() is None:
                 try:
                     os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
                 except Exception:
                     pass
                 self.proc = None
+            try:
+                subprocess.run(['pkill', '-f', 'explore_node'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
             self.state = 'READY'
             self.start_time = None
             self.stop_time = None
             return True
 
-    def get_status(self, has_map_data: bool = False, map_info: Optional[dict] = None) -> dict:
+    def get_status(self, has_map_data: bool = False, map_info: Optional[dict] = None, ros_node=None) -> dict:
         with self.lock:
             elapsed = 0.0
             if self.state == 'MAPPING' and self.start_time:
@@ -195,6 +297,16 @@ class MappingManager:
             else:
                 map_status_text = "Ready to start mapping"
 
+            exp_info = {
+                'active': getattr(self, 'run_explore', False),
+                'raw_status': ros_node.explore_raw_status if ros_node else 'idle',
+                'status_label': ros_node.explore_status_label if ros_node else 'Not started',
+                'is_paused': ros_node.is_explore_paused if ros_node else False,
+                'is_exploring': ros_node.is_exploring if ros_node else False,
+                'frontiers_count': ros_node.frontiers_count if ros_node else 0,
+                'frontiers': ros_node.frontiers if ros_node else [],
+            }
+
             return {
                 'state': self.state,
                 'map_name': self.map_name,
@@ -205,6 +317,7 @@ class MappingManager:
                 'has_map_data': has_map_data,
                 'map_status_text': map_status_text,
                 'map_info': map_info or {},
+                'exploration': exp_info,
             }
 
 
@@ -226,6 +339,7 @@ class AmrBridgeNode(Node):
         self.init_pose_pub    = self.create_publisher(PoseWithCovarianceStamped,  '/initialpose',   10)
         self.seq_pub          = self.create_publisher(String,                     '/goal_sequence', 10)
         self.obstacle_cmd_pub = self.create_publisher(Twist,                      '/dynamic_obstacle/cmd_vel', 10)
+        self.explore_resume_pub = self.create_publisher(Bool,                     '/explore/resume', 10)
 
         # --- Subscribers ---
         self.create_subscription(Odometry,      '/odometry/filtered', self._odom_cb,    10)
@@ -241,6 +355,16 @@ class AmrBridgeNode(Node):
         )
         # Live /map subscription from SLAM Toolbox
         self.create_subscription(OccupancyGrid, '/map', self._map_cb, 10)
+
+        # Exploration status & frontiers subscriptions
+        if _EXPLORE_MSGS_AVAILABLE:
+            self.create_subscription(
+                ExploreStatus, '/explore/status', self._explore_status_cb, 10
+            )
+        if _MARKER_MSGS_AVAILABLE:
+            self.create_subscription(
+                MarkerArray, '/explore/frontiers', self._explore_frontiers_cb, 10
+            )
 
         # TF2 buffer for map->base_link lookups
         self._amcl_pose_received = False
@@ -270,6 +394,14 @@ class AmrBridgeNode(Node):
         self.imu              = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0}
         self.mission          = {}
         self._cached_graph: Optional[dict] = None
+
+        # --- Autonomous exploration state ---
+        self.explore_raw_status: str = 'idle'
+        self.explore_status_label: str = 'Not started'
+        self.is_exploring: bool = False
+        self.is_explore_paused: bool = False
+        self.frontiers: List[dict] = []
+        self.frontiers_count: int = 0
 
         # --- Live SLAM map state ---
         self._live_map_width = 0
@@ -353,6 +485,45 @@ class AmrBridgeNode(Node):
         except Exception:
             pass
 
+    def _explore_status_cb(self, msg):
+        status_map = {
+            'exploration_started': 'Initializing exploration...',
+            'exploration_in_progress': 'Exploring frontier...',
+            'exploration_paused': 'Exploration paused',
+            'exploration_complete': 'All frontiers explored (Complete)',
+            'returning_to_origin': 'Returning to starting pose...',
+            'returned_to_origin': 'Returned to starting pose',
+        }
+        self.explore_raw_status = msg.status
+        self.explore_status_label = status_map.get(msg.status, msg.status)
+        self.is_exploring = msg.status in ['exploration_started', 'exploration_in_progress']
+        self.is_explore_paused = (msg.status == 'exploration_paused')
+
+    def _explore_frontiers_cb(self, msg):
+        pts = []
+        for m in msg.markers:
+            m_type = getattr(m, 'type', None)
+            if m_type == 2 or (_MARKER_MSGS_AVAILABLE and m_type == Marker.SPHERE):
+                pts.append({
+                    'id': int(m.id),
+                    'x': round(float(m.pose.position.x), 2),
+                    'y': round(float(m.pose.position.y), 2),
+                    'cost': round(float(getattr(m.scale, 'x', 0.5)), 2)
+                })
+        self.frontiers = pts
+        self.frontiers_count = len(pts)
+
+    def _world_to_map_px(self, wx: float, wy: float) -> Optional[Tuple[int, int]]:
+        if self._live_map_width <= 0 or self._live_map_height <= 0 or self._live_map_resolution <= 0:
+            return None
+        cx = int((wx - self._live_map_origin_x) / self._live_map_resolution)
+        cy = int((wy - self._live_map_origin_y) / self._live_map_resolution)
+        if 0 <= cx < self._live_map_width and 0 <= cy < self._live_map_height:
+            img_x = cx
+            img_y = (self._live_map_height - 1) - cy
+            return (img_x, img_y)
+        return None
+
     def _map_cb(self, msg: OccupancyGrid):
         """Callback for live /map occupancy grid (from SLAM Toolbox or map_server)."""
         try:
@@ -376,6 +547,28 @@ class AmrBridgeNode(Node):
                 rgb[raw_data > 50]  = [0, 212, 255]    # wall / occupied
                 rgb = np.flipud(rgb)
                 pil_img = Image.fromarray(rgb)
+
+                # Overlay active frontiers and robot pose on the live map
+                draw = ImageDraw.Draw(pil_img)
+
+                # Draw frontiers as bright gold diamond targets
+                for f in self.frontiers:
+                    f_px = self._world_to_map_px(f.get('x', 0), f.get('y', 0))
+                    if f_px:
+                        fx, fy = f_px
+                        draw.rectangle([fx - 2, fy - 2, fx + 2, fy + 2], fill=(255, 215, 0), outline=(255, 255, 255))
+
+                # Draw robot pose (green dot with heading pointer)
+                r_px = self._world_to_map_px(self.pose['x'], self.pose['y'])
+                if r_px:
+                    rx, ry = r_px
+                    rad = max(3, int(0.18 / self._live_map_resolution))
+                    draw.ellipse([rx - rad, ry - rad, rx + rad, ry + rad], fill=(0, 255, 157), outline=(255, 255, 255))
+                    yaw = self.pose.get('yaw', 0.0)
+                    hx = rx + int((rad + 4) * math.cos(yaw))
+                    hy = ry - int((rad + 4) * math.sin(yaw))
+                    draw.line([rx, ry, hx, hy], fill=(255, 255, 255), width=2)
+
                 buf = io.BytesIO()
                 pil_img.save(buf, format='PNG')
                 self._live_map_b64 = base64.b64encode(buf.getvalue()).decode()
@@ -399,10 +592,27 @@ class AmrBridgeNode(Node):
         ps.pose.orientation = self._yaw_to_quat(yaw)
         self.goal_pub.publish(ps)
 
+    def publish_explore_resume(self, resume: bool):
+        b = Bool()
+        b.data = bool(resume)
+        self.explore_resume_pub.publish(b)
+        if not resume:
+            self.is_explore_paused = True
+            self.is_exploring = False
+            self.explore_raw_status = 'exploration_paused'
+            self.explore_status_label = 'Exploration paused'
+        else:
+            self.is_explore_paused = False
+            self.is_exploring = True
+            self.explore_raw_status = 'exploration_in_progress'
+            self.explore_status_label = 'Exploring frontier...'
+
     def publish_estop(self, active: bool):
         b = Bool()
         b.data = active
         self.estop_pub.publish(b)
+        if active:
+            self.publish_explore_resume(False)
 
     def publish_initial_pose(self, x: float, y: float, theta: float):
         msg = PoseWithCovarianceStamped()
@@ -492,7 +702,7 @@ class AmrBridgeNode(Node):
             'scan':            scan_ds,
             'scan_angle_min':  round(self.scan_angle_min, 4),
             'scan_angle_inc':  round(self.scan_angle_inc, 4),
-            'mapping':         mapping_mgr.get_status(self._has_live_map, self.get_live_map_info()),
+            'mapping':         mapping_mgr.get_status(self._has_live_map, self.get_live_map_info(), ros_node=self),
             'ts':              round(time.time(), 3),
         }
 
@@ -683,28 +893,55 @@ async def post_obstacle_cmd_vel(req: CmdVelRequest):
 async def get_mapping_status():
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
-    return mapping_mgr.get_status(has_map, map_info)
+    return mapping_mgr.get_status(has_map, map_info, ros_node=node)
 
 @app.post('/api/mapping/start')
 async def post_mapping_start(req: StartMappingRequest = StartMappingRequest()):
     mapping_mgr.start(map_name=req.map_name, world=req.world, run_explore=req.run_explore)
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
-    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info)}
+    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
 
 @app.post('/api/mapping/stop')
 async def post_mapping_stop():
     mapping_mgr.stop()
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
-    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info)}
+    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
 
 @app.post('/api/mapping/redo')
 async def post_mapping_redo():
     mapping_mgr.redo()
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
-    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info)}
+    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
+
+@app.post('/api/mapping/explore/start')
+async def post_explore_start():
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    ok = mapping_mgr.start_auto_explore(ros_node=node)
+    has_map = node._has_live_map if node else False
+    map_info = node.get_live_map_info() if node else {}
+    return {'ok': ok, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
+
+@app.post('/api/mapping/explore/pause')
+async def post_explore_pause():
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    ok = mapping_mgr.pause_auto_explore(ros_node=node)
+    has_map = node._has_live_map if node else False
+    map_info = node.get_live_map_info() if node else {}
+    return {'ok': ok, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
+
+@app.post('/api/mapping/explore/resume')
+async def post_explore_resume():
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    ok = mapping_mgr.resume_auto_explore(ros_node=node)
+    has_map = node._has_live_map if node else False
+    map_info = node.get_live_map_info() if node else {}
+    return {'ok': ok, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
 
 @app.get('/api/mapping/live_map')
 async def get_mapping_live_map():
