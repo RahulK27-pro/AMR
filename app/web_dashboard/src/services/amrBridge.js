@@ -248,6 +248,34 @@ class AmrBridgeService {
   async getSavedMaps() {
     return this._get('/api/mapping/saved_maps');
   }
+
+  // ---- Graph Extraction Pipeline (Phase 3) ----
+  async extractGraph(options = {}) {
+    const mapName = options.map_name || 'warehouse_map';
+    this.emitEvent('info', `Running Graph Roadmap Extraction on "${mapName}"...`);
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mapping/graph/extract`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(options),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('success', `Graph roadmap extracted: ${data.report.total_nodes} nodes, ${data.report.total_edges} edges.`);
+        return { ok: true, report: data.report };
+      }
+      const errMsg = data?.error || 'Graph extraction failed';
+      this.emitEvent('critical', `Extraction error: ${errMsg}`);
+      return { ok: false, error: errMsg };
+    } catch (err) {
+      this.emitEvent('critical', `Extraction network error: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async getLatestGraph(mapName = '') {
+    return this._get(`/api/mapping/graph/latest?map_name=${encodeURIComponent(mapName)}`);
+  }
 }
 
 const bridge = new AmrBridgeService();

@@ -38,6 +38,14 @@ if ! python3 -c "import fastapi, uvicorn, pydantic, PIL, numpy, websockets" 2>/d
     pip install -q -r "$SCRIPT_DIR/requirements.txt"
 fi
 
+# Terminate any existing bridge server instances on port 8000
+OLD_PID=$(lsof -Pi :8000 -sTCP:LISTEN -t 2>/dev/null || true)
+if [ -n "$OLD_PID" ]; then
+    echo "[bridge] Port 8000 is already in use by PID $OLD_PID. Stopping previous instance..."
+    kill -9 $OLD_PID 2>/dev/null || true
+    sleep 1
+fi
+
 echo ""
 echo "[bridge] Starting FastAPI bridge on http://0.0.0.0:8000"
 echo "[bridge] WebSocket telemetry: ws://0.0.0.0:8000/ws/telemetry"

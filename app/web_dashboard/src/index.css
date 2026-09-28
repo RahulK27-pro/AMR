@@ -1770,4 +1770,185 @@ html, body, #root {
   z-index: 2;
 }
 
+/* ============================================================
+   Phase 3: Graph Extraction & Step 4 Styles
+   ============================================================ */
+.graph-extract-card {
+  padding: var(--gap-md);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.06), rgba(12, 16, 28, 0.85));
+  border: 1px solid rgba(2, 132, 199, 0.25);
+}
+
+.density-presets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.preset-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.preset-card:hover {
+  background: var(--bg-elevated);
+  border-color: rgba(0, 212, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.preset-card--active {
+  background: rgba(2, 132, 199, 0.14) !important;
+  border-color: var(--accent-cyan) !important;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);
+}
+
+.preset-card__title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.preset-card--active .preset-card__title {
+  color: var(--accent-cyan);
+}
+
+.preset-card__desc {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  line-height: 1.25;
+}
+
+.preset-card__badge {
+  align-self: flex-start;
+  font-size: 8.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.preset-card--active .preset-card__badge {
+  background: rgba(0, 212, 255, 0.2);
+  color: var(--accent-cyan);
+}
+
+.custom-params-panel {
+  background: rgba(10, 14, 24, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.param-slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.param-slider-row input[type="range"] {
+  accent-color: var(--accent-cyan);
+  height: 4px;
+  cursor: pointer;
+}
+
+.clearance-summary-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 212, 255, 0.07);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.clearance-pill__icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.clearance-summary-pill strong {
+  color: var(--accent-cyan);
+}
+
+.btn--extract-graph {
+  background: linear-gradient(135deg, #0284c7, #0284c7 40%, #0d9488);
+  border: none;
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 12px;
+  color: #fff;
+  box-shadow: 0 0 18px rgba(2, 132, 199, 0.45);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn--extract-graph:hover:not(:disabled) {
+  filter: brightness(1.18);
+  box-shadow: 0 0 26px rgba(2, 132, 199, 0.65);
+  transform: translateY(-1px);
+}
+
+.btn--extract-graph:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.spinner-inline {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.graph-extracted-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Phase 4 readiness preview */
+.phase4-ready-card {
+  padding: var(--gap-md);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(12, 16, 28, 0.9));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+
 

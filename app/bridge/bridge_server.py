@@ -91,6 +91,16 @@ _MAP_PNG_PATH       = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "cl
 _MAP_PNG_GRAPH_PATH = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "graph_visualization.png"
 _GRAPH_JSON_PATH    = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_graph.json"
 
+# Import graph extractor engine
+_MAPS_DIR = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+if str(_MAPS_DIR) not in sys.path:
+    sys.path.insert(0, str(_MAPS_DIR))
+try:
+    import graph_extractor
+except Exception as e:
+    print(f"[bridge] Warning: Failed to import graph_extractor: {e}")
+    graph_extractor = None
+
 # Calibrated Map metadata from warehouse_map.yaml (resolution, origin)
 # resolution: metres per pixel
 MAP_RESOLUTION = 0.05          # 0.05 m/px
@@ -127,6 +137,7 @@ class MappingManager:
         self.saved_map_name: Optional[str] = None
         self.saved_paths: Dict[str, str] = {}
         self.verification_report: Optional[dict] = None
+        self.last_extracted_graph: Optional[dict] = None
         self.lock = threading.Lock()
 
     def start(self, map_name: str = 'warehouse_01', world: str = 'test1.world', run_explore: bool = False):
@@ -286,6 +297,7 @@ class MappingManager:
             self.saved_map_name = None
             self.saved_paths = {}
             self.verification_report = None
+            self.last_extracted_graph = None
             return True
 
     def save_map(self, map_name: str, ros_node=None) -> dict:
@@ -469,6 +481,7 @@ class MappingManager:
                 'saved_map_name': getattr(self, 'saved_map_name', None),
                 'saved_paths': getattr(self, 'saved_paths', {}),
                 'verification_report': getattr(self, 'verification_report', None),
+                'last_extracted_graph': getattr(self, 'last_extracted_graph', None),
             }
 
 
@@ -801,30 +814,49 @@ class AmrBridgeNode(Node):
         t.angular.z = float(angular)
         self.obstacle_cmd_pub.publish(t)
 
+    def set_active_graph(self, graph_dict: dict):
+        self._cached_graph = {
+            'nodes': graph_dict.get('nodes', []),
+            'edges': graph_dict.get('edges', []),
+            'total_nodes': graph_dict.get('total_nodes', len(graph_dict.get('nodes', []))),
+            'total_edges': graph_dict.get('total_edges', len(graph_dict.get('edges', []))),
+            'map_name': graph_dict.get('map_name', 'warehouse_map'),
+            'metrics': graph_dict.get('metrics', {}),
+            'vis_image_b64': graph_dict.get('vis_image_b64', None),
+        }
+
     def get_graph_data(self) -> dict:
         if self._cached_graph is None and _GRAPH_JSON_PATH.exists():
             try:
-                with open(_GRAPH_JSON_PATH, 'r') as f:
+                with open(_GRAPH_JSON_PATH, 'r', encoding='utf-8') as f:
                     raw = json.load(f)
-                nodes = [
-                    {
-                        'id': n['id'],
-                        'x': n['x'],
-                        'y': n['y'],
-                        'px': n.get('px'),
-                        'py': n.get('py')
-                    }
-                    for n in raw.get('nodes', [])
+                nodes = raw.get('nodes', [])
+                edges = raw.get('edges', [])
+                vis_b64 = None
+                vis_candidates = [
+                    _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_01_graph_vis.png",
+                    _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "graph_visualization.png",
+                    _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_map_graph_vis.png",
                 ]
+                for vc in vis_candidates:
+                    if vc.exists():
+                        try:
+                            with open(vc, 'rb') as img_f:
+                                vis_b64 = base64.b64encode(img_f.read()).decode('utf-8')
+                            break
+                        except Exception:
+                            pass
                 self._cached_graph = {
                     'nodes': nodes,
+                    'edges': edges,
                     'total_nodes': len(nodes),
-                    'total_edges': len(raw.get('edges', []))
+                    'total_edges': len(edges),
+                    'vis_image_b64': vis_b64,
                 }
             except Exception as e:
                 self.get_logger().error(f"Failed to load graph: {e}")
-                return {'nodes': [], 'total_nodes': 0, 'total_edges': 0}
-        return self._cached_graph or {'nodes': [], 'total_nodes': 0, 'total_edges': 0}
+                return {'nodes': [], 'edges': [], 'total_nodes': 0, 'total_edges': 0}
+        return self._cached_graph or {'nodes': [], 'edges': [], 'total_nodes': 0, 'total_edges': 0}
 
     def get_live_map_info(self) -> dict:
         return {
@@ -1015,6 +1047,15 @@ class StartMappingRequest(BaseModel):
 class SaveMapRequest(BaseModel):
     map_name: Optional[str] = 'warehouse_01'
 
+class ExtractGraphRequest(BaseModel):
+    map_name: Optional[str] = None
+    robot_radius: float = 0.11
+    safety_margin: float = 0.10
+    search_radius: float = 2.5
+    step_corridor: float = 0.40
+    step_medium: float = 0.50
+    step_open: float = 0.80
+
 # -------- REST endpoints --------
 
 @app.get('/api/status')
@@ -1204,6 +1245,150 @@ async def get_saved_maps():
                 'size_kb': round(yaml_file.stat().st_size / 1024, 2),
             })
     return {'maps': maps}
+
+@app.post('/api/mapping/graph/extract')
+async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
+    """Phase 3: Extracts topological navigation roadmap (nodes & edges) from map YAML."""
+    if graph_extractor is None:
+        return JSONResponse({'error': 'Graph extractor module not available'}, status_code=500)
+
+    target_name = (req.map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+
+    yaml_path = maps_dir / f"{target_name}.yaml"
+    if not yaml_path.exists():
+        candidates = [
+            maps_dir / f"{target_name}_map.yaml",
+            maps_dir / "warehouse_map.yaml",
+            maps_dir / "warehouse_01.yaml"
+        ]
+        for c in candidates:
+            if c.exists():
+                yaml_path = c
+                break
+
+    if not yaml_path.exists():
+        return JSONResponse({'error': f'Map YAML file not found for "{target_name}" in {maps_dir}'}, status_code=404)
+
+    try:
+        report = graph_extractor.extract_graph(
+            str(yaml_path),
+            robot_radius=req.robot_radius,
+            safety_margin=req.safety_margin,
+            global_search_radius=req.search_radius,
+            step_corridor=req.step_corridor,
+            step_medium=req.step_medium,
+            step_open=req.step_open,
+        )
+
+        # Update install directory if present so downstream ROS nodes immediately see the graph
+        install_maps_dir = _WORKSPACE_ROOT / "install" / "agv_description" / "share" / "agv_description" / "maps"
+        if install_maps_dir.exists():
+            try:
+                import shutil
+                json_p = Path(report['json_path'])
+                if json_p.exists():
+                    shutil.copy2(json_p, install_maps_dir / json_p.name)
+                    shutil.copy2(json_p, install_maps_dir / "warehouse_graph.json")
+            except Exception as e:
+                print(f"[bridge] Note: Could not copy graph to install dir: {e}")
+
+        # Update in-memory graph cache in node
+        if node:
+            node.set_active_graph(report)
+
+        mapping_mgr.last_extracted_graph = {
+            'map_name': report['map_name'],
+            'total_nodes': report['total_nodes'],
+            'total_edges': report['total_edges'],
+            'json_path': str(Path(report['json_path']).relative_to(_WORKSPACE_ROOT)),
+            'metrics': report['metrics'],
+        }
+
+        return {'ok': True, 'report': report}
+    except Exception as e:
+        return JSONResponse({'error': f'Graph extraction failed: {str(e)}'}, status_code=500)
+
+@app.get('/api/mapping/graph/latest')
+async def get_latest_graph(map_name: Optional[str] = None):
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    if map_name:
+        cand_json = maps_dir / f"{map_name}_graph.json"
+        if not cand_json.exists():
+            cand_json = maps_dir / f"{map_name}.json"
+        if cand_json.exists():
+            try:
+                with open(cand_json, 'r', encoding='utf-8') as f:
+                    raw = json.load(f)
+                vis_b64 = None
+                cand_vis = maps_dir / f"{map_name}_graph_vis.png"
+                if cand_vis.exists():
+                    try:
+                        with open(cand_vis, 'rb') as vf:
+                            vis_b64 = base64.b64encode(vf.read()).decode('utf-8')
+                    except Exception:
+                        pass
+                return {
+                    'ok': True,
+                    'graph': {
+                        'map_name': map_name,
+                        'nodes': raw.get('nodes', []),
+                        'edges': raw.get('edges', []),
+                        'total_nodes': len(raw.get('nodes', [])),
+                        'total_edges': len(raw.get('edges', [])),
+                        'vis_image_b64': vis_b64,
+                        'metrics': {
+                            'avg_connectivity': round(len(raw.get('edges', [])) / max(1, len(raw.get('nodes', []))), 2),
+                            'connected_components': 1
+                        }
+                    }
+                }
+            except Exception as e:
+                return JSONResponse({'error': str(e)}, status_code=500)
+
+    if node:
+        active = node.get_graph_data()
+        if active and active.get('nodes'):
+            return {'ok': True, 'graph': active}
+
+    # Fallback to reading warehouse_graph.json
+    if _GRAPH_JSON_PATH.exists():
+        try:
+            with open(_GRAPH_JSON_PATH, 'r', encoding='utf-8') as f:
+                raw = json.load(f)
+            vis_b64 = None
+            vis_candidates = [
+                maps_dir / "warehouse_01_graph_vis.png",
+                maps_dir / "graph_visualization.png",
+                maps_dir / "warehouse_map_graph_vis.png",
+            ]
+            for vc in vis_candidates:
+                if vc.exists():
+                    try:
+                        with open(vc, 'rb') as img_f:
+                            vis_b64 = base64.b64encode(img_f.read()).decode('utf-8')
+                        break
+                    except Exception:
+                        pass
+            return {
+                'ok': True,
+                'graph': {
+                    'map_name': 'warehouse',
+                    'nodes': raw.get('nodes', []),
+                    'edges': raw.get('edges', []),
+                    'total_nodes': len(raw.get('nodes', [])),
+                    'total_edges': len(raw.get('edges', [])),
+                    'vis_image_b64': vis_b64,
+                    'metrics': {
+                        'avg_connectivity': round(len(raw.get('edges', [])) / max(1, len(raw.get('nodes', []))), 2),
+                        'connected_components': 1
+                    }
+                }
+            }
+        except Exception as e:
+            return JSONResponse({'error': str(e)}, status_code=500)
+
+    return JSONResponse({'error': 'No graph found'}, status_code=404)
 
 # -------- WebSocket --------
 

@@ -50,6 +50,23 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const [mapViewMode, setMapViewMode] = useState('overlay'); // 'overlay' | 'clean'
   const [showGrid, setShowGrid] = useState(false);
 
+  // Phase 3: Graph Extraction state
+  const [savedMaps, setSavedMaps] = useState([]);
+  const [selectedMapForGraph, setSelectedMapForGraph] = useState(mapName || 'warehouse_01');
+  const [densityPreset, setDensityPreset] = useState('balanced'); // 'balanced' | 'dense' | 'sparse' | 'custom'
+  const [customParams, setCustomParams] = useState({
+    robotRadius: 0.11,
+    safetyMargin: 0.10,
+    searchRadius: 2.5,
+    stepCorridor: 0.40,
+    stepMedium: 0.50,
+    stepOpen: 0.80,
+  });
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractedGraphReport, setExtractedGraphReport] = useState(null);
+  const [graphExtractError, setGraphExtractError] = useState(null);
+  const [graphVisMode, setGraphVisMode] = useState('graph'); // 'graph' | 'clean'
+
   // Viewport pan & zoom
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -335,9 +352,112 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     }
   };
 
+  // Fetch saved maps for Graph Extraction source selection
+  const fetchSavedMaps = useCallback(async () => {
+    try {
+      const res = await bridge.getSavedMaps();
+      if (res?.maps) {
+        setSavedMaps(res.maps);
+        if (res.maps.length > 0 && !selectedMapForGraph) {
+          setSelectedMapForGraph(res.maps[0].name);
+        }
+      }
+    } catch (_) {}
+  }, [selectedMapForGraph]);
+
+  const fetchExistingGraph = useCallback(async (targetMap) => {
+    try {
+      const res = await bridge.getLatestGraph(targetMap || selectedMapForGraph || mapName);
+      if (res?.ok && res.graph && res.graph.total_nodes > 0) {
+        setExtractedGraphReport(res.graph);
+      }
+    } catch (_) {}
+  }, [selectedMapForGraph, mapName]);
+
+  useEffect(() => {
+    fetchSavedMaps();
+  }, [fetchSavedMaps]);
+
+  // When step changes to 3, fetch saved maps & check if an existing graph exists
+  useEffect(() => {
+    if (currentStep === 3) {
+      fetchSavedMaps();
+      if (!extractedGraphReport) {
+        fetchExistingGraph();
+      }
+    }
+  }, [currentStep, fetchSavedMaps, fetchExistingGraph, extractedGraphReport]);
+
+  // Phase 3: Graph Extraction Action
+  const handleExtractGraph = async () => {
+    setIsExtracting(true);
+    setGraphExtractError(null);
+    try {
+      const targetMap = (selectedMapForGraph || mapName || 'warehouse_01').trim();
+      let payload = {
+        map_name: targetMap,
+      };
+
+      if (densityPreset === 'balanced') {
+        payload = {
+          ...payload,
+          robot_radius: 0.11,
+          safety_margin: 0.10,
+          search_radius: 2.5,
+          step_corridor: 0.40,
+          step_medium: 0.50,
+          step_open: 0.80,
+        };
+      } else if (densityPreset === 'dense') {
+        payload = {
+          ...payload,
+          robot_radius: 0.11,
+          safety_margin: 0.08,
+          search_radius: 2.0,
+          step_corridor: 0.30,
+          step_medium: 0.40,
+          step_open: 0.60,
+        };
+      } else if (densityPreset === 'sparse') {
+        payload = {
+          ...payload,
+          robot_radius: 0.11,
+          safety_margin: 0.14,
+          search_radius: 3.5,
+          step_corridor: 0.50,
+          step_medium: 0.70,
+          step_open: 1.00,
+        };
+      } else {
+        payload = {
+          ...payload,
+          robot_radius: parseFloat(customParams.robotRadius) || 0.11,
+          safety_margin: parseFloat(customParams.safetyMargin) || 0.10,
+          search_radius: parseFloat(customParams.searchRadius) || 2.5,
+          step_corridor: parseFloat(customParams.stepCorridor) || 0.40,
+          step_medium: parseFloat(customParams.stepMedium) || 0.50,
+          step_open: parseFloat(customParams.stepOpen) || 0.80,
+        };
+      }
+
+      const res = await bridge.extractGraph(payload);
+      if (res?.ok && res.report) {
+        setExtractedGraphReport(res.report);
+        setGraphVisMode('graph');
+      } else {
+        setGraphExtractError(res?.error || 'Graph extraction failed.');
+      }
+    } catch (err) {
+      setGraphExtractError(err.message || 'Error occurred during graph extraction.');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
   // Flow Continuation to Step 3: Graph Extraction
   const handleProceedToGraph = () => {
     setCurrentStep(3);
+    fetchSavedMaps();
   };
 
   // Canvas pan & zoom handlers
@@ -383,7 +503,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       ? 'Step 1: SLAM Mapping & Autonomous Exploration'
       : currentStep === 2
       ? 'Step 2: Map Verification & Disk Storage'
-      : 'Step 3: Graph Extraction (Pipeline Ready)';
+      : currentStep === 3
+      ? 'Step 3: Graph Extraction & Topological Roadmap Generation'
+      : 'Step 4: Graph Verification & Route Validation';
 
   return (
     <div className="mapping-workflow-container">
@@ -430,15 +552,15 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             className={`stepper-step ${
               currentStep === 2
                 ? 'stepper-step--active'
-                : isSaved && currentStep > 2
+                : (isSaved || currentStep > 2)
                 ? 'stepper-step--completed'
                 : 'stepper-step--pending'
             }`}
-            onClick={() => (status === 'STOPPED' || isSaved) && setCurrentStep(2)}
-            style={{ cursor: status === 'STOPPED' || isSaved ? 'pointer' : 'default' }}
-            title={status === 'STOPPED' || isSaved ? 'Review Step 2 (Verification)' : ''}
+            onClick={() => (status === 'STOPPED' || isSaved || currentStep > 2) && setCurrentStep(2)}
+            style={{ cursor: status === 'STOPPED' || isSaved || currentStep > 2 ? 'pointer' : 'default' }}
+            title={status === 'STOPPED' || isSaved || currentStep > 2 ? 'Review Step 2 (Verification)' : ''}
           >
-            <span className="step-num">{isSaved && currentStep > 2 ? '✓' : '2'}</span>
+            <span className="step-num">{isSaved || currentStep > 2 ? '✓' : '2'}</span>
             <span className="step-label">Map Verification</span>
           </div>
 
@@ -448,16 +570,30 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             className={`stepper-step ${
               currentStep === 3
                 ? 'stepper-step--active'
+                : (extractedGraphReport || currentStep > 3)
+                ? 'stepper-step--completed'
                 : 'stepper-step--pending'
             }`}
+            onClick={() => (isSaved || currentStep >= 3) && setCurrentStep(3)}
+            style={{ cursor: isSaved || currentStep >= 3 ? 'pointer' : 'default' }}
+            title={isSaved || currentStep >= 3 ? 'Review Step 3 (Graph Extraction)' : ''}
           >
-            <span className="step-num">3</span>
+            <span className="step-num">{extractedGraphReport && currentStep > 3 ? '✓' : '3'}</span>
             <span className="step-label">Graph Extraction</span>
           </div>
 
           <div className="stepper-arrow">➔</div>
 
-          <div className="stepper-step stepper-step--pending">
+          <div
+            className={`stepper-step ${
+              currentStep === 4
+                ? 'stepper-step--active'
+                : 'stepper-step--pending'
+            }`}
+            onClick={() => extractedGraphReport && setCurrentStep(4)}
+            style={{ cursor: extractedGraphReport ? 'pointer' : 'default' }}
+            title={extractedGraphReport ? 'Review Step 4 (Graph Verification)' : 'Pending Step 3 completion'}
+          >
             <span className="step-num">4</span>
             <span className="step-label">Graph Verification</span>
           </div>
@@ -1018,54 +1154,372 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             </>
           )}
 
-          {/* ================= STEP 3: GRAPH EXTRACTION (PHASE 3 PREVIEW) ================= */}
+          {/* ================= STEP 3: GRAPH EXTRACTION ================= */}
           {currentStep === 3 && (
-            <div className="card phase3-ready-card">
+            <div className="card graph-extract-card">
               <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="card__title" style={{ fontSize: 15 }}>
-                  🗺️ Step 3: Graph Extraction
+                  🕸️ Step 3: Graph Extraction
                 </div>
-                <span className="audit-check-row__badge badge--pass">PHASE 2 COMPLETE</span>
+                {extractedGraphReport ? (
+                  <span className="audit-check-row__badge badge--pass">✓ GRAPH EXTRACTED</span>
+                ) : (
+                  <span className="audit-check-row__badge badge--warn">READY TO EXTRACT</span>
+                )}
+              </div>
+
+              {/* Map Source Selector */}
+              <div className="mapping-field">
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="mapping-label">Source Map YAML</label>
+                  <button
+                    className="btn btn--ghost btn--icon"
+                    onClick={fetchSavedMaps}
+                    title="Refresh Saved Maps"
+                    style={{ height: 22, width: 22, fontSize: 11 }}
+                  >
+                    ⟳
+                  </button>
+                </div>
+                <select
+                  className="input-field mapping-input text-mono"
+                  value={selectedMapForGraph}
+                  onChange={(e) => {
+                    setSelectedMapForGraph(e.target.value);
+                    setExtractedGraphReport(null);
+                  }}
+                  disabled={isExtracting}
+                >
+                  {savedMaps.length > 0 ? (
+                    savedMaps.map((m) => (
+                      <option key={m.name} value={m.name}>
+                        {m.name} ({m.size_kb} KB)
+                      </option>
+                    ))
+                  ) : (
+                    <option value={mapName}>{mapName}.yaml</option>
+                  )}
+                </select>
+                <span className="text-dim text-xs">
+                  Active target: <code className="text-mono" style={{ color: 'var(--accent-cyan)' }}>src/agv_description/maps/{selectedMapForGraph || mapName}.yaml</code>
+                </span>
+              </div>
+
+              {/* Density Presets */}
+              <div className="mapping-field">
+                <label className="mapping-label">Roadmap Density & Clearance Preset</label>
+                <div className="density-presets-grid">
+                  <div
+                    className={`preset-card ${densityPreset === 'balanced' ? 'preset-card--active' : ''}`}
+                    onClick={() => setDensityPreset('balanced')}
+                  >
+                    <div className="preset-card__title">Balanced</div>
+                    <div className="preset-card__desc">0.21m clearance • 2.5m search</div>
+                    <div className="preset-card__badge">Recommended</div>
+                  </div>
+
+                  <div
+                    className={`preset-card ${densityPreset === 'dense' ? 'preset-card--active' : ''}`}
+                    onClick={() => setDensityPreset('dense')}
+                  >
+                    <div className="preset-card__title">Dense / Detail</div>
+                    <div className="preset-card__desc">0.19m clearance • 2.0m search</div>
+                    <div className="preset-card__badge">Finer Nodes</div>
+                  </div>
+
+                  <div
+                    className={`preset-card ${densityPreset === 'sparse' ? 'preset-card--active' : ''}`}
+                    onClick={() => setDensityPreset('sparse')}
+                  >
+                    <div className="preset-card__title">Fast / Sparse</div>
+                    <div className="preset-card__desc">0.25m clearance • 3.5m search</div>
+                    <div className="preset-card__badge">Low Compute</div>
+                  </div>
+
+                  <div
+                    className={`preset-card ${densityPreset === 'custom' ? 'preset-card--active' : ''}`}
+                    onClick={() => setDensityPreset('custom')}
+                  >
+                    <div className="preset-card__title">Custom Sliders</div>
+                    <div className="preset-card__desc">Manual tuning of clearances</div>
+                    <div className="preset-card__badge">Advanced</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Sliders (Only if Custom preset) */}
+              {densityPreset === 'custom' && (
+                <div className="custom-params-panel">
+                  <div className="param-slider-row">
+                    <div className="flex-row" style={{ justifyContent: 'space-between' }}>
+                      <span className="text-xs text-dim">Robot Radius:</span>
+                      <span className="text-mono text-xs font-bold">{customParams.robotRadius} m</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.06"
+                      max="0.25"
+                      step="0.01"
+                      value={customParams.robotRadius}
+                      onChange={(e) => setCustomParams({ ...customParams, robotRadius: parseFloat(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="param-slider-row">
+                    <div className="flex-row" style={{ justifyContent: 'space-between' }}>
+                      <span className="text-xs text-dim">Safety Margin:</span>
+                      <span className="text-mono text-xs font-bold">{customParams.safetyMargin} m</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.04"
+                      max="0.25"
+                      step="0.01"
+                      value={customParams.safetyMargin}
+                      onChange={(e) => setCustomParams({ ...customParams, safetyMargin: parseFloat(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="param-slider-row">
+                    <div className="flex-row" style={{ justifyContent: 'space-between' }}>
+                      <span className="text-xs text-dim">Search Radius (LOS):</span>
+                      <span className="text-mono text-xs font-bold">{customParams.searchRadius} m</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1.0"
+                      max="5.0"
+                      step="0.25"
+                      value={customParams.searchRadius}
+                      onChange={(e) => setCustomParams({ ...customParams, searchRadius: parseFloat(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="param-slider-row">
+                    <div className="flex-row" style={{ justifyContent: 'space-between' }}>
+                      <span className="text-xs text-dim">Corridor Step:</span>
+                      <span className="text-mono text-xs font-bold">{customParams.stepCorridor} m</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.20"
+                      max="0.80"
+                      step="0.05"
+                      value={customParams.stepCorridor}
+                      onChange={(e) => setCustomParams({ ...customParams, stepCorridor: parseFloat(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="param-slider-row">
+                    <div className="flex-row" style={{ justifyContent: 'space-between' }}>
+                      <span className="text-xs text-dim">Open Space Step:</span>
+                      <span className="text-mono text-xs font-bold">{customParams.stepOpen} m</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.40"
+                      max="1.50"
+                      step="0.05"
+                      value={customParams.stepOpen}
+                      onChange={(e) => setCustomParams({ ...customParams, stepOpen: parseFloat(e.target.value) })}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Clearance Pill Info */}
+              <div className="clearance-summary-pill">
+                <span className="clearance-pill__icon">🛡️</span>
+                <span className="text-xs">
+                  Obstacle Clearance Constraint:
+                  <strong>
+                    {' '}
+                    {densityPreset === 'balanced'
+                      ? '0.21 m (0.11m robot + 0.10m margin)'
+                      : densityPreset === 'dense'
+                      ? '0.19 m (0.11m robot + 0.08m margin)'
+                      : densityPreset === 'sparse'
+                      ? '0.25 m (0.11m robot + 0.14m margin)'
+                      : `${(customParams.robotRadius + customParams.safetyMargin).toFixed(2)} m (${customParams.robotRadius}m robot + ${customParams.safetyMargin}m margin)`}
+                  </strong>
+                </span>
+              </div>
+
+              {/* Error Banner if any */}
+              {graphExtractError && (
+                <div className="save-error-banner">
+                  ⚠️ {graphExtractError}
+                </div>
+              )}
+
+              {/* Post Extraction Metrics Card */}
+              {extractedGraphReport ? (
+                <div className="graph-extracted-results">
+                  <div className="save-success-banner" style={{ margin: 0 }}>
+                    <div className="save-success-title">
+                      <span>✓</span> Topological Roadmap Extracted Successfully!
+                    </div>
+
+                    <div className="audit-metrics-grid" style={{ marginTop: 6 }}>
+                      <div className="audit-metric-box">
+                        <span className="audit-metric-box__label">Candidate Nodes</span>
+                        <span className="audit-metric-box__val" style={{ color: 'var(--accent-green)' }}>
+                          {extractedGraphReport.total_nodes}
+                        </span>
+                      </div>
+
+                      <div className="audit-metric-box">
+                        <span className="audit-metric-box__label">LOS Edges</span>
+                        <span className="audit-metric-box__val" style={{ color: 'var(--accent-cyan)' }}>
+                          {extractedGraphReport.total_edges}
+                        </span>
+                      </div>
+
+                      <div className="audit-metric-box">
+                        <span className="audit-metric-box__label">Avg Connectivity</span>
+                        <span className="audit-metric-box__val">
+                          {extractedGraphReport.metrics?.avg_connectivity || '—'} / node
+                        </span>
+                      </div>
+
+                      <div className="audit-metric-box">
+                        <span className="audit-metric-box__label">Components</span>
+                        <span className="audit-metric-box__val" style={{ color: 'var(--accent-green)' }}>
+                          {extractedGraphReport.metrics?.connected_components === 1
+                            ? '1 (Connected)'
+                            : `${extractedGraphReport.metrics?.connected_components} clusters`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="saved-files-list mt-xs">
+                      <div className="saved-file-item">
+                        📄 {extractedGraphReport.json_path || `src/agv_description/maps/${selectedMapForGraph}_graph.json`}
+                      </div>
+                      <div className="saved-file-item">
+                        🔄 src/agv_description/maps/warehouse_graph.json (Synced to Nav2)
+                      </div>
+                      <div className="saved-file-item">
+                        🖼️ {extractedGraphReport.vis_path || `src/agv_description/maps/${selectedMapForGraph}_graph_vis.png`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mapping-actions mt-xs">
+                    <button
+                      id="btn-proceed-graph-verification"
+                      className="btn--proceed-graph"
+                      onClick={() => setCurrentStep(4)}
+                    >
+                      <span>➔</span> PROCEED TO GRAPH VERIFICATION (STEP 4)
+                    </button>
+
+                    <button
+                      className="btn btn--outline"
+                      onClick={handleExtractGraph}
+                      disabled={isExtracting}
+                    >
+                      🔄 Re-Extract with Active Settings
+                    </button>
+
+                    <button
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => setCurrentStep(2)}
+                      style={{ alignSelf: 'center' }}
+                    >
+                      ← Back to Map Verification
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Primary Extraction Trigger Button */
+                <div className="mapping-actions">
+                  <button
+                    id="btn-run-extract-graph"
+                    className="btn--extract-graph"
+                    onClick={handleExtractGraph}
+                    disabled={isExtracting}
+                  >
+                    {isExtracting ? (
+                      <>
+                        <span className="spinner-inline" />
+                        <span>Raycasting Line-of-Sight & Extracting Nodes...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>⚡</span> RUN GRAPH EXTRACTION
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    className="btn btn--outline"
+                    onClick={() => setCurrentStep(2)}
+                    disabled={isExtracting}
+                  >
+                    ← Back to Map Verification
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ================= STEP 4: GRAPH VERIFICATION (AWAITING PHASE 4 APPROVAL) ================= */}
+          {currentStep === 4 && (
+            <div className="card phase4-ready-card">
+              <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="card__title" style={{ fontSize: 15 }}>
+                  🔍 Step 4: Graph Verification & Route Validation
+                </div>
+                <span className="audit-check-row__badge badge--pass">PHASE 3 COMPLETE</span>
               </div>
 
               <div className="phase3-meta-table">
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Verified Map:</span>
+                  <span className="text-dim">Roadmap Map:</span>
                   <span className="text-mono font-bold" style={{ color: 'var(--accent-cyan)' }}>
-                    {savedReport?.map_name || mapName}
+                    {extractedGraphReport?.map_name || selectedMapForGraph || mapName}
                   </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">YAML Source:</span>
-                  <span className="text-mono text-xs">
-                    {savedReport?.files?.yaml || `src/agv_description/maps/${mapName}.yaml`}
+                  <span className="text-dim">Total Nodes:</span>
+                  <span className="text-mono font-bold" style={{ color: 'var(--accent-green)' }}>
+                    {extractedGraphReport?.total_nodes || 0} nodes
                   </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Resolution:</span>
-                  <span className="text-mono">{verificationData?.resolution || 0.05} m/px</span>
+                  <span className="text-dim">Total Edges:</span>
+                  <span className="text-mono font-bold" style={{ color: 'var(--accent-cyan)' }}>
+                    {extractedGraphReport?.total_edges || 0} edges
+                  </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Status:</span>
-                  <span className="text-success font-bold">Ready for Graph Extraction</span>
+                  <span className="text-dim">Connectivity:</span>
+                  <span className="text-mono font-bold">
+                    {extractedGraphReport?.metrics?.avg_connectivity || '—'} edges/node
+                  </span>
+                </div>
+                <div className="phase3-meta-row">
+                  <span className="text-dim">Graph State:</span>
+                  <span className="text-success font-bold">Validated & Cached on Disk</span>
                 </div>
               </div>
 
-              <div className="save-success-banner" style={{ background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
-                <div className="text-sm font-bold" style={{ color: 'var(--accent-cyan)' }}>
-                  📋 Phase 2 Milestone Achieved
+              <div className="save-success-banner" style={{ background: 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                <div className="text-sm font-bold" style={{ color: 'var(--accent-green)' }}>
+                  🎯 Phase 3 Complete — Topological Graph Extracted
                 </div>
                 <div className="text-dim text-xs" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Map verification and storage are complete. In Phase 3, the Voronoi candidate nodes, distance transform, and connectivity graph will be extracted and verified for point-to-point mission dispatch.
+                  The navigation roadmap graph has been extracted, collision-checked, and synchronized to the active ROS 2 navigation stack. In accordance with development rules, Phase 3 is ready for your review and approval before proceeding to implement Phase 4 (Graph Verification & Node Audits).
                 </div>
               </div>
 
               <div className="mapping-actions">
                 <button
                   className="btn btn--outline"
-                  onClick={() => setCurrentStep(2)}
+                  onClick={() => setCurrentStep(3)}
                 >
-                  ← Back to Map Verification
+                  ← Back to Graph Extraction (Step 3)
                 </button>
                 <button
                   className="btn btn--ghost btn--sm"
@@ -1079,7 +1533,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
           )}
         </div>
 
-        {/* Right Column: SLAM / Inspection Map Viewport */}
+        {/* Right Column: SLAM / Inspection / Graph Map Viewport */}
         <div className="mapping-viewport-panel card">
           <div className="mapping-viewport-header">
             <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
@@ -1088,7 +1542,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                   ? '📡 Live SLAM Map Stream'
                   : currentStep === 2
                   ? '🔍 Map Inspection & Verification Canvas'
-                  : '🗺️ Verified Map Canvas (Phase 3 Input)'}
+                  : currentStep === 3
+                  ? '🕸️ Topological Graph Roadmap Canvas'
+                  : '🔍 Graph Verification & Route Canvas'}
               </span>
 
               {status === 'MAPPING' && (
@@ -1097,32 +1553,57 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 </span>
               )}
 
-              {isSaved && (
+              {isSaved && currentStep <= 2 && (
                 <span className="audit-check-row__badge badge--pass" style={{ fontSize: 10, padding: '2px 8px' }}>
                   ✓ DISK SAVED
+                </span>
+              )}
+
+              {extractedGraphReport && currentStep >= 3 && (
+                <span className="audit-check-row__badge badge--pass" style={{ fontSize: 10, padding: '2px 8px' }}>
+                  ✓ GRAPH ROADMAP
                 </span>
               )}
             </div>
 
             {/* Viewport Toolbar */}
             <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
-              {/* Mode switch: Live Overlay vs Clean Floorplan */}
-              <div className="view-mode-pill-group">
-                <button
-                  className={`btn-view-pill ${mapViewMode === 'overlay' ? 'btn-view-pill--active' : ''}`}
-                  onClick={() => setMapViewMode('overlay')}
-                  title="Show SLAM map with robot pose, heading, and frontier targets"
-                >
-                  Overlay View
-                </button>
-                <button
-                  className={`btn-view-pill ${mapViewMode === 'clean' ? 'btn-view-pill--active' : ''}`}
-                  onClick={() => setMapViewMode('clean')}
-                  title="Show clean architectural floorplan without dynamic overlays"
-                >
-                  Clean Map
-                </button>
-              </div>
+              {/* Mode switch */}
+              {currentStep >= 3 ? (
+                <div className="view-mode-pill-group">
+                  <button
+                    className={`btn-view-pill ${graphVisMode === 'graph' ? 'btn-view-pill--active' : ''}`}
+                    onClick={() => setGraphVisMode('graph')}
+                    title="Show topological roadmap graph overlaid on floorplan"
+                  >
+                    🕸️ Graph Overlay
+                  </button>
+                  <button
+                    className={`btn-view-pill ${graphVisMode === 'clean' ? 'btn-view-pill--active' : ''}`}
+                    onClick={() => setGraphVisMode('clean')}
+                    title="Show clean architectural floorplan"
+                  >
+                    🗺️ Clean Floorplan
+                  </button>
+                </div>
+              ) : (
+                <div className="view-mode-pill-group">
+                  <button
+                    className={`btn-view-pill ${mapViewMode === 'overlay' ? 'btn-view-pill--active' : ''}`}
+                    onClick={() => setMapViewMode('overlay')}
+                    title="Show SLAM map with robot pose, heading, and frontier targets"
+                  >
+                    Overlay View
+                  </button>
+                  <button
+                    className={`btn-view-pill ${mapViewMode === 'clean' ? 'btn-view-pill--active' : ''}`}
+                    onClick={() => setMapViewMode('clean')}
+                    title="Show clean architectural floorplan without dynamic overlays"
+                  >
+                    Clean Map
+                  </button>
+                </div>
+              )}
 
               {/* Grid Toggle */}
               <button
@@ -1179,7 +1660,22 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             {/* Metric Grid Overlay */}
             {showGrid && <div className="mapping-canvas-grid-overlay" />}
 
-            {liveMapImg ? (
+            {currentStep >= 3 && graphVisMode === 'graph' && extractedGraphReport?.vis_image_b64 ? (
+              <div
+                className="mapping-image-wrapper"
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: 'center center',
+                }}
+              >
+                <img
+                  src={`data:image/png;base64,${extractedGraphReport.vis_image_b64}`}
+                  alt="Topological Graph Roadmap"
+                  className="mapping-slam-img"
+                  draggable={false}
+                />
+              </div>
+            ) : liveMapImg ? (
               <div
                 className="mapping-image-wrapper"
                 style={{
@@ -1196,10 +1692,14 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
               </div>
             ) : (
               <div className="mapping-empty-state">
-                <div className="empty-state-icon">📡</div>
-                <h3>SLAM Toolbox Map Canvas</h3>
+                <div className="empty-state-icon">
+                  {currentStep >= 3 ? '🕸️' : '📡'}
+                </div>
+                <h3>{currentStep >= 3 ? 'Topological Roadmap Canvas' : 'SLAM Toolbox Map Canvas'}</h3>
                 <p className="text-secondary" style={{ maxWidth: 440 }}>
-                  {status === 'MAPPING'
+                  {currentStep >= 3
+                    ? 'Click [ RUN GRAPH EXTRACTION ] to extract collision-free navigation nodes and lines-of-sight across the floorplan.'
+                    : status === 'MAPPING'
                     ? 'Connecting to ROS 2 /map topic. SLAM Toolbox is processing initial scans to construct the occupancy grid...'
                     : 'Click [ START MAPPING ] to trigger SLAM Toolbox and begin mapping test1.world. The map will render here in real time.'}
                 </p>
@@ -1214,12 +1714,21 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
               <span className="text-dim text-sm">
                 Pan: Click & Drag • Zoom: Scroll Wheel • Mode:{' '}
                 <span className="text-mono" style={{ color: 'var(--accent-cyan)' }}>
-                  {mapViewMode === 'clean' ? 'Clean Floorplan' : 'Live Overlay'}
+                  {currentStep >= 3
+                    ? graphVisMode === 'graph'
+                      ? 'Graph Roadmap'
+                      : 'Clean Floorplan'
+                    : mapViewMode === 'clean'
+                    ? 'Clean Floorplan'
+                    : 'Live Overlay'}
                 </span>
               </span>
               <span className="text-dim text-sm text-mono">
-                AMR: ({pose.x.toFixed(2)}, {pose.y.toFixed(2)}) • Res:{' '}
-                {verificationData?.resolution || mappingData.map_info?.resolution || 0.05} m/px
+                {currentStep >= 3 && extractedGraphReport ? (
+                  `Graph: ${extractedGraphReport.total_nodes} Nodes • ${extractedGraphReport.total_edges} Edges • Connectivity: ${extractedGraphReport.metrics?.avg_connectivity || '—'} / node`
+                ) : (
+                  `AMR: (${pose.x.toFixed(2)}, {pose.y.toFixed(2)}) • Res: ${verificationData?.resolution || mappingData.map_info?.resolution || 0.05} m/px`
+                )}
               </span>
             </div>
           </div>
