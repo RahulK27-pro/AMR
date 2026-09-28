@@ -276,6 +276,43 @@ class AmrBridgeService {
   async getLatestGraph(mapName = '') {
     return this._get(`/api/mapping/graph/latest?map_name=${encodeURIComponent(mapName)}`);
   }
+
+  // ---- Graph Verification Pipeline (Phase 4) ----
+  async verifyGraph(mapName = '') {
+    this.emitEvent('info', `Running Graph Verification Audit on "${mapName || 'active roadmap'}"...`);
+    try {
+      const res = await this._get(`/api/mapping/graph/verify?map_name=${encodeURIComponent(mapName)}`);
+      if (res?.ok) {
+        this.emitEvent('success', `Graph roadmap verified: status ${res.status} (${res.metrics?.connectivity_pct}% connected).`);
+      }
+      return res;
+    } catch (err) {
+      this.emitEvent('critical', `Graph verification error: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async planRoute(startNode, goalNode, mapName = '') {
+    this.emitEvent('info', `Planning A*/Dijkstra route probe: ${startNode} ➔ ${goalNode}...`);
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mapping/graph/plan_route`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ start_node: startNode, goal_node: goalNode, map_name: mapName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('success', `Route verified: ${data.total_distance_m}m in ${data.hop_count} hops.`);
+        return { ok: true, route: data };
+      }
+      const errMsg = data?.error || 'Route planning failed';
+      this.emitEvent('warn', `Routing probe notice: ${errMsg}`);
+      return { ok: false, error: errMsg };
+    } catch (err) {
+      this.emitEvent('critical', `Routing network error: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  }
 }
 
 const bridge = new AmrBridgeService();

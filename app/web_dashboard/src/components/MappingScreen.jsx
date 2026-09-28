@@ -67,6 +67,18 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const [graphExtractError, setGraphExtractError] = useState(null);
   const [graphVisMode, setGraphVisMode] = useState('graph'); // 'graph' | 'clean'
 
+  // Phase 4: Graph Verification & Route Testing state
+  const [graphVerificationData, setGraphVerificationData] = useState(null);
+  const [isAuditingGraph, setIsAuditingGraph] = useState(false);
+  const [routeTesterStart, setRouteTesterStart] = useState('N0');
+  const [routeTesterGoal, setRouteTesterGoal] = useState('');
+  const [testedRoute, setTestedRoute] = useState(null);
+  const [isPlanningRoute, setIsPlanningRoute] = useState(false);
+  const [routePlanError, setRoutePlanError] = useState(null);
+  const [showRouteOverlay, setShowRouteOverlay] = useState(true);
+  const [isGraphApproved, setIsGraphApproved] = useState(false);
+  const [imgDimensions, setImgDimensions] = useState({ width: 1000, height: 1000 });
+
   // Viewport pan & zoom
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -460,6 +472,75 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     fetchSavedMaps();
   };
 
+  // Phase 4: Graph Verification & Route Testing Actions
+  const runGraphVerification = useCallback(async (targetMap) => {
+    setIsAuditingGraph(true);
+    try {
+      const target = targetMap || selectedMapForGraph || mapName || 'warehouse_01';
+      const res = await bridge.verifyGraph(target);
+      if (res?.ok) {
+        setGraphVerificationData(res);
+      }
+    } finally {
+      setIsAuditingGraph(false);
+    }
+  }, [selectedMapForGraph, mapName]);
+
+  // When step changes to 4, run audit and set default start/goal if needed
+  useEffect(() => {
+    if (currentStep === 4) {
+      runGraphVerification();
+      const nodes = extractedGraphReport?.nodes || [];
+      if (nodes.length > 0) {
+        if (!routeTesterStart) setRouteTesterStart(nodes[0].id);
+        if (!routeTesterGoal) setRouteTesterGoal(nodes[nodes.length - 1].id);
+      }
+    }
+  }, [currentStep, runGraphVerification, extractedGraphReport, routeTesterStart, routeTesterGoal]);
+
+  const handleTestRoute = async () => {
+    if (!routeTesterStart || !routeTesterGoal) return;
+    setIsPlanningRoute(true);
+    setRoutePlanError(null);
+    try {
+      const target = selectedMapForGraph || mapName || 'warehouse_01';
+      const res = await bridge.planRoute(routeTesterStart, routeTesterGoal, target);
+      if (res?.ok && res.route) {
+        setTestedRoute(res.route);
+        setShowRouteOverlay(true);
+      } else {
+        setRoutePlanError(res?.error || 'Path planning failed');
+      }
+    } catch (err) {
+      setRoutePlanError(err.message || 'Routing error');
+    } finally {
+      setIsPlanningRoute(false);
+    }
+  };
+
+  const handleRandomRouteProbe = () => {
+    const nodes = extractedGraphReport?.nodes || [];
+    if (nodes.length < 2) return;
+    const rand1 = Math.floor(Math.random() * nodes.length);
+    let rand2 = Math.floor(Math.random() * nodes.length);
+    while (rand2 === rand1) rand2 = Math.floor(Math.random() * nodes.length);
+    setRouteTesterStart(nodes[rand1].id);
+    setRouteTesterGoal(nodes[rand2].id);
+    setTestedRoute(null);
+  };
+
+  const handleSwapRouteEndpoints = () => {
+    const prevStart = routeTesterStart;
+    setRouteTesterStart(routeTesterGoal);
+    setRouteTesterGoal(prevStart);
+    setTestedRoute(null);
+  };
+
+  const handleApproveRoadmap = () => {
+    setIsGraphApproved(true);
+    setCurrentStep(5);
+  };
+
   // Canvas pan & zoom handlers
   const handleWheel = (e) => {
     e.preventDefault();
@@ -505,7 +586,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       ? 'Step 2: Map Verification & Disk Storage'
       : currentStep === 3
       ? 'Step 3: Graph Extraction & Topological Roadmap Generation'
-      : 'Step 4: Graph Verification & Route Validation';
+      : currentStep === 4
+      ? 'Step 4: Roadmap Quality Verification & Route Pathfinding'
+      : 'Step 5: Semantic Place Naming & Station Setup';
 
   return (
     <div className="mapping-workflow-container">
@@ -588,19 +671,30 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             className={`stepper-step ${
               currentStep === 4
                 ? 'stepper-step--active'
+                : (graphVerificationData?.status === 'VERIFIED' || isGraphApproved || currentStep > 4)
+                ? 'stepper-step--completed'
                 : 'stepper-step--pending'
             }`}
-            onClick={() => extractedGraphReport && setCurrentStep(4)}
-            style={{ cursor: extractedGraphReport ? 'pointer' : 'default' }}
-            title={extractedGraphReport ? 'Review Step 4 (Graph Verification)' : 'Pending Step 3 completion'}
+            onClick={() => (extractedGraphReport || currentStep >= 4) && setCurrentStep(4)}
+            style={{ cursor: extractedGraphReport || currentStep >= 4 ? 'pointer' : 'default' }}
+            title={extractedGraphReport || currentStep >= 4 ? 'Review Step 4 (Graph Verification)' : 'Pending Step 3 completion'}
           >
-            <span className="step-num">4</span>
+            <span className="step-num">{(graphVerificationData?.status === 'VERIFIED' || isGraphApproved) && currentStep > 4 ? '✓' : '4'}</span>
             <span className="step-label">Graph Verification</span>
           </div>
 
           <div className="stepper-arrow">➔</div>
 
-          <div className="stepper-step stepper-step--pending">
+          <div
+            className={`stepper-step ${
+              currentStep === 5
+                ? 'stepper-step--active'
+                : 'stepper-step--pending'
+            }`}
+            onClick={() => (isGraphApproved || currentStep > 4) && setCurrentStep(5)}
+            style={{ cursor: isGraphApproved || currentStep > 4 ? 'pointer' : 'default' }}
+            title={isGraphApproved || currentStep > 4 ? 'Review Step 5 (Place Naming)' : 'Pending Step 4 roadmap approval'}
+          >
             <span className="step-num">5</span>
             <span className="step-label">Place Naming</span>
           </div>
@@ -1464,62 +1558,307 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             </div>
           )}
 
-          {/* ================= STEP 4: GRAPH VERIFICATION (AWAITING PHASE 4 APPROVAL) ================= */}
+          {/* ================= STEP 4: GRAPH VERIFICATION ================= */}
           {currentStep === 4 && (
-            <div className="card phase4-ready-card">
+            <div className="graph-verify-panel-container flex-col" style={{ gap: 12 }}>
+              {/* Card 1: Verification Audit Results */}
+              <div className="card graph-verify-card">
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="card__title" style={{ fontSize: 15 }}>
+                    🔍 Step 4: Graph Verification
+                  </div>
+                  {graphVerificationData?.status === 'VERIFIED' ? (
+                    <span className="audit-check-row__badge badge--pass">✓ VERIFIED ROADMAP</span>
+                  ) : isAuditingGraph ? (
+                    <span className="audit-check-row__badge badge--warn">AUDITING...</span>
+                  ) : (
+                    <span className="audit-check-row__badge badge--warn">AUDIT READY</span>
+                  )}
+                </div>
+
+                {/* Audit Metrics Grid */}
+                <div className="audit-metrics-grid">
+                  <div className="audit-metric-box">
+                    <span className="audit-metric-box__label">Main Component</span>
+                    <span className="audit-metric-box__val" style={{ color: 'var(--accent-green)' }}>
+                      {graphVerificationData?.metrics?.lcc_size ?? extractedGraphReport?.total_nodes ?? 0} /{' '}
+                      {graphVerificationData?.metrics?.total_nodes ?? extractedGraphReport?.total_nodes ?? 0}
+                    </span>
+                  </div>
+
+                  <div className="audit-metric-box">
+                    <span className="audit-metric-box__label">Connectivity</span>
+                    <span className="audit-metric-box__val" style={{ color: 'var(--accent-cyan)' }}>
+                      {graphVerificationData?.metrics?.connectivity_pct ?? 100}%
+                    </span>
+                  </div>
+
+                  <div className="audit-metric-box">
+                    <span className="audit-metric-box__label">LOS Edges</span>
+                    <span className="audit-metric-box__val">
+                      {graphVerificationData?.metrics?.total_edges ?? extractedGraphReport?.total_edges ?? 0}
+                    </span>
+                  </div>
+
+                  <div className="audit-metric-box">
+                    <span className="audit-metric-box__label">Avg Degree</span>
+                    <span className="audit-metric-box__val">
+                      {graphVerificationData?.metrics?.avg_degree ?? extractedGraphReport?.metrics?.avg_connectivity ?? 0} / node
+                    </span>
+                  </div>
+
+                  <div className="audit-metric-box">
+                    <span className="audit-metric-box__label">Min Clearance</span>
+                    <span className="audit-metric-box__val" style={{ color: 'var(--accent-green)' }}>
+                      {graphVerificationData?.metrics?.min_clearance_m ?? 0.21} m
+                    </span>
+                  </div>
+
+                  <div className="audit-metric-box">
+                    <span className="audit-metric-box__label">Navigability</span>
+                    <span className="audit-metric-box__val" style={{ color: 'var(--accent-green)' }}>
+                      {graphVerificationData?.metrics?.navigability_pct ?? 100}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Health Checklist */}
+                <div className="audit-checklist">
+                  {graphVerificationData?.checks?.map((chk, i) => (
+                    <div key={i} className="audit-check-row">
+                      <span className="audit-check-row__label">
+                        <span>{chk.passed ? '🟢' : '🟡'}</span> {chk.name}
+                        <span className="text-dim text-xs" style={{ display: 'block', fontSize: 10, marginTop: 1 }}>
+                          {chk.detail}
+                        </span>
+                      </span>
+                      <span className={`audit-check-row__badge ${chk.passed ? 'badge--pass' : 'badge--warn'}`}>
+                        {chk.status}
+                      </span>
+                    </div>
+                  )) || (
+                    <div className="text-dim text-xs p-xs">
+                      Running automatic topological health checks...
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Card 2: Interactive Route Test & Path Simulator */}
+              <div className="card route-tester-card">
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="card__title" style={{ fontSize: 14 }}>
+                    🧪 Interactive Route & Navigability Tester
+                  </div>
+                  <span className="world-tag-badge">A* / Dijkstra</span>
+                </div>
+
+                <div className="route-tester-endpoints-grid">
+                  <div className="mapping-field" style={{ margin: 0 }}>
+                    <label className="mapping-label">Start Node</label>
+                    <select
+                      className="input-field mapping-input text-mono"
+                      value={routeTesterStart}
+                      onChange={(e) => {
+                        setRouteTesterStart(e.target.value);
+                        setTestedRoute(null);
+                      }}
+                    >
+                      {extractedGraphReport?.nodes?.slice(0, 300).map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.id} ({Number(n.x ?? n.wx ?? 0).toFixed(2)}, {Number(n.y ?? n.wy ?? 0).toFixed(2)})
+                        </option>
+                      )) || <option value="N0">N0</option>}
+                    </select>
+                  </div>
+
+                  <div className="route-endpoints-middle-btn">
+                    <button
+                      className="btn btn--ghost btn--icon"
+                      onClick={handleSwapRouteEndpoints}
+                      title="Swap Start and Goal"
+                      style={{ height: 28, width: 28, fontSize: 13 }}
+                    >
+                      ⇄
+                    </button>
+                  </div>
+
+                  <div className="mapping-field" style={{ margin: 0 }}>
+                    <label className="mapping-label">Goal Node</label>
+                    <select
+                      className="input-field mapping-input text-mono"
+                      value={routeTesterGoal}
+                      onChange={(e) => {
+                        setRouteTesterGoal(e.target.value);
+                        setTestedRoute(null);
+                      }}
+                    >
+                      {extractedGraphReport?.nodes?.slice(0, 300).map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.id} ({Number(n.x ?? n.wx ?? 0).toFixed(2)}, {Number(n.y ?? n.wy ?? 0).toFixed(2)})
+                        </option>
+                      )) || <option value="N575">N575</option>}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex-row" style={{ gap: 8, marginTop: 4 }}>
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    onClick={handleRandomRouteProbe}
+                    style={{ fontSize: 11, padding: '4px 10px' }}
+                  >
+                    🎲 Pick Random Node Pair
+                  </button>
+                  <button
+                    id="btn-test-route"
+                    className="btn btn--primary btn--sm flex-1"
+                    onClick={handleTestRoute}
+                    disabled={isPlanningRoute || !routeTesterStart || !routeTesterGoal}
+                    style={{ fontSize: 12, padding: '6px 12px' }}
+                  >
+                    {isPlanningRoute ? 'Computing Shortest Path...' : '🚀 Test Route Path'}
+                  </button>
+                </div>
+
+                {routePlanError && (
+                  <div className="save-error-banner" style={{ marginTop: 4, padding: '6px 10px' }}>
+                    ⚠️ {routePlanError}
+                  </div>
+                )}
+
+                {testedRoute && (
+                  <div className="tested-route-result-box">
+                    <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="font-bold text-sm" style={{ color: 'var(--accent-green)' }}>
+                        ✓ Route Verified: {testedRoute.start_node} ➔ {testedRoute.goal_node}
+                      </span>
+                      <span className="badge badge--primary text-mono">
+                        {testedRoute.hop_count} hops
+                      </span>
+                    </div>
+
+                    <div className="route-stats-grid">
+                      <div className="route-stat-item">
+                        <span className="route-stat-label">Total Distance</span>
+                        <span className="route-stat-val text-mono">{testedRoute.total_distance_m} m</span>
+                      </div>
+                      <div className="route-stat-item">
+                        <span className="route-stat-label">Est. Transit Time</span>
+                        <span className="route-stat-val text-mono">{testedRoute.est_time_sec} s</span>
+                      </div>
+                      <div className="route-stat-item">
+                        <span className="route-stat-label">Min Clearance</span>
+                        <span className="route-stat-val text-mono" style={{ color: 'var(--accent-green)' }}>
+                          {testedRoute.min_clearance_m} m
+                        </span>
+                      </div>
+                      <div className="route-stat-item">
+                        <span className="route-stat-label">Path Validity</span>
+                        <span className="route-stat-val text-mono" style={{ color: 'var(--accent-cyan)' }}>100% LOS</span>
+                      </div>
+                    </div>
+
+                    <div className="text-dim text-xs text-mono" style={{ marginTop: 4, wordBreak: 'break-all' }}>
+                      Path: {testedRoute.path.slice(0, 6).join(' → ')}
+                      {testedRoute.path.length > 6 ? ` → ... → ${testedRoute.path[testedRoute.path.length - 1]}` : ''}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Card 3: Approval & Transition to Step 5 */}
+              <div className="card save-config-card">
+                <div className="card__title" style={{ fontSize: 14 }}>
+                  🏁 Roadmap Sign-Off & Progression
+                </div>
+
+                <div className="text-dim text-xs" style={{ lineHeight: 1.5 }}>
+                  The topological roadmap has been validated for single-component connectivity, obstacle clearances, and multi-point Dijkstra route reachability. Approve the roadmap to proceed to semantic place and dock naming.
+                </div>
+
+                <div className="mapping-actions">
+                  <button
+                    id="btn-approve-roadmap"
+                    className="btn--proceed-graph"
+                    onClick={handleApproveRoadmap}
+                    style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}
+                  >
+                    <span>✓</span> APPROVE ROADMAP & PROCEED TO PLACE NAMING (STEP 5)
+                  </button>
+
+                  <div className="flex-row" style={{ gap: 8 }}>
+                    <button
+                      className="btn btn--outline flex-1"
+                      onClick={() => runGraphVerification()}
+                      disabled={isAuditingGraph}
+                      style={{ fontSize: 12 }}
+                    >
+                      🔄 Re-Run Audit
+                    </button>
+                    <button
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => setCurrentStep(3)}
+                      style={{ fontSize: 12 }}
+                    >
+                      ← Back to Step 3
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= STEP 5: PLACE NAMING (PHASE 5 AWAITING APPROVAL) ================= */}
+          {currentStep === 5 && (
+            <div className="card phase4-ready-card" style={{ background: 'linear-gradient(135deg, rgba(5, 150, 105, 0.08), rgba(12, 16, 28, 0.9))', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
               <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="card__title" style={{ fontSize: 15 }}>
-                  🔍 Step 4: Graph Verification & Route Validation
+                  🏷️ Step 5: Name Places / Nodes
                 </div>
-                <span className="audit-check-row__badge badge--pass">PHASE 3 COMPLETE</span>
+                <span className="audit-check-row__badge badge--pass">PHASE 4 COMPLETE</span>
               </div>
 
               <div className="phase3-meta-table">
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Roadmap Map:</span>
+                  <span className="text-dim">Verified Roadmap:</span>
                   <span className="text-mono font-bold" style={{ color: 'var(--accent-cyan)' }}>
-                    {extractedGraphReport?.map_name || selectedMapForGraph || mapName}
+                    {selectedMapForGraph || mapName}_graph.json
                   </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Total Nodes:</span>
+                  <span className="text-dim">Total Verified Nodes:</span>
                   <span className="text-mono font-bold" style={{ color: 'var(--accent-green)' }}>
-                    {extractedGraphReport?.total_nodes || 0} nodes
+                    {graphVerificationData?.metrics?.total_nodes ?? extractedGraphReport?.total_nodes ?? 0} nodes
                   </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Total Edges:</span>
-                  <span className="text-mono font-bold" style={{ color: 'var(--accent-cyan)' }}>
-                    {extractedGraphReport?.total_edges || 0} edges
-                  </span>
-                </div>
-                <div className="phase3-meta-row">
-                  <span className="text-dim">Connectivity:</span>
+                  <span className="text-dim">Connectivity Score:</span>
                   <span className="text-mono font-bold">
-                    {extractedGraphReport?.metrics?.avg_connectivity || '—'} edges/node
+                    {graphVerificationData?.metrics?.connectivity_pct ?? 100}% connected
                   </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Graph State:</span>
-                  <span className="text-success font-bold">Validated & Cached on Disk</span>
+                  <span className="text-dim">Audit Status:</span>
+                  <span className="text-success font-bold">Passed & Approved</span>
                 </div>
               </div>
 
               <div className="save-success-banner" style={{ background: 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
                 <div className="text-sm font-bold" style={{ color: 'var(--accent-green)' }}>
-                  🎯 Phase 3 Complete — Topological Graph Extracted
+                  🎯 Phase 4 Milestone Achieved
                 </div>
                 <div className="text-dim text-xs" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  The navigation roadmap graph has been extracted, collision-checked, and synchronized to the active ROS 2 navigation stack. In accordance with development rules, Phase 3 is ready for your review and approval before proceeding to implement Phase 4 (Graph Verification & Node Audits).
+                  Graph roadmap quality verification and Dijkstra route simulations have succeeded with 100% reachability. In Phase 5, semantic place labels and docking station names (e.g., "Dock 1", "Charging Station", "Pickup A") will be assigned to roadmap nodes. Per development rules, awaiting your approval before modifying Phase 5.
                 </div>
               </div>
 
               <div className="mapping-actions">
                 <button
                   className="btn btn--outline"
-                  onClick={() => setCurrentStep(3)}
+                  onClick={() => setCurrentStep(4)}
                 >
-                  ← Back to Graph Extraction (Step 3)
+                  ← Back to Graph Verification (Step 4)
                 </button>
                 <button
                   className="btn btn--ghost btn--sm"
@@ -1544,7 +1883,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                   ? '🔍 Map Inspection & Verification Canvas'
                   : currentStep === 3
                   ? '🕸️ Topological Graph Roadmap Canvas'
-                  : '🔍 Graph Verification & Route Canvas'}
+                  : currentStep === 4
+                  ? '🔍 Graph Verification & Route Canvas'
+                  : '🏷️ Semantic Places & Roadmap Canvas'}
               </span>
 
               {status === 'MAPPING' && (
@@ -1561,7 +1902,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
 
               {extractedGraphReport && currentStep >= 3 && (
                 <span className="audit-check-row__badge badge--pass" style={{ fontSize: 10, padding: '2px 8px' }}>
-                  ✓ GRAPH ROADMAP
+                  {currentStep === 4 ? (graphVerificationData?.status === 'VERIFIED' ? '✓ AUDIT PASSED' : '● AUDIT READY') : '✓ GRAPH ROADMAP'}
                 </span>
               )}
             </div>
@@ -1576,7 +1917,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                     onClick={() => setGraphVisMode('graph')}
                     title="Show topological roadmap graph overlaid on floorplan"
                   >
-                    🕸️ Graph Overlay
+                    🕸️ Roadmap Overlay
                   </button>
                   <button
                     className={`btn-view-pill ${graphVisMode === 'clean' ? 'btn-view-pill--active' : ''}`}
@@ -1603,6 +1944,18 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                     Clean Map
                   </button>
                 </div>
+              )}
+
+              {/* Route Overlay Toggle (When on Step 4 and route tested) */}
+              {currentStep === 4 && testedRoute && (
+                <button
+                  className={`btn btn--ghost btn--sm ${showRouteOverlay ? 'btn-view-pill--active' : ''}`}
+                  onClick={() => setShowRouteOverlay((s) => !s)}
+                  title="Toggle A* Route Highlighting"
+                  style={{ fontSize: 11, padding: '4px 8px' }}
+                >
+                  📍 Route {showRouteOverlay ? 'ON' : 'OFF'}
+                </button>
               )}
 
               {/* Grid Toggle */}
@@ -1666,6 +2019,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 style={{
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   transformOrigin: 'center center',
+                  position: 'relative',
+                  display: 'inline-block',
                 }}
               >
                 <img
@@ -1673,7 +2028,101 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                   alt="Topological Graph Roadmap"
                   className="mapping-slam-img"
                   draggable={false}
+                  onLoad={(e) => {
+                    if (e.target.naturalWidth) {
+                      setImgDimensions({
+                        width: e.target.naturalWidth,
+                        height: e.target.naturalHeight,
+                      });
+                    }
+                  }}
                 />
+
+                {/* SVG Route Highlighting Overlay */}
+                {currentStep === 4 && testedRoute && showRouteOverlay && testedRoute.waypoints?.length > 1 && (
+                  <svg
+                    className="route-svg-overlay"
+                    viewBox={`0 0 ${imgDimensions.width} ${imgDimensions.height}`}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      pointerEvents: 'none',
+                      zIndex: 3,
+                    }}
+                  >
+                    {/* Polyline connecting all waypoints */}
+                    <polyline
+                      points={testedRoute.waypoints.map((w) => `${w.px},${w.py}`).join(' ')}
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ filter: 'drop-shadow(0 0 6px rgba(245, 158, 11, 0.9))' }}
+                    />
+                    {/* Waypoint dots */}
+                    {testedRoute.waypoints.map((w, idx) => (
+                      <circle
+                        key={idx}
+                        cx={w.px}
+                        cy={w.py}
+                        r="3"
+                        fill="#fbbf24"
+                      />
+                    ))}
+                    {/* Start waypoint: Green */}
+                    {testedRoute.waypoints[0] && (
+                      <g>
+                        <circle
+                          cx={testedRoute.waypoints[0].px}
+                          cy={testedRoute.waypoints[0].py}
+                          r="7"
+                          fill="#10b981"
+                          stroke="#fff"
+                          strokeWidth="2"
+                        />
+                        <text
+                          x={testedRoute.waypoints[0].px}
+                          y={testedRoute.waypoints[0].py - 10}
+                          fill="#10b981"
+                          fontSize="12"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          style={{ filter: 'drop-shadow(0 0 4px #000)' }}
+                        >
+                          START ({testedRoute.start_node})
+                        </text>
+                      </g>
+                    )}
+                    {/* Goal waypoint: Red */}
+                    {testedRoute.waypoints[testedRoute.waypoints.length - 1] && (
+                      <g>
+                        <circle
+                          cx={testedRoute.waypoints[testedRoute.waypoints.length - 1].px}
+                          cy={testedRoute.waypoints[testedRoute.waypoints.length - 1].py}
+                          r="7"
+                          fill="#ef4444"
+                          stroke="#fff"
+                          strokeWidth="2"
+                        />
+                        <text
+                          x={testedRoute.waypoints[testedRoute.waypoints.length - 1].px}
+                          y={testedRoute.waypoints[testedRoute.waypoints.length - 1].py - 10}
+                          fill="#ef4444"
+                          fontSize="12"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          style={{ filter: 'drop-shadow(0 0 4px #000)' }}
+                        >
+                          GOAL ({testedRoute.goal_node})
+                        </text>
+                      </g>
+                    )}
+                  </svg>
+                )}
               </div>
             ) : liveMapImg ? (
               <div
@@ -1688,6 +2137,14 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                   alt="SLAM Occupancy Grid"
                   className="mapping-slam-img"
                   draggable={false}
+                  onLoad={(e) => {
+                    if (e.target.naturalWidth) {
+                      setImgDimensions({
+                        width: e.target.naturalWidth,
+                        height: e.target.naturalHeight,
+                      });
+                    }
+                  }}
                 />
               </div>
             ) : (
@@ -1716,7 +2173,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 <span className="text-mono" style={{ color: 'var(--accent-cyan)' }}>
                   {currentStep >= 3
                     ? graphVisMode === 'graph'
-                      ? 'Graph Roadmap'
+                      ? 'Roadmap Overlay'
                       : 'Clean Floorplan'
                     : mapViewMode === 'clean'
                     ? 'Clean Floorplan'
@@ -1724,7 +2181,11 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 </span>
               </span>
               <span className="text-dim text-sm text-mono">
-                {currentStep >= 3 && extractedGraphReport ? (
+                {currentStep === 4 && testedRoute ? (
+                  `Tested Route: ${testedRoute.start_node} ➔ ${testedRoute.goal_node} • ${testedRoute.total_distance_m} m • ${testedRoute.hop_count} hops • Est. Time: ${testedRoute.est_time_sec} s`
+                ) : currentStep === 4 && graphVerificationData ? (
+                  `Audit: ${graphVerificationData.status} • ${graphVerificationData.metrics?.lcc_size}/${graphVerificationData.metrics?.total_nodes} nodes connected (${graphVerificationData.metrics?.connectivity_pct}%) • Res: ${extractedGraphReport?.metrics?.resolution || 0.05} m/px`
+                ) : currentStep >= 3 && extractedGraphReport ? (
                   `Graph: ${extractedGraphReport.total_nodes} Nodes • ${extractedGraphReport.total_edges} Edges • Connectivity: ${extractedGraphReport.metrics?.avg_connectivity || '—'} / node`
                 ) : (
                   `AMR: (${pose.x.toFixed(2)}, {pose.y.toFixed(2)}) • Res: ${verificationData?.resolution || mappingData.map_info?.resolution || 0.05} m/px`

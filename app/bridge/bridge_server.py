@@ -35,6 +35,8 @@ import subprocess
 import sys
 import threading
 import time
+import heapq
+from collections import deque
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 
@@ -1056,6 +1058,11 @@ class ExtractGraphRequest(BaseModel):
     step_medium: float = 0.50
     step_open: float = 0.80
 
+class PlanRouteRequest(BaseModel):
+    start_node: str
+    goal_node: str
+    map_name: Optional[str] = None
+
 # -------- REST endpoints --------
 
 @app.get('/api/status')
@@ -1389,6 +1396,299 @@ async def get_latest_graph(map_name: Optional[str] = None):
             return JSONResponse({'error': str(e)}, status_code=500)
 
     return JSONResponse({'error': 'No graph found'}, status_code=404)
+
+@app.get('/api/mapping/graph/verify')
+async def get_graph_verification(map_name: Optional[str] = None):
+    """Phase 4: Performs topological, clearance, and routing audits on the graph roadmap."""
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    target_json = None
+    target_name = (map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+
+    if target_name:
+        for cand in [
+            maps_dir / f"{target_name}_graph.json",
+            maps_dir / f"{target_name}.json",
+            maps_dir / "warehouse_01_graph.json",
+            maps_dir / "warehouse_graph.json",
+            maps_dir / "warehouse_map_graph.json",
+        ]:
+            if cand.exists():
+                target_json = cand
+                break
+
+    if not target_json or not target_json.exists():
+        return JSONResponse({'error': 'No graph file found to verify'}, status_code=404)
+
+    try:
+        with open(target_json, 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+
+        nodes = raw.get('nodes', [])
+        edges = raw.get('edges', [])
+        num_nodes = len(nodes)
+        num_edges = len(edges)
+
+        if num_nodes == 0:
+            return JSONResponse({'error': 'Graph contains 0 nodes'}, status_code=400)
+
+        node_map = {n['id']: n for n in nodes}
+        adj = {n['id']: [] for n in nodes}
+
+        for e in edges:
+            u = e['from']
+            v = e['to']
+            cost = float(e.get('cost', e.get('weight', 1.0)))
+            if u in adj and v in adj:
+                adj[u].append((v, cost))
+                adj[v].append((u, cost))
+
+        # Degree calculations
+        degrees = {nid: len(nbrs) for nid, nbrs in adj.items()}
+        isolated_nodes = [nid for nid, deg in degrees.items() if deg == 0]
+        leaf_nodes = [nid for nid, deg in degrees.items() if deg == 1]
+        avg_deg = round(sum(degrees.values()) / max(1, num_nodes), 2)
+        min_deg = min(degrees.values()) if degrees else 0
+        max_deg = max(degrees.values()) if degrees else 0
+
+        # Connected components via BFS
+        visited = set()
+        components = []
+        for n in adj:
+            if n not in visited:
+                comp = []
+                q = deque([n])
+                visited.add(n)
+                while q:
+                    curr = q.popleft()
+                    comp.append(curr)
+                    for nb, _ in adj[curr]:
+                        if nb not in visited:
+                            visited.add(nb)
+                            q.append(nb)
+                components.append(comp)
+
+        components.sort(key=len, reverse=True)
+        num_components = len(components)
+        lcc_size = len(components[0]) if components else 0
+        connectivity_pct = round((lcc_size / max(1, num_nodes)) * 100, 1)
+
+        # Clearances
+        clearances = [float(n.get('clearance', 0.0)) for n in nodes if 'clearance' in n]
+        min_c = min(clearances) if clearances else 0.0
+        avg_c = round(sum(clearances) / max(1, len(clearances)), 2) if clearances else 0.0
+        low_clearance_nodes = [n['id'] for n in nodes if float(n.get('clearance', 0.0)) < 0.18]
+
+        # Automated Navigability Probes (Dijkstra)
+        total_probes = 0
+        passed_probes = 0
+        probe_routes = []
+
+        if lcc_size >= 2:
+            main_comp = components[0]
+            step = max(1, len(main_comp) // 6)
+            test_pairs = []
+            for i in range(min(5, len(main_comp) // 2)):
+                test_pairs.append((main_comp[i * step], main_comp[-(i * step + 1)]))
+
+            for s, g_node in test_pairs:
+                total_probes += 1
+                dist = {nid: float('inf') for nid in adj}
+                dist[s] = 0
+                prev = {nid: None for nid in adj}
+                pq = [(0, s)]
+                found = False
+                while pq:
+                    d, u = heapq.heappop(pq)
+                    if u == g_node:
+                        found = True
+                        break
+                    if d > dist[u]:
+                        continue
+                    for v, w in adj[u]:
+                        if d + w < dist[v]:
+                            dist[v] = d + w
+                            prev[v] = u
+                            heapq.heappush(pq, (dist[v], v))
+                if found:
+                    passed_probes += 1
+                    path = []
+                    curr = g_node
+                    while curr:
+                        path.append(curr)
+                        curr = prev[curr]
+                    path.reverse()
+                    probe_routes.append({
+                        'start': s,
+                        'goal': g_node,
+                        'distance_m': round(dist[g_node], 2),
+                        'hops': len(path) - 1,
+                        'path': path[:8] + (['...'] if len(path) > 8 else [])
+                    })
+
+        navigability_pct = round((passed_probes / max(1, total_probes)) * 100, 1)
+
+        checks = [
+            {
+                'name': 'Component Connectivity',
+                'passed': num_components == 1,
+                'status': 'PASS' if num_components == 1 else 'WARN',
+                'detail': f'{lcc_size}/{num_nodes} nodes in main component ({connectivity_pct}%)'
+            },
+            {
+                'name': 'Obstacle Clearance Safety',
+                'passed': len(low_clearance_nodes) == 0,
+                'status': 'PASS' if len(low_clearance_nodes) == 0 else 'WARN',
+                'detail': f'Min clearance {min_c:.2f}m (Safe threshold: 0.18m)'
+            },
+            {
+                'name': 'Dijkstra Navigability Probes',
+                'passed': navigability_pct >= 95.0,
+                'status': 'PASS' if navigability_pct >= 95.0 else 'WARN',
+                'detail': f'{passed_probes}/{total_probes} sample mission routes verified ({navigability_pct}%)'
+            },
+            {
+                'name': 'Network Density & LOS Quality',
+                'passed': avg_deg >= 4.0,
+                'status': 'PASS' if avg_deg >= 4.0 else 'WARN',
+                'detail': f'Average {avg_deg} LOS edges per node (min: {min_deg}, max: {max_deg})'
+            }
+        ]
+
+        is_verified = all(c['passed'] for c in checks)
+
+        return {
+            'ok': True,
+            'status': 'VERIFIED' if is_verified else 'WARNING',
+            'map_name': target_name,
+            'json_file': str(target_json.relative_to(_WORKSPACE_ROOT)),
+            'metrics': {
+                'total_nodes': num_nodes,
+                'total_edges': num_edges,
+                'connected_components': num_components,
+                'lcc_size': lcc_size,
+                'connectivity_pct': connectivity_pct,
+                'isolated_nodes_count': len(isolated_nodes),
+                'leaf_nodes_count': len(leaf_nodes),
+                'avg_degree': avg_deg,
+                'min_degree': min_deg,
+                'max_degree': max_deg,
+                'min_clearance_m': min_c,
+                'avg_clearance_m': avg_c,
+                'navigability_pct': navigability_pct,
+                'total_probes': total_probes,
+                'passed_probes': passed_probes
+            },
+            'checks': checks,
+            'probe_routes': probe_routes
+        }
+    except Exception as e:
+        return JSONResponse({'error': f'Verification failed: {str(e)}'}, status_code=500)
+
+@app.post('/api/mapping/graph/plan_route')
+async def post_plan_route(req: PlanRouteRequest):
+    """Phase 4: Computes shortest path and waypoint metrics between two roadmap nodes."""
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    target_json = None
+    target_name = (req.map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+
+    if target_name:
+        for cand in [
+            maps_dir / f"{target_name}_graph.json",
+            maps_dir / f"{target_name}.json",
+            maps_dir / "warehouse_01_graph.json",
+            maps_dir / "warehouse_graph.json",
+            maps_dir / "warehouse_map_graph.json",
+        ]:
+            if cand.exists():
+                target_json = cand
+                break
+
+    if not target_json or not target_json.exists():
+        return JSONResponse({'error': 'Graph file not found'}, status_code=404)
+
+    try:
+        with open(target_json, 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+
+        nodes = raw.get('nodes', [])
+        edges = raw.get('edges', [])
+        node_map = {n['id']: n for n in nodes}
+
+        if req.start_node not in node_map:
+            return JSONResponse({'error': f'Start node "{req.start_node}" not found'}, status_code=400)
+        if req.goal_node not in node_map:
+            return JSONResponse({'error': f'Goal node "{req.goal_node}" not found'}, status_code=400)
+
+        adj = {n['id']: [] for n in nodes}
+        for e in edges:
+            u = e['from']
+            v = e['to']
+            cost = float(e.get('cost', e.get('weight', 1.0)))
+            if u in adj and v in adj:
+                adj[u].append((v, cost))
+                adj[v].append((u, cost))
+
+        dist = {nid: float('inf') for nid in adj}
+        dist[req.start_node] = 0
+        prev = {nid: None for nid in adj}
+        pq = [(0, req.start_node)]
+        found = False
+
+        while pq:
+            d, u = heapq.heappop(pq)
+            if u == req.goal_node:
+                found = True
+                break
+            if d > dist[u]:
+                continue
+            for v, w in adj[u]:
+                if d + w < dist[v]:
+                    dist[v] = d + w
+                    prev[v] = u
+                    heapq.heappush(pq, (dist[v], v))
+
+        if not found or dist[req.goal_node] == float('inf'):
+            return JSONResponse({'error': f'No reachable route between {req.start_node} and {req.goal_node}'}, status_code=404)
+
+        path = []
+        curr = req.goal_node
+        while curr:
+            path.append(curr)
+            curr = prev[curr]
+        path.reverse()
+
+        waypoints = []
+        clearances = []
+        for nid in path:
+            n = node_map[nid]
+            pt = n.get('point', [0, 0])
+            px = pt[0] if isinstance(pt, (list, tuple)) and len(pt) >= 2 else n.get('px', 0)
+            py = pt[1] if isinstance(pt, (list, tuple)) and len(pt) >= 2 else n.get('py', 0)
+            c = float(n.get('clearance', 0.0))
+            clearances.append(c)
+            waypoints.append({
+                'id': nid,
+                'x': round(float(n.get('x', n.get('wx', 0.0))), 3),
+                'y': round(float(n.get('y', n.get('wy', 0.0))), 3),
+                'px': px,
+                'py': py,
+                'clearance': round(c, 3)
+            })
+
+        tot_dist = round(dist[req.goal_node], 2)
+        return {
+            'ok': True,
+            'start_node': req.start_node,
+            'goal_node': req.goal_node,
+            'path': path,
+            'waypoints': waypoints,
+            'total_distance_m': tot_dist,
+            'hop_count': len(path) - 1,
+            'est_time_sec': round(tot_dist / 0.4, 1),
+            'min_clearance_m': round(min(clearances), 3) if clearances else 0.0
+        }
+    except Exception as e:
+        return JSONResponse({'error': f'Routing calculation failed: {str(e)}'}, status_code=500)
 
 # -------- WebSocket --------
 

@@ -1940,7 +1940,7 @@ html, body, #root {
   gap: 10px;
 }
 
-/* Phase 4 readiness preview */
+/* Phase 4 & Phase 5 readiness preview */
 .phase4-ready-card {
   padding: var(--gap-md);
   display: flex;
@@ -1949,6 +1949,116 @@ html, body, #root {
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(12, 16, 28, 0.9));
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
+
+/* ==========================================================================
+   Phase 4: Roadmap Quality Verification & Interactive Route Tester
+   ========================================================================== */
+
+.graph-verify-panel-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.graph-verify-card {
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  background: linear-gradient(165deg, rgba(16, 185, 129, 0.04) 0%, rgba(15, 23, 42, 0.85) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.graph-verify-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #10b981, #06b6d4, transparent);
+}
+
+.route-tester-card {
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: linear-gradient(165deg, rgba(14, 165, 233, 0.04) 0%, rgba(15, 23, 42, 0.85) 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.route-tester-endpoints-grid {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.route-tester-endpoints-grid > .mapping-field {
+  flex: 1;
+}
+
+.route-endpoints-middle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 2px;
+}
+
+.tested-route-result-box {
+  background: rgba(16, 185, 129, 0.06);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.route-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.route-stat-item {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-xs);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.route-stat-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.route-stat-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.route-svg-overlay {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.route-svg-overlay polyline {
+  stroke-dasharray: 8 4;
+  animation: dashAnimation 1.5s linear infinite;
+}
+
+@keyframes dashAnimation {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 
 
 
