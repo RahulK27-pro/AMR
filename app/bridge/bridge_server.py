@@ -1063,6 +1063,25 @@ class PlanRouteRequest(BaseModel):
     goal_node: str
     map_name: Optional[str] = None
 
+class NamedPlace(BaseModel):
+    id: str
+    name: str
+    node_id: str
+    type: str = "dock"  # dock, charging, pickup, dropoff, staging, waypoint
+    x: float = 0.0
+    y: float = 0.0
+    px: int = 0
+    py: int = 0
+    theta: float = 0.0
+    icon: Optional[str] = "📍"
+    color: Optional[str] = "#10b981"
+    description: Optional[str] = ""
+
+class SavePlacesRequest(BaseModel):
+    map_name: Optional[str] = None
+    places: List[NamedPlace]
+
+
 # -------- REST endpoints --------
 
 @app.get('/api/status')
@@ -1689,6 +1708,247 @@ async def post_plan_route(req: PlanRouteRequest):
         }
     except Exception as e:
         return JSONResponse({'error': f'Routing calculation failed: {str(e)}'}, status_code=500)
+
+# -------- Phase 5: Name Places / Nodes Endpoints --------
+
+@app.get('/api/mapping/places')
+async def get_named_places(map_name: Optional[str] = None):
+    """Phase 5: Retrieve all named places and stations for a roadmap."""
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    target_name = (map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    
+    candidates = [
+        maps_dir / f"{target_name}_places.json",
+        maps_dir / f"{target_name}_graph.json",
+        maps_dir / "warehouse_places.json",
+        maps_dir / "warehouse_graph.json",
+        maps_dir / "warehouse_01_graph.json",
+    ]
+    
+    for cand in candidates:
+        if cand.exists():
+            try:
+                with open(cand, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    return {'ok': True, 'map_name': target_name, 'places': data, 'source_file': cand.name}
+                elif isinstance(data, dict) and 'places' in data and isinstance(data['places'], list):
+                    return {'ok': True, 'map_name': target_name, 'places': data['places'], 'source_file': cand.name}
+            except Exception as e:
+                logger.warning(f"Failed to read places from {cand}: {e}")
+
+    return {'ok': True, 'map_name': target_name, 'places': [], 'source_file': None}
+
+
+@app.post('/api/mapping/places/save')
+async def post_save_named_places(req: SavePlacesRequest):
+    """Phase 5: Persist named places into active graph and dedicated places files."""
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    target_name = (req.map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    places_data = [p.dict() for p in req.places]
+    
+    saved_files = []
+    
+    # 1. Save dedicated <target_name>_places.json
+    places_file = maps_dir / f"{target_name}_places.json"
+    with open(places_file, 'w', encoding='utf-8') as f:
+        json.dump(places_data, f, indent=2)
+    saved_files.append(str(places_file.relative_to(_WORKSPACE_ROOT)))
+    
+    # Also save standard warehouse_places.json
+    wh_places_file = maps_dir / "warehouse_places.json"
+    with open(wh_places_file, 'w', encoding='utf-8') as f:
+        json.dump(places_data, f, indent=2)
+    saved_files.append(str(wh_places_file.relative_to(_WORKSPACE_ROOT)))
+    
+    # 2. Inject places into corresponding graph JSON files
+    for graph_cand in [
+        maps_dir / f"{target_name}_graph.json",
+        maps_dir / "warehouse_graph.json",
+        maps_dir / "warehouse_01_graph.json"
+    ]:
+        if graph_cand.exists():
+            try:
+                with open(graph_cand, 'r', encoding='utf-8') as f:
+                    raw_graph = json.load(f)
+                if isinstance(raw_graph, dict):
+                    raw_graph['places'] = places_data
+                    with open(graph_cand, 'w', encoding='utf-8') as f:
+                        json.dump(raw_graph, f, indent=2)
+                    saved_files.append(str(graph_cand.relative_to(_WORKSPACE_ROOT)))
+            except Exception as e:
+                logger.error(f"Error injecting places into {graph_cand}: {e}")
+                
+    # 3. Synchronize to install share directory if it exists
+    share_maps = _WORKSPACE_ROOT / "install" / "agv_description" / "share" / "agv_description" / "maps"
+    if share_maps.exists():
+        try:
+            with open(share_maps / "warehouse_places.json", 'w', encoding='utf-8') as f:
+                json.dump(places_data, f, indent=2)
+            if (share_maps / "warehouse_graph.json").exists():
+                with open(share_maps / "warehouse_graph.json", 'r', encoding='utf-8') as f:
+                    sg = json.load(f)
+                if isinstance(sg, dict):
+                    sg['places'] = places_data
+                    with open(share_maps / "warehouse_graph.json", 'w', encoding='utf-8') as f:
+                        json.dump(sg, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not sync places to install share: {e}")
+
+    return {
+        'ok': True,
+        'map_name': target_name,
+        'count': len(places_data),
+        'places': places_data,
+        'saved_files': list(set(saved_files))
+    }
+
+
+@app.post('/api/mapping/places/default_templates')
+async def post_generate_default_templates(map_name: Optional[str] = None):
+    """Phase 5: Auto-generate intelligent default warehouse stations based on roadmap topology."""
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    target_name = (map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    
+    # Load roadmap nodes
+    target_graph = None
+    for cand in [
+        maps_dir / f"{target_name}_graph.json",
+        maps_dir / "warehouse_01_graph.json",
+        maps_dir / "warehouse_graph.json",
+    ]:
+        if cand.exists():
+            target_graph = cand
+            break
+
+    if not target_graph:
+        return JSONResponse({'error': 'Graph roadmap not found to generate place templates'}, status_code=404)
+
+    try:
+        with open(target_graph, 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+        nodes = raw.get('nodes', [])
+        if not nodes:
+            return JSONResponse({'error': 'Graph contains no nodes'}, status_code=400)
+            
+        total_n = len(nodes)
+        
+        n0 = nodes[0]
+        idx_in = min(total_n - 1, max(1, total_n // 4))
+        n_in = nodes[idx_in]
+        idx_mid = min(total_n - 1, max(1, total_n // 2))
+        n_mid = nodes[idx_mid]
+        idx_out = min(total_n - 1, max(1, (3 * total_n) // 4))
+        n_out = nodes[idx_out]
+        idx_last = total_n - 1
+        n_last = nodes[idx_last]
+        
+        templates = [
+            {
+                'id': 'place_charging_dock',
+                'name': 'Home Charging Station',
+                'node_id': n0['id'],
+                'type': 'charging',
+                'x': round(float(n0.get('x', n0.get('wx', 0.0))), 3),
+                'y': round(float(n0.get('y', n0.get('wy', 0.0))), 3),
+                'px': n0.get('px', 0),
+                'py': n0.get('py', 0),
+                'theta': 0.0,
+                'icon': '⚡',
+                'color': '#10b981',
+                'description': 'Primary automated battery dock and fleet base'
+            },
+            {
+                'id': 'place_inbound_pickup',
+                'name': 'Inbound Intake Bay',
+                'node_id': n_in['id'],
+                'type': 'pickup',
+                'x': round(float(n_in.get('x', n_in.get('wx', 0.0))), 3),
+                'y': round(float(n_in.get('y', n_in.get('wy', 0.0))), 3),
+                'px': n_in.get('px', 0),
+                'py': n_in.get('py', 0),
+                'theta': 1.57,
+                'icon': '📦',
+                'color': '#38bdf8',
+                'description': 'Receiving dock for incoming materials'
+            },
+            {
+                'id': 'place_assembly_staging',
+                'name': 'Assembly WIP Staging',
+                'node_id': n_mid['id'],
+                'type': 'staging',
+                'x': round(float(n_mid.get('x', n_mid.get('wx', 0.0))), 3),
+                'y': round(float(n_mid.get('y', n_mid.get('wy', 0.0))), 3),
+                'px': n_mid.get('px', 0),
+                'py': n_mid.get('py', 0),
+                'theta': 3.14,
+                'icon': '🏢',
+                'color': '#a855f7',
+                'description': 'Intermediate buffer staging for sub-assemblies'
+            },
+            {
+                'id': 'place_outbound_dispatch',
+                'name': 'Outbound Dispatch Bay',
+                'node_id': n_out['id'],
+                'type': 'dropoff',
+                'x': round(float(n_out.get('x', n_out.get('wx', 0.0))), 3),
+                'y': round(float(n_out.get('y', n_out.get('wy', 0.0))), 3),
+                'px': n_out.get('px', 0),
+                'py': n_out.get('py', 0),
+                'theta': 4.71,
+                'icon': '📤',
+                'color': '#f59e0b',
+                'description': 'Outbound packaging and pallet dispatch area'
+            },
+            {
+                'id': 'place_quality_waypoint',
+                'name': 'Inspection Checkpoint',
+                'node_id': n_last['id'],
+                'type': 'waypoint',
+                'x': round(float(n_last.get('x', n_last.get('wx', 0.0))), 3),
+                'y': round(float(n_last.get('y', n_last.get('wy', 0.0))), 3),
+                'px': n_last.get('px', 0),
+                'py': n_last.get('py', 0),
+                'theta': 0.0,
+                'icon': '🎯',
+                'color': '#ec4899',
+                'description': 'Automated optical inspection and barcode scanning'
+            }
+        ]
+        
+        return {'ok': True, 'templates': templates, 'map_name': target_name, 'total_nodes': total_n}
+    except Exception as e:
+        return JSONResponse({'error': f'Failed to generate templates: {str(e)}'}, status_code=500)
+
+
+@app.delete('/api/mapping/places/{place_id}')
+async def delete_named_place(place_id: str, map_name: Optional[str] = None):
+    """Phase 5: Remove a named place from the saved places list."""
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    target_name = (map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    
+    places_file = maps_dir / f"{target_name}_places.json"
+    if not places_file.exists():
+        places_file = maps_dir / "warehouse_places.json"
+        
+    if not places_file.exists():
+        return JSONResponse({'error': 'No places file found to delete from'}, status_code=404)
+        
+    try:
+        with open(places_file, 'r', encoding='utf-8') as f:
+            places = json.load(f)
+            
+        orig_len = len(places)
+        places = [p for p in places if p.get('id') != place_id]
+        
+        if len(places) == orig_len:
+            return JSONResponse({'error': f'Place ID "{place_id}" not found'}, status_code=404)
+            
+        req = SavePlacesRequest(map_name=target_name, places=[NamedPlace(**p) for p in places])
+        return await post_save_named_places(req)
+    except Exception as e:
+        return JSONResponse({'error': f'Delete failed: {str(e)}'}, status_code=500)
+
 
 # -------- WebSocket --------
 

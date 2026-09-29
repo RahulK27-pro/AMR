@@ -79,6 +79,33 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const [isGraphApproved, setIsGraphApproved] = useState(false);
   const [imgDimensions, setImgDimensions] = useState({ width: 1000, height: 1000 });
 
+  // Phase 5: Name Places / Nodes state
+  const [namedPlaces, setNamedPlaces] = useState([]);
+  const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
+  const [isSavingPlaces, setIsSavingPlaces] = useState(false);
+  const [placesSaveSuccess, setPlacesSaveSuccess] = useState(false);
+  const [placesError, setPlacesError] = useState(null);
+  const [selectedPlaceId, setSelectedPlaceId] = useState(null);
+  const [isEditingPlace, setIsEditingPlace] = useState(false);
+  const [isPickNodeOnCanvasMode, setIsPickNodeOnCanvasMode] = useState(false);
+  const [placeTypeFilter, setPlaceTypeFilter] = useState('ALL');
+  const [isPlacesApproved, setIsPlacesApproved] = useState(false);
+  const [placeForm, setPlaceForm] = useState({
+    id: '',
+    name: '',
+    node_id: 'N0',
+    type: 'charging',
+    x: 0,
+    y: 0,
+    px: 0,
+    py: 0,
+    theta: 0,
+    icon: '⚡',
+    color: '#10b981',
+    description: '',
+  });
+
+
   // Viewport pan & zoom
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -541,6 +568,242 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     setCurrentStep(5);
   };
 
+  // ---- Phase 5: Name Places / Nodes Callbacks & Handlers ----
+  const fetchNamedPlaces = useCallback(async () => {
+    setIsLoadingPlaces(true);
+    setPlacesError(null);
+    try {
+      const target = selectedMapForGraph || mapName || 'warehouse_01';
+      const res = await bridge.getNamedPlaces(target);
+      if (res?.ok && Array.isArray(res.places) && res.places.length > 0) {
+        setNamedPlaces(res.places);
+      } else {
+        const tmpl = await bridge.getDefaultPlaceTemplates(target);
+        if (tmpl?.ok && Array.isArray(tmpl.templates)) {
+          setNamedPlaces(tmpl.templates);
+        }
+      }
+    } catch (err) {
+      setPlacesError(err.message || 'Failed to fetch places');
+    } finally {
+      setIsLoadingPlaces(false);
+    }
+  }, [selectedMapForGraph, mapName]);
+
+  useEffect(() => {
+    if (currentStep === 5) {
+      fetchNamedPlaces();
+      if (!extractedGraphReport) {
+        fetchExistingGraph();
+      }
+      const nodes = extractedGraphReport?.nodes || [];
+      if (nodes.length > 0 && (!placeForm.node_id || placeForm.node_id === 'N0')) {
+        setPlaceForm((prev) => ({
+          ...prev,
+          node_id: nodes[0].id,
+          x: Number(Number(nodes[0].x ?? nodes[0].wx ?? 0).toFixed(3)),
+          y: Number(Number(nodes[0].y ?? nodes[0].wy ?? 0).toFixed(3)),
+          px: nodes[0].px || 0,
+          py: nodes[0].py || 0,
+        }));
+      }
+    }
+  }, [currentStep, fetchNamedPlaces, extractedGraphReport, fetchExistingGraph]);
+
+  const handleSelectNodeForPlace = (nodeId) => {
+    const nodes = extractedGraphReport?.nodes || [];
+    const found = nodes.find((n) => n.id === nodeId);
+    if (found) {
+      setPlaceForm((prev) => ({
+        ...prev,
+        node_id: found.id,
+        x: Number(Number(found.x ?? found.wx ?? 0).toFixed(3)),
+        y: Number(Number(found.y ?? found.wy ?? 0).toFixed(3)),
+        px: found.px ?? 0,
+        py: found.py ?? 0,
+      }));
+    } else {
+      setPlaceForm((prev) => ({ ...prev, node_id: nodeId }));
+    }
+  };
+
+  const handleApplyPlaceQuickChip = (chip) => {
+    setPlaceForm((prev) => ({
+      ...prev,
+      name: chip.name,
+      type: chip.type,
+      icon: chip.icon,
+      color: chip.color,
+      description: chip.description || prev.description,
+    }));
+  };
+
+  const handleSelectPlaceForEdit = (place) => {
+    setSelectedPlaceId(place.id);
+    setIsEditingPlace(true);
+    setPlaceForm({
+      id: place.id,
+      name: place.name,
+      node_id: place.node_id,
+      type: place.type || 'charging',
+      x: place.x || 0,
+      y: place.y || 0,
+      px: place.px || 0,
+      py: place.py || 0,
+      theta: place.theta || 0,
+      icon: place.icon || '📍',
+      color: place.color || '#10b981',
+      description: place.description || '',
+    });
+  };
+
+  const handleCancelEditPlace = () => {
+    setIsEditingPlace(false);
+    setSelectedPlaceId(null);
+    const nodes = extractedGraphReport?.nodes || [];
+    setPlaceForm({
+      id: '',
+      name: '',
+      node_id: nodes[0]?.id || 'N0',
+      type: 'charging',
+      x: nodes[0]?.x || 0,
+      y: nodes[0]?.y || 0,
+      px: nodes[0]?.px || 0,
+      py: nodes[0]?.py || 0,
+      theta: 0,
+      icon: '⚡',
+      color: '#10b981',
+      description: '',
+    });
+  };
+
+  const handleAddOrUpdatePlace = () => {
+    if (!placeForm.name.trim()) {
+      setPlacesError('Please enter a valid station name');
+      return;
+    }
+    const nodes = extractedGraphReport?.nodes || [];
+    const targetNode = nodes.find((n) => n.id === placeForm.node_id) || {
+      id: placeForm.node_id,
+      x: placeForm.x,
+      y: placeForm.y,
+      px: placeForm.px,
+      py: placeForm.py,
+    };
+
+    const newPlace = {
+      id: isEditingPlace && placeForm.id ? placeForm.id : `place_${Date.now()}`,
+      name: placeForm.name.trim(),
+      node_id: placeForm.node_id || (nodes[0]?.id ?? 'N0'),
+      type: placeForm.type || 'charging',
+      x: Number(Number(targetNode.x ?? targetNode.wx ?? placeForm.x).toFixed(3)),
+      y: Number(Number(targetNode.y ?? targetNode.wy ?? placeForm.y).toFixed(3)),
+      px: targetNode.px ?? placeForm.px ?? 0,
+      py: targetNode.py ?? placeForm.py ?? 0,
+      theta: Number(placeForm.theta) || 0,
+      icon: placeForm.icon || '📍',
+      color: placeForm.color || '#10b981',
+      description: placeForm.description?.trim() || '',
+    };
+
+    setNamedPlaces((prev) => {
+      const idx = prev.findIndex((p) => p.id === newPlace.id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = newPlace;
+        return updated;
+      }
+      return [...prev, newPlace];
+    });
+
+    handleCancelEditPlace();
+    setSelectedPlaceId(newPlace.id);
+    setPlacesError(null);
+  };
+
+  const handleDeletePlace = (placeId) => {
+    setNamedPlaces((prev) => prev.filter((p) => p.id !== placeId));
+    if (selectedPlaceId === placeId) {
+      handleCancelEditPlace();
+    }
+  };
+
+  const handleSavePlacesToDisk = async () => {
+    setIsSavingPlaces(true);
+    setPlacesError(null);
+    try {
+      const target = selectedMapForGraph || mapName || 'warehouse_01';
+      const res = await bridge.saveNamedPlaces(namedPlaces, target);
+      if (res?.ok) {
+        setPlacesSaveSuccess(true);
+        setTimeout(() => setPlacesSaveSuccess(false), 4000);
+      } else {
+        setPlacesError(res?.error || 'Failed to save places to disk');
+      }
+    } catch (err) {
+      setPlacesError(err.message || 'Error saving places');
+    } finally {
+      setIsSavingPlaces(false);
+    }
+  };
+
+  const handleResetToPlaceTemplates = async () => {
+    setIsLoadingPlaces(true);
+    setPlacesError(null);
+    try {
+      const target = selectedMapForGraph || mapName || 'warehouse_01';
+      const res = await bridge.getDefaultPlaceTemplates(target);
+      if (res?.ok && Array.isArray(res.templates)) {
+        setNamedPlaces(res.templates);
+      }
+    } catch (err) {
+      setPlacesError(err.message || 'Failed to generate templates');
+    } finally {
+      setIsLoadingPlaces(false);
+    }
+  };
+
+  const handleApprovePlaces = async () => {
+    if (namedPlaces.length === 0) {
+      setPlacesError('Please define at least one named station or place before approving');
+      return;
+    }
+    await handleSavePlacesToDisk();
+    setIsPlacesApproved(true);
+    setCurrentStep(6);
+  };
+
+  const handleCanvasClickForNodePick = (e) => {
+    if (currentStep !== 5 || !isPickNodeOnCanvasMode) return;
+    const img = e.currentTarget.querySelector('img.mapping-slam-img');
+    if (!img) return;
+    const rect = img.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const scaleX = (imgDimensions.width || 1000) / rect.width;
+    const scaleY = (imgDimensions.height || 1000) / rect.height;
+    const targetPx = Math.round(clickX * scaleX);
+    const targetPy = Math.round(clickY * scaleY);
+
+    const nodes = extractedGraphReport?.nodes || [];
+    if (nodes.length === 0) return;
+    let closest = nodes[0];
+    let minD = Infinity;
+    for (const n of nodes) {
+      const d = Math.hypot((n.px || 0) - targetPx, (n.py || 0) - targetPy);
+      if (d < minD) {
+        minD = d;
+        closest = n;
+      }
+    }
+
+    if (closest) {
+      handleSelectNodeForPlace(closest.id);
+      setIsPickNodeOnCanvasMode(false);
+    }
+  };
+
+
   // Canvas pan & zoom handlers
   const handleWheel = (e) => {
     e.preventDefault();
@@ -588,7 +851,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       ? 'Step 3: Graph Extraction & Topological Roadmap Generation'
       : currentStep === 4
       ? 'Step 4: Roadmap Quality Verification & Route Pathfinding'
-      : 'Step 5: Semantic Place Naming & Station Setup';
+      : currentStep === 5
+      ? 'Step 5: Semantic Place Naming & Station Setup'
+      : 'Step 6: Fleet Navigation Using Place Names';
 
   return (
     <div className="mapping-workflow-container">
@@ -689,19 +954,30 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             className={`stepper-step ${
               currentStep === 5
                 ? 'stepper-step--active'
+                : (isPlacesApproved || currentStep > 5)
+                ? 'stepper-step--completed'
                 : 'stepper-step--pending'
             }`}
             onClick={() => (isGraphApproved || currentStep > 4) && setCurrentStep(5)}
             style={{ cursor: isGraphApproved || currentStep > 4 ? 'pointer' : 'default' }}
             title={isGraphApproved || currentStep > 4 ? 'Review Step 5 (Place Naming)' : 'Pending Step 4 roadmap approval'}
           >
-            <span className="step-num">5</span>
+            <span className="step-num">{(isPlacesApproved || currentStep > 5) ? '✓' : '5'}</span>
             <span className="step-label">Place Naming</span>
           </div>
 
           <div className="stepper-arrow">➔</div>
 
-          <div className="stepper-step stepper-step--pending">
+          <div
+            className={`stepper-step ${
+              currentStep === 6
+                ? 'stepper-step--active'
+                : 'stepper-step--pending'
+            }`}
+            onClick={() => isPlacesApproved && setCurrentStep(6)}
+            style={{ cursor: isPlacesApproved ? 'pointer' : 'default' }}
+            title={isPlacesApproved ? 'Step 6 (Navigation)' : 'Pending Step 5 completion'}
+          >
             <span className="step-num">6</span>
             <span className="step-label">Navigation</span>
           </div>
@@ -1809,58 +2085,473 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             </div>
           )}
 
-          {/* ================= STEP 5: PLACE NAMING (PHASE 5 AWAITING APPROVAL) ================= */}
+          {/* ================= STEP 5: PLACE NAMING & FLEET STATIONS ================= */}
           {currentStep === 5 && (
-            <div className="card phase4-ready-card" style={{ background: 'linear-gradient(135deg, rgba(5, 150, 105, 0.08), rgba(12, 16, 28, 0.9))', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+            <div className="places-panel-container flex-col" style={{ gap: 12 }}>
+              {/* Card 1: Station & Place Builder */}
+              <div className="card place-builder-card">
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="card__title" style={{ fontSize: 15 }}>
+                    🏷️ {isEditingPlace ? 'Edit Place / Station' : 'Create Named Place'}
+                  </div>
+                  <span className={`audit-check-row__badge ${isEditingPlace ? 'badge--warn' : 'badge--pass'}`}>
+                    {isEditingPlace ? '✏️ EDITING' : '➕ NEW PLACE'}
+                  </span>
+                </div>
+
+                {/* Quick Templates Chips */}
+                <div className="quick-chips-section">
+                  <span className="text-dim text-xs" style={{ fontSize: 11 }}>Quick Templates:</span>
+                  <div className="quick-chips-row">
+                    <button
+                      type="button"
+                      className="chip-btn"
+                      onClick={() => handleApplyPlaceQuickChip({
+                        name: 'Home Charging Station',
+                        type: 'charging',
+                        icon: '⚡',
+                        color: '#10b981',
+                        description: 'Primary automated recharging dock'
+                      })}
+                    >
+                      ⚡ Charging Dock
+                    </button>
+                    <button
+                      type="button"
+                      className="chip-btn"
+                      onClick={() => handleApplyPlaceQuickChip({
+                        name: 'Inbound Intake Bay',
+                        type: 'pickup',
+                        icon: '📦',
+                        color: '#38bdf8',
+                        description: 'Pallet receiving and intake staging'
+                      })}
+                    >
+                      📦 Inbound Pickup
+                    </button>
+                    <button
+                      type="button"
+                      className="chip-btn"
+                      onClick={() => handleApplyPlaceQuickChip({
+                        name: 'Outbound Dispatch Bay',
+                        type: 'dropoff',
+                        icon: '📤',
+                        color: '#f59e0b',
+                        description: 'Finished goods dispatch & shipping bay'
+                      })}
+                    >
+                      📤 Outbound Bay
+                    </button>
+                    <button
+                      type="button"
+                      className="chip-btn"
+                      onClick={() => handleApplyPlaceQuickChip({
+                        name: 'Assembly WIP Staging',
+                        type: 'staging',
+                        icon: '🏢',
+                        color: '#a855f7',
+                        description: 'Work-in-progress buffer station'
+                      })}
+                    >
+                      🏢 Assembly WIP
+                    </button>
+                    <button
+                      type="button"
+                      className="chip-btn"
+                      onClick={() => handleApplyPlaceQuickChip({
+                        name: 'Inspection Checkpoint',
+                        type: 'waypoint',
+                        icon: '🎯',
+                        color: '#ec4899',
+                        description: 'Automated scan & quality checkpoint'
+                      })}
+                    >
+                      🎯 Inspection
+                    </button>
+                  </div>
+                </div>
+
+                {/* Place Name Input */}
+                <div className="mapping-field" style={{ margin: 0 }}>
+                  <label className="mapping-label">Station / Place Name</label>
+                  <input
+                    id="input-place-name"
+                    type="text"
+                    className="input-field mapping-input"
+                    placeholder="e.g. Home Charging Station, Dock 1, Inbound Bay A"
+                    value={placeForm.name}
+                    onChange={(e) => setPlaceForm({ ...placeForm, name: e.target.value })}
+                  />
+                </div>
+
+                {/* Station Category / Type Selector */}
+                <div className="mapping-field" style={{ margin: 0 }}>
+                  <label className="mapping-label">Place Type & Function</label>
+                  <div className="place-type-selector-grid">
+                    {[
+                      { type: 'charging', label: 'Charging Dock', icon: '⚡', color: '#10b981' },
+                      { type: 'pickup', label: 'Inbound Pickup', icon: '📦', color: '#38bdf8' },
+                      { type: 'dropoff', label: 'Outbound Dropoff', icon: '📤', color: '#f59e0b' },
+                      { type: 'staging', label: 'Assembly Staging', icon: '🏢', color: '#a855f7' },
+                      { type: 'waypoint', label: 'Nav Waypoint', icon: '🎯', color: '#ec4899' },
+                    ].map((cat) => (
+                      <div
+                        key={cat.type}
+                        className={`place-type-pill ${placeForm.type === cat.type ? 'place-type-pill--active' : ''}`}
+                        style={{
+                          borderColor: placeForm.type === cat.type ? cat.color : undefined,
+                          background: placeForm.type === cat.type ? `${cat.color}22` : undefined,
+                        }}
+                        onClick={() => setPlaceForm({ ...placeForm, type: cat.type, icon: cat.icon, color: cat.color })}
+                      >
+                        <span>{cat.icon}</span>
+                        <span style={{ fontSize: 11, fontWeight: placeForm.type === cat.type ? 700 : 500 }}>
+                          {cat.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Target Node Selector */}
+                <div className="mapping-field" style={{ margin: 0 }}>
+                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="mapping-label">Assigned Roadmap Node</label>
+                    <button
+                      type="button"
+                      className={`btn btn--xs ${isPickNodeOnCanvasMode ? 'btn--success' : 'btn--outline'}`}
+                      onClick={() => setIsPickNodeOnCanvasMode(!isPickNodeOnCanvasMode)}
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                    >
+                      {isPickNodeOnCanvasMode ? '🎯 Canvas Pick ACTIVE' : '📍 Pick on Canvas'}
+                    </button>
+                  </div>
+                  <select
+                    className="input-field mapping-input text-mono"
+                    value={placeForm.node_id}
+                    onChange={(e) => handleSelectNodeForPlace(e.target.value)}
+                  >
+                    {extractedGraphReport?.nodes?.slice(0, 300).map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.id} ({Number(n.x ?? n.wx ?? 0).toFixed(2)}, {Number(n.y ?? n.wy ?? 0).toFixed(2)}) — clr {Number(n.clearance ?? 0).toFixed(2)}m
+                      </option>
+                    )) || <option value="N0">N0</option>}
+                  </select>
+                  <div className="node-coords-badge">
+                    <span>📍 Node <strong>{placeForm.node_id}</strong></span>
+                    <span>World: ({placeForm.x}m, {placeForm.y}m)</span>
+                    <span>Canvas: ({placeForm.px}, {placeForm.py})</span>
+                  </div>
+                </div>
+
+                {/* Orientation & Heading Slider */}
+                <div className="mapping-field" style={{ margin: 0 }}>
+                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="mapping-label">Docking / Approach Heading</label>
+                    <span className="text-mono text-xs font-bold" style={{ color: 'var(--accent-cyan)' }}>
+                      {Math.round(((placeForm.theta || 0) * 180) / Math.PI)}° ({(placeForm.theta || 0).toFixed(2)} rad)
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="360"
+                    step="15"
+                    value={Math.round(((placeForm.theta || 0) * 180) / Math.PI)}
+                    onChange={(e) => {
+                      const deg = parseFloat(e.target.value);
+                      setPlaceForm({ ...placeForm, theta: (deg * Math.PI) / 180 });
+                    }}
+                    className="slider"
+                  />
+                  <div className="flex-row" style={{ gap: 6, marginTop: 4 }}>
+                    {[
+                      { label: '0° East', deg: 0 },
+                      { label: '90° North', deg: 90 },
+                      { label: '180° West', deg: 180 },
+                      { label: '270° South', deg: 270 },
+                    ].map((d) => (
+                      <button
+                        key={d.deg}
+                        type="button"
+                        className="btn btn--ghost btn--xs flex-1 text-center"
+                        style={{ fontSize: 10, padding: '3px 0' }}
+                        onClick={() => setPlaceForm({ ...placeForm, theta: (d.deg * Math.PI) / 180 })}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Description / Notes */}
+                <div className="mapping-field" style={{ margin: 0 }}>
+                  <label className="mapping-label">Station Notes / Description (Optional)</label>
+                  <input
+                    type="text"
+                    className="input-field mapping-input"
+                    placeholder="e.g. Forklift zone, pallet rack 12, max weight 500kg"
+                    value={placeForm.description}
+                    onChange={(e) => setPlaceForm({ ...placeForm, description: e.target.value })}
+                  />
+                </div>
+
+                {/* Error Banner */}
+                {placesError && (
+                  <div className="save-error-banner" style={{ margin: 0, padding: '6px 10px' }}>
+                    ⚠️ {placesError}
+                  </div>
+                )}
+
+                {/* Builder Action Buttons */}
+                <div className="flex-row" style={{ gap: 8, marginTop: 4 }}>
+                  <button
+                    id="btn-add-place"
+                    type="button"
+                    className="btn btn--primary flex-1"
+                    onClick={handleAddOrUpdatePlace}
+                    style={{ padding: '8px 16px', fontSize: 13 }}
+                  >
+                    {isEditingPlace ? '✓ Update Named Place' : '➕ Add Named Place'}
+                  </button>
+                  {isEditingPlace && (
+                    <button
+                      type="button"
+                      className="btn btn--outline"
+                      onClick={handleCancelEditPlace}
+                      style={{ padding: '8px 14px', fontSize: 13 }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Card 2: Defined Places List */}
+              <div className="card places-list-card">
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="card__title" style={{ fontSize: 14 }}>
+                    📋 Configured Stations & Places ({namedPlaces.length})
+                  </div>
+                  <div className="flex-row" style={{ gap: 6 }}>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--xs"
+                      onClick={handleResetToPlaceTemplates}
+                      title="Reset to 5 smart template stations"
+                      style={{ fontSize: 10, padding: '2px 6px' }}
+                    >
+                      ✨ Smart Templates
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--icon"
+                      onClick={fetchNamedPlaces}
+                      title="Reload places from disk"
+                      style={{ height: 22, width: 22, fontSize: 11 }}
+                    >
+                      ⟳
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="places-filter-tabs">
+                  {['ALL', 'charging', 'pickup', 'dropoff', 'staging', 'waypoint'].map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`places-filter-btn ${placeTypeFilter === cat ? 'places-filter-btn--active' : ''}`}
+                      onClick={() => setPlaceTypeFilter(cat)}
+                    >
+                      {cat === 'ALL'
+                        ? `All (${namedPlaces.length})`
+                        : `${cat === 'charging' ? '⚡' : cat === 'pickup' ? '📦' : cat === 'dropoff' ? '📤' : cat === 'staging' ? '🏢' : '🎯'} ${cat}`}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Places Scroll Container */}
+                <div className="places-items-container">
+                  {namedPlaces
+                    .filter((p) => placeTypeFilter === 'ALL' || p.type === placeTypeFilter)
+                    .map((place) => {
+                      const isSelected = selectedPlaceId === place.id;
+                      return (
+                        <div
+                          key={place.id}
+                          className={`place-card-item ${isSelected ? 'place-card-item--selected' : ''}`}
+                          style={{ borderLeftColor: place.color || '#10b981' }}
+                          onClick={() => setSelectedPlaceId(place.id)}
+                        >
+                          <div className="place-card-item__icon-box" style={{ background: `${place.color || '#10b981'}22` }}>
+                            <span>{place.icon || '📍'}</span>
+                          </div>
+                          <div className="place-card-item__info">
+                            <div className="flex-row" style={{ gap: 6, alignItems: 'center' }}>
+                              <span className="place-card-item__name">{place.name}</span>
+                              <span className="badge badge--primary text-mono" style={{ fontSize: 10, padding: '1px 5px' }}>
+                                {place.node_id}
+                              </span>
+                            </div>
+                            <div className="place-card-item__meta text-mono text-dim text-xs">
+                              <span>({place.x}m, {place.y}m)</span>
+                              <span>• {Math.round(((place.theta || 0) * 180) / Math.PI)}°</span>
+                              {place.description && <span style={{ color: 'var(--text-secondary)' }}>• {place.description}</span>}
+                            </div>
+                          </div>
+                          <div className="place-card-item__actions">
+                            <button
+                              type="button"
+                              className="btn btn--ghost btn--icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectPlaceForEdit(place);
+                              }}
+                              title="Edit place"
+                              style={{ height: 26, width: 26, fontSize: 12 }}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn--ghost btn--icon text-danger"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeletePlace(place.id);
+                              }}
+                              title="Delete place"
+                              style={{ height: 26, width: 26, fontSize: 12 }}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {namedPlaces.length === 0 && (
+                    <div className="text-dim text-xs text-center p-md">
+                      No places configured yet. Use the builder above or click "Smart Templates" to generate default stations.
+                    </div>
+                  )}
+                </div>
+
+                {/* Save Success Banner */}
+                {placesSaveSuccess && (
+                  <div className="save-success-banner" style={{ margin: 0, padding: '6px 12px' }}>
+                    <span>✓</span> Successfully saved {namedPlaces.length} places to graph roadmap and disk files!
+                  </div>
+                )}
+
+                {/* Save to disk action */}
+                <button
+                  id="btn-save-places"
+                  type="button"
+                  className="btn btn--outline"
+                  onClick={handleSavePlacesToDisk}
+                  disabled={isSavingPlaces || namedPlaces.length === 0}
+                  style={{ width: '100%', padding: '7px 0', fontSize: 12 }}
+                >
+                  {isSavingPlaces ? 'Saving Places to Roadmap...' : `💾 Save ${namedPlaces.length} Places to Disk`}
+                </button>
+              </div>
+
+              {/* Card 3: Progression to Step 6 */}
+              <div className="card save-config-card">
+                <div className="card__title" style={{ fontSize: 14 }}>
+                  🏁 Step 5 Sign-Off & Navigation Dispatch
+                </div>
+                <div className="text-dim text-xs" style={{ lineHeight: 1.5 }}>
+                  All fleet stations, charging docks, and work cells are assigned to topological roadmap nodes. Approving places will advance the operational pipeline to Phase 6 (Navigation Using Place Names).
+                </div>
+                <div className="mapping-actions">
+                  <button
+                    id="btn-approve-places"
+                    type="button"
+                    className="btn--proceed-graph"
+                    onClick={handleApprovePlaces}
+                    style={{ background: 'linear-gradient(135deg, #0284c7, #06b6d4)' }}
+                    disabled={namedPlaces.length === 0}
+                  >
+                    <span>✓</span> APPROVE PLACES & PROCEED TO NAVIGATION (STEP 6)
+                  </button>
+                  <div className="flex-row" style={{ gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn--outline flex-1"
+                      onClick={() => setCurrentStep(4)}
+                      style={{ fontSize: 12 }}
+                    >
+                      ← Back to Step 4 (Graph Verification)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      onClick={onReturnToDashboard}
+                      style={{ fontSize: 12 }}
+                    >
+                      Dashboard
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= STEP 6: NAVIGATION (PHASE 6 AWAITING APPROVAL) ================= */}
+          {currentStep === 6 && (
+            <div className="card phase4-ready-card" style={{ background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(12, 16, 28, 0.9))', borderColor: 'rgba(6, 182, 212, 0.3)' }}>
               <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="card__title" style={{ fontSize: 15 }}>
-                  🏷️ Step 5: Name Places / Nodes
+                  🚀 Step 6: Navigation Using Place Names
                 </div>
-                <span className="audit-check-row__badge badge--pass">PHASE 4 COMPLETE</span>
+                <span className="audit-check-row__badge badge--pass">PHASE 5 COMPLETE</span>
               </div>
 
               <div className="phase3-meta-table">
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Verified Roadmap:</span>
+                  <span className="text-dim">Configured Places:</span>
                   <span className="text-mono font-bold" style={{ color: 'var(--accent-cyan)' }}>
+                    {namedPlaces.length} Stations Active
+                  </span>
+                </div>
+                <div className="phase3-meta-row">
+                  <span className="text-dim">Roadmap File:</span>
+                  <span className="text-mono font-bold" style={{ color: 'var(--accent-green)' }}>
                     {selectedMapForGraph || mapName}_graph.json
                   </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Total Verified Nodes:</span>
-                  <span className="text-mono font-bold" style={{ color: 'var(--accent-green)' }}>
-                    {graphVerificationData?.metrics?.total_nodes ?? extractedGraphReport?.total_nodes ?? 0} nodes
-                  </span>
-                </div>
-                <div className="phase3-meta-row">
-                  <span className="text-dim">Connectivity Score:</span>
+                  <span className="text-dim">Places JSON:</span>
                   <span className="text-mono font-bold">
-                    {graphVerificationData?.metrics?.connectivity_pct ?? 100}% connected
+                    {selectedMapForGraph || mapName}_places.json
                   </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Audit Status:</span>
-                  <span className="text-success font-bold">Passed & Approved</span>
+                  <span className="text-dim">Phase 5 Status:</span>
+                  <span className="text-success font-bold">Verified & Persisted</span>
                 </div>
               </div>
 
-              <div className="save-success-banner" style={{ background: 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
-                <div className="text-sm font-bold" style={{ color: 'var(--accent-green)' }}>
-                  🎯 Phase 4 Milestone Achieved
+              <div className="save-success-banner" style={{ background: 'rgba(6, 182, 212, 0.08)', borderColor: 'rgba(6, 182, 212, 0.3)' }}>
+                <div className="text-sm font-bold" style={{ color: 'var(--accent-cyan)' }}>
+                  🎯 Phase 5 Milestone Achieved: Stations & Places Named
                 </div>
                 <div className="text-dim text-xs" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Graph roadmap quality verification and Dijkstra route simulations have succeeded with 100% reachability. In Phase 5, semantic place labels and docking station names (e.g., "Dock 1", "Charging Station", "Pickup A") will be assigned to roadmap nodes. Per development rules, awaiting your approval before modifying Phase 5.
+                  Semantic places (Charging Dock, Inbound Intake, Assembly WIP, Outbound Dispatch) are bound to roadmap nodes and saved on disk. In Phase 6, autonomous mission dispatch, multi-stop delivery routes, and point-to-point transit will be executed using these place names. Per development rules, awaiting your explicit approval before modifying Phase 6.
                 </div>
               </div>
 
               <div className="mapping-actions">
                 <button
+                  type="button"
                   className="btn btn--outline"
-                  onClick={() => setCurrentStep(4)}
+                  onClick={() => setCurrentStep(5)}
                 >
-                  ← Back to Graph Verification (Step 4)
+                  ← Back to Place Naming (Step 5)
                 </button>
                 <button
+                  type="button"
                   className="btn btn--ghost btn--sm"
                   onClick={onReturnToDashboard}
                   style={{ alignSelf: 'center' }}
@@ -1870,6 +2561,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
               </div>
             </div>
           )}
+
         </div>
 
         {/* Right Column: SLAM / Inspection / Graph Map Viewport */}
@@ -2013,14 +2705,32 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             {/* Metric Grid Overlay */}
             {showGrid && <div className="mapping-canvas-grid-overlay" />}
 
+            {/* Canvas Node Pick Mode Banner */}
+            {currentStep === 5 && isPickNodeOnCanvasMode && (
+              <div className="canvas-pick-mode-banner">
+                <span className="pulse-dot" style={{ background: '#10b981' }} />
+                <span>🎯 Click anywhere on the floorplan to bind the closest roadmap node!</span>
+                <button
+                  type="button"
+                  className="btn btn--xs btn--outline"
+                  onClick={() => setIsPickNodeOnCanvasMode(false)}
+                  style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 8px' }}
+                >
+                  ✕ Cancel
+                </button>
+              </div>
+            )}
+
             {currentStep >= 3 && graphVisMode === 'graph' && extractedGraphReport?.vis_image_b64 ? (
               <div
                 className="mapping-image-wrapper"
+                onClick={handleCanvasClickForNodePick}
                 style={{
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   transformOrigin: 'center center',
                   position: 'relative',
                   display: 'inline-block',
+                  cursor: isPickNodeOnCanvasMode ? 'crosshair' : 'default',
                 }}
               >
                 <img
@@ -2123,8 +2833,122 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                     )}
                   </svg>
                 )}
+
+                {/* SVG Place Markers Overlay (Step 5 & 6) */}
+                {currentStep >= 5 && namedPlaces.length > 0 && (
+                  <svg
+                    className="places-svg-overlay"
+                    viewBox={`0 0 ${imgDimensions.width} ${imgDimensions.height}`}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      pointerEvents: isPickNodeOnCanvasMode ? 'none' : 'auto',
+                      zIndex: 4,
+                    }}
+                  >
+                    {namedPlaces.map((place) => {
+                      const isSelected = selectedPlaceId === place.id;
+                      const placeColor = place.color || '#10b981';
+                      const thetaRad = place.theta || 0;
+                      const arrowLen = 22;
+                      const ax = place.px + arrowLen * Math.cos(thetaRad);
+                      const ay = place.py + arrowLen * Math.sin(thetaRad);
+
+                      return (
+                        <g
+                          key={place.id}
+                          className={`place-pin-marker ${isSelected ? 'place-pin-marker--selected' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectPlaceForEdit(place);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {/* Heading vector arrow */}
+                          <line
+                            x1={place.px}
+                            y1={place.py}
+                            x2={ax}
+                            y2={ay}
+                            stroke={placeColor}
+                            strokeWidth="3.5"
+                            strokeLinecap="round"
+                            style={{ filter: `drop-shadow(0 0 4px ${placeColor})` }}
+                          />
+                          <circle cx={ax} cy={ay} r="3" fill={placeColor} />
+
+                          {/* Outer pulse ring on selected */}
+                          {isSelected && (
+                            <circle
+                              cx={place.px}
+                              cy={place.py}
+                              r="20"
+                              fill="none"
+                              stroke={placeColor}
+                              strokeWidth="2.5"
+                              strokeDasharray="4 3"
+                            />
+                          )}
+
+                          {/* Place Node Pin Circle */}
+                          <circle
+                            cx={place.px}
+                            cy={place.py}
+                            r="13"
+                            fill="#0b1120"
+                            stroke={placeColor}
+                            strokeWidth={isSelected ? '3.5' : '2'}
+                            style={{ filter: `drop-shadow(0 0 ${isSelected ? '10px' : '5px'} ${placeColor})` }}
+                          />
+
+                          {/* Emoji Icon inside circle */}
+                          <text
+                            x={place.px}
+                            y={place.py + 4.5}
+                            fontSize="11"
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                            style={{ pointerEvents: 'none', userSelect: 'none' }}
+                          >
+                            {place.icon || '📍'}
+                          </text>
+
+                          {/* Station Name Label Pill */}
+                          <g transform={`translate(${place.px}, ${place.py - 18})`}>
+                            <rect
+                              x="-65"
+                              y="-20"
+                              width="130"
+                              height="20"
+                              rx="5"
+                              fill="rgba(11, 17, 32, 0.92)"
+                              stroke={placeColor}
+                              strokeWidth={isSelected ? '2' : '1'}
+                              style={{ filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.8))' }}
+                            />
+                            <text
+                              x="0"
+                              y="-6"
+                              fill="#f8fafc"
+                              fontSize="10"
+                              fontWeight={isSelected ? 'bold' : '600'}
+                              textAnchor="middle"
+                              style={{ pointerEvents: 'none', userSelect: 'none' }}
+                            >
+                              {place.name.length > 17 ? place.name.slice(0, 16) + '…' : place.name}
+                            </text>
+                          </g>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
               </div>
             ) : liveMapImg ? (
+
               <div
                 className="mapping-image-wrapper"
                 style={{

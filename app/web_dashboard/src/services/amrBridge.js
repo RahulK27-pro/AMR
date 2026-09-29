@@ -313,7 +313,67 @@ class AmrBridgeService {
       return { ok: false, error: err.message };
     }
   }
+
+  // ---- Phase 5: Name Places / Nodes Pipeline ----
+  async getNamedPlaces(mapName = '') {
+    return this._get(`/api/mapping/places?map_name=${encodeURIComponent(mapName)}`);
+  }
+
+  async saveNamedPlaces(places, mapName = '') {
+    this.emitEvent('info', `Saving ${places.length} named places to roadmap...`);
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mapping/places/save`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ map_name: mapName, places }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('success', `Saved ${data.count} places to roadmap JSON & files!`);
+        return { ok: true, data };
+      }
+      const errMsg = data?.error || 'Failed to save named places';
+      this.emitEvent('critical', `Places save error: ${errMsg}`);
+      return { ok: false, error: errMsg };
+    } catch (err) {
+      this.emitEvent('critical', `Network error saving places: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async getDefaultPlaceTemplates(mapName = '') {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mapping/places/default_templates?map_name=${encodeURIComponent(mapName)}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        return { ok: true, templates: data.templates };
+      }
+      return { ok: false, error: data?.error || 'Failed to generate templates' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async deleteNamedPlace(placeId, mapName = '') {
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mapping/places/${encodeURIComponent(placeId)}?map_name=${encodeURIComponent(mapName)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('warn', `Removed place "${placeId}"`);
+        return { ok: true, data };
+      }
+      return { ok: false, error: data?.error || 'Failed to delete place' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
 }
 
 const bridge = new AmrBridgeService();
 export default bridge;
+
