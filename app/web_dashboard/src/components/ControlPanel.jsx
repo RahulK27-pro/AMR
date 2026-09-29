@@ -21,9 +21,7 @@ export default function ControlPanel({
   // Mode Interlock: 'auto' | 'manual'
   const [controlMode, setControlMode] = useState('auto');
 
-  // Goal & sequence states
-  const [goalX, setGoalX] = useState('');
-  const [goalY, setGoalY] = useState('');
+  // Speed & emergency stop states
   const [speed, setSpeed] = useState(0.8);
   const [estopActive, setEstopActive] = useState(false);
 
@@ -305,21 +303,6 @@ export default function ControlPanel({
     setEstopActive(false);
   };
 
-  const handleSendGoal = async () => {
-    const x = parseFloat(goalX);
-    const y = parseFloat(goalY);
-    if (isNaN(x) || isNaN(y)) return;
-    setControlMode('auto');
-    await bridge.sendGoal(x, y);
-  };
-
-  const handleInitialPose = async () => {
-    const x = parseFloat(goalX);
-    const y = parseFloat(goalY);
-    if (isNaN(x) || isNaN(y)) return;
-    await bridge.sendInitialPose(x, y, 0);
-  };
-
   const handleRemoveNode = (index) => {
     if (setSelectedNodes) {
       setSelectedNodes(selectedNodes.filter((_, i) => i !== index));
@@ -347,35 +330,6 @@ export default function ControlPanel({
 
   return (
     <div className="flex-col" style={{ gap: 12 }}>
-
-      {/* ── AMR Operational Pipeline Quick Access ── */}
-      {onOpenMapping && (
-        <div
-          className="card"
-          style={{
-            padding: '10px 14px',
-            background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.08), rgba(0, 255, 157, 0.05))',
-            borderColor: 'rgba(0, 212, 255, 0.3)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-cyan)' }}>
-              AMR Pipeline
-            </div>
-            <div className="text-dim text-xs">Phase 1: Map New Place</div>
-          </div>
-          <button
-            className="btn btn--primary btn--sm"
-            onClick={onOpenMapping}
-            style={{ padding: '6px 12px', fontSize: 12, fontWeight: 700 }}
-          >
-            🗺️ Map
-          </button>
-        </div>
-      )}
 
       {/* ── 1. EMERGENCY STOP ── */}
       {estopActive ? (
@@ -800,34 +754,7 @@ export default function ControlPanel({
         </button>
       </div>
 
-      {/* ── 4. MANUAL COORDINATE DISPATCH ── */}
-      <div className="card">
-        <div className="card__title">🎯 Coordinate Dispatch</div>
-        <div className="flex-row mt-sm" style={{ gap: 8 }}>
-          <input
-            className="input-field"
-            placeholder="X (m)"
-            value={goalX}
-            onChange={(e) => setGoalX(e.target.value)}
-          />
-          <input
-            className="input-field"
-            placeholder="Y (m)"
-            value={goalY}
-            onChange={(e) => setGoalY(e.target.value)}
-          />
-        </div>
-        <div className="flex-row mt-sm" style={{ gap: 8 }}>
-          <button className="btn btn--primary btn--full" onClick={handleSendGoal}>
-            ▶ Navigate
-          </button>
-          <button className="btn btn--ghost" onClick={handleInitialPose} title="Set AMCL Initial Pose">
-            📍 Init AMCL
-          </button>
-        </div>
-      </div>
-
-      {/* ── 5. DYNAMIC OBSTACLE SIMULATOR TESTER ── */}
+      {/* ── 4. DYNAMIC OBSTACLE SIMULATOR TESTER ── */}
       <div className="card">
         <div
           className="card__title flex-row cursor-pointer"

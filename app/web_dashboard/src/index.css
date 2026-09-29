@@ -462,9 +462,9 @@ html, body, #root {
 /* ---- Center Bottom Grid ---- */
 .center-bottom-grid {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 1fr;
   gap: 12px;
-  min-height: 190px;
+  min-height: 160px;
 }
 
 /* ---- Map HUD & Vector Viewport ---- */
