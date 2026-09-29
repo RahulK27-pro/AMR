@@ -38,6 +38,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
   const panStartRef     = useRef({ x: 0, y: 0 });
 
   // ── UI layer toggles ──────────────────────────────────────────────────────
+  const [showPlaces, setShowPlaces] = useState(true);
   const [showGraph,  setShowGraph]  = useState(false);
   const [showLidar,  setShowLidar]  = useState(true);
   const [showPath,   setShowPath]   = useState(true);
@@ -45,6 +46,8 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
   const [autoFollow, setAutoFollow] = useState(false);
 
   // ── Interaction state ─────────────────────────────────────────────────────
+  const [namedPlaces,  setNamedPlaces]  = useState([]);
+  const [hoveredPlace, setHoveredPlace] = useState(null);
   const [hoveredNode,  setHoveredNode]  = useState(null);
   const [cursorWorld,  setCursorWorld]  = useState(null);
   const [goalFeedback, setGoalFeedback] = useState(null);
@@ -84,6 +87,12 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
 
     bridge.getGraphData().then((data) => {
       if (data?.nodes && mounted) setGraphNodes(data.nodes);
+    });
+
+    bridge.getNamedPlaces().then((res) => {
+      if (res?.ok && Array.isArray(res.places) && mounted) {
+        setNamedPlaces(res.places);
+      }
     });
 
     const img = new Image();
@@ -256,6 +265,64 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
             ctx.lineWidth   = 1.2 / zoom;
             ctx.stroke();
           }
+        }
+      }
+
+      // ── Layer 2.5: Named Places / Fleet Stations ────────────────────────
+      if (showPlaces && namedPlaces.length > 0) {
+        for (const p of namedPlaces) {
+          const { px, py } = worldToPixel(p.x, p.y);
+          const isHover = hoveredPlace?.id === p.id;
+          const isNavTarget = Boolean(
+            telemetry?.active_place_nav &&
+            (telemetry.active_place_nav.target_place === p.name ||
+             telemetry.active_place_nav.target_node === p.node_id)
+          );
+          const markerClr = isNavTarget ? '#06b6d4' : (isHover ? '#38bdf8' : '#10b981');
+
+          ctx.save();
+
+          // Pulsing halo ring if actively navigating to this station
+          if (isNavTarget) {
+            const pRing = 0.5 + 0.5 * Math.sin(pulseRef.current * 2);
+            ctx.beginPath();
+            ctx.arc(px, py, (7 + pRing * 6) / zoom, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(6, 182, 212, ${0.4 + pRing * 0.5})`;
+            ctx.lineWidth = 2 / zoom;
+            ctx.stroke();
+          }
+
+          // Station dot
+          ctx.beginPath();
+          ctx.arc(px, py, (isNavTarget ? 4.5 : isHover ? 4 : 3) / zoom, 0, Math.PI * 2);
+          ctx.fillStyle = markerClr;
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1 / zoom;
+          ctx.stroke();
+
+          // Compact station pill label
+          const label = p.name.length > 15 ? p.name.slice(0, 14) + '…' : p.name;
+          const fontSize = Math.max(8, Math.min(10, 9 / Math.sqrt(zoom)));
+          ctx.font = `${isNavTarget ? 'bold ' : ''}${fontSize}px Inter, sans-serif`;
+          const textW = ctx.measureText(label).width;
+          const pillW = textW + 8 / zoom;
+          const pillH = 13 / zoom;
+          const pillX = px - pillW / 2;
+          const pillY = py - 6 / zoom - pillH;
+
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.fillRect(pillX, pillY, pillW, pillH);
+          ctx.strokeStyle = markerClr;
+          ctx.lineWidth = (isNavTarget || isHover ? 1.4 : 0.8) / zoom;
+          ctx.strokeRect(pillX, pillY, pillW, pillH);
+
+          ctx.fillStyle = isNavTarget ? '#38bdf8' : '#f1f5f9';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, px, pillY + pillH / 2);
+
+          ctx.restore();
         }
       }
 
@@ -473,8 +540,9 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
     return () => cancelAnimationFrame(animId);
   }, [
     mapImage, meta, zoom, pan, telemetry,
-    showGraph, showLidar, showPath, showTrail,
+    showPlaces, showGraph, showLidar, showPath, showTrail,
     graphNodes, selectedNodes, hoveredNode,
+    namedPlaces, hoveredPlace,
     lastGoal, autoFollow, worldToPixel,
   ]);
 
@@ -508,6 +576,21 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
     const world = screenToWorld(e.clientX, e.clientY, canvas);
     if (world) {
       setCursorWorld({ x: world.wx, y: world.wy });
+
+      // Check hovered station / place
+      if (showPlaces && namedPlaces.length > 0) {
+        let nearestPlace = null, minPlaceDist = 14 / zoom;
+        for (const p of namedPlaces) {
+          const { px, py } = worldToPixel(p.x, p.y);
+          const d = Math.hypot(px - world.px, py - world.py);
+          if (d < minPlaceDist) { minPlaceDist = d; nearestPlace = p; }
+        }
+        setHoveredPlace(nearestPlace);
+      } else {
+        setHoveredPlace(null);
+      }
+
+      // Check hovered node
       if (showGraph && graphNodes.length > 0) {
         let nearest = null, minDist = 7 / zoom;
         for (const n of graphNodes) {
@@ -528,6 +611,14 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
     const canvas = canvasRef.current;
     const world  = screenToWorld(e.clientX, e.clientY, canvas);
     if (!world) return;
+
+    // Prioritize clicking a station pin
+    if (showPlaces && hoveredPlace) {
+      onSelectNode?.(hoveredPlace.node_id);
+      setGoalFeedback(`Station selected: ${hoveredPlace.name} (${hoveredPlace.node_id})`);
+      setTimeout(() => setGoalFeedback(null), 2500);
+      return;
+    }
 
     if (showGraph && hoveredNode) {
       onSelectNode?.(hoveredNode.id);
@@ -579,6 +670,13 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
 
         <div className="hud-controls">
           <button
+            className={`btn-toggle ${showPlaces ? 'active' : ''}`}
+            onClick={(e) => { e.stopPropagation(); setShowPlaces(p => !p); }}
+            title="Toggle named stations / places"
+          >
+            🏷️ Places {namedPlaces.length > 0 && `(${namedPlaces.length})`}
+          </button>
+          <button
             className={`btn-toggle ${autoFollow ? 'active' : ''}`}
             onClick={(e) => { e.stopPropagation(); setAutoFollow(f => !f); }}
             title="Auto-follow: keep robot centred in viewport"
@@ -626,7 +724,11 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
       {/* ── Bottom HUD ── */}
       <div className="map-hud-bottom">
         <div className="hud-coords">
-          {hoveredNode ? (
+          {hoveredPlace ? (
+            <span style={{ color: '#10b981', fontWeight: 600 }}>
+              🏷️ Station: {hoveredPlace.name} ({hoveredPlace.node_id}) · ({hoveredPlace.x.toFixed(2)}, {hoveredPlace.y.toFixed(2)}) m
+            </span>
+          ) : hoveredNode ? (
             <span style={{ color: '#00f0ff', fontWeight: 600 }}>
               📍 Node {hoveredNode.id}: ({hoveredNode.x.toFixed(2)}, {hoveredNode.y.toFixed(2)}) m
             </span>
@@ -640,7 +742,9 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
           )}
         </div>
         <div className="hud-hint">
-          {showGraph
+          {showPlaces && hoveredPlace
+            ? 'Click station pin to add to mission waypoints'
+            : showGraph
             ? 'Click node to queue waypoint · Click floor to navigate · Shift+Drag to pan'
             : 'Click floor to navigate · Shift+Drag to pan · Scroll to zoom'}
         </div>

@@ -29,6 +29,47 @@ export default function ControlPanel({
   const [showObstacleControls, setShowObstacleControls] = useState(false);
   const [obsSpeed, setObsSpeed] = useState(0.45);
 
+  // Fleet Stations (Place Dispatch) state
+  const [namedPlaces, setNamedPlaces] = useState([]);
+  const [selectedPlaceId, setSelectedPlaceId] = useState('');
+  const [isDispatchingPlace, setIsDispatchingPlace] = useState(false);
+  const activePlaceNav = telemetry?.active_place_nav;
+
+  useEffect(() => {
+    let mounted = true;
+    bridge.getNamedPlaces().then((res) => {
+      if (res?.ok && Array.isArray(res.places) && mounted) {
+        setNamedPlaces(res.places);
+        if (res.places.length > 0) {
+          setSelectedPlaceId((prev) => prev || res.places[0].id);
+        }
+      }
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  const handleDispatchSelectedPlace = async () => {
+    const target = namedPlaces.find((p) => p.id === selectedPlaceId);
+    if (!target) return;
+    setIsDispatchingPlace(true);
+    setControlMode('auto');
+    try {
+      await bridge.dispatchPlace(target);
+    } catch (_) {}
+    setIsDispatchingPlace(false);
+  };
+
+  const handleAddPlaceToMission = () => {
+    const target = namedPlaces.find((p) => p.id === selectedPlaceId);
+    if (target && target.node_id && setSelectedNodes) {
+      setSelectedNodes((prev) => [...prev, target.node_id]);
+    }
+  };
+
+  const handleCancelPlaceNav = async () => {
+    await bridge.cancelPlaceNavigation();
+  };
+
   const navState = telemetry?.nav_state;
 
   useEffect(() => {
@@ -267,7 +308,103 @@ export default function ControlPanel({
         )}
       </div>
 
-      {/* ── 3. TOPOLOGICAL MISSION BUILDER ── */}
+      {/* ── 3. FLEET STATIONS & PLACE DISPATCH ── */}
+      <div className="card">
+        <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>🏷️ Fleet Stations</span>
+          <span className="badge badge--cyan" style={{ fontSize: 10 }}>
+            {namedPlaces.length} Stations
+          </span>
+        </div>
+
+        {/* Active Navigation HUD if AMR is currently navigating to a place */}
+        {activePlaceNav && (activePlaceNav.status === 'NAVIGATING' || navState === 'NAVIGATING') && (
+          <div className="active-place-hud-banner mt-sm">
+            <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="live-pill" style={{ fontSize: 10, padding: '2px 8px' }}>
+                <span className="pulse-dot" /> NAVIGATING
+              </span>
+              <span className="text-mono text-xs" style={{ color: 'var(--accent-cyan)' }}>
+                {activePlaceNav.distance_to_target_m != null ? `${activePlaceNav.distance_to_target_m} m away` : ''}
+              </span>
+            </div>
+            <div style={{ marginTop: 4, fontWeight: 700, fontSize: 13, color: '#f8fafc' }}>
+              🎯 {activePlaceNav.target_place || 'Active Station'} <span className="text-dim text-xs">({activePlaceNav.target_node})</span>
+            </div>
+            {activePlaceNav.is_sequence && (
+              <div className="text-dim text-xs" style={{ marginTop: 2 }}>
+                Stop {activePlaceNav.current_stop} of {activePlaceNav.total_stops}
+              </div>
+            )}
+            <button
+              className="btn btn--danger btn--full btn--sm mt-xs"
+              onClick={handleCancelPlaceNav}
+              style={{ padding: '4px 8px', fontSize: 11 }}
+            >
+              ⛔ Cancel Station Navigation
+            </button>
+          </div>
+        )}
+
+        <div className="mt-sm">
+          <div className="flex-row" style={{ gap: 8 }}>
+            <select
+              className="input-field"
+              style={{ flex: 1, padding: '6px 8px', fontSize: 12 }}
+              value={selectedPlaceId}
+              onChange={(e) => setSelectedPlaceId(e.target.value)}
+            >
+              {namedPlaces.length === 0 ? (
+                <option value="">No stations registered</option>
+              ) : (
+                namedPlaces.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.node_id})
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          {/* Quick station chips */}
+          {namedPlaces.length > 0 && (
+            <div className="preset-row mt-sm" style={{ flexWrap: 'wrap', gap: 6 }}>
+              {namedPlaces.slice(0, 4).map((p) => (
+                <button
+                  key={p.id}
+                  className={`btn-preset ${selectedPlaceId === p.id ? 'btn-preset--active' : ''}`}
+                  onClick={() => setSelectedPlaceId(p.id)}
+                  style={{ fontSize: 11, padding: '3px 8px' }}
+                >
+                  📍 {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex-row mt-sm" style={{ gap: 8 }}>
+            <button
+              className="btn btn--primary btn--full btn--sm"
+              disabled={!selectedPlaceId || isDispatchingPlace}
+              onClick={handleDispatchSelectedPlace}
+              style={{ fontWeight: 700, padding: '7px 12px' }}
+            >
+              {isDispatchingPlace ? '🚀 Dispatching...' : '▶ Dispatch to Station'}
+            </button>
+            <button
+              className="btn btn--ghost btn--sm"
+              disabled={!selectedPlaceId}
+              onClick={handleAddPlaceToMission}
+              title="Add this station's node to mission waypoints queue"
+              style={{ fontSize: 11, whiteSpace: 'nowrap', padding: '7px 10px' }}
+            >
+              ➕ Queue
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 4. TOPOLOGICAL MISSION BUILDER ── */}
       <div className="card">
         <div className="card__title flex-row" style={{ justifyContent: 'space-between' }}>
           <span>📋 Mission Waypoints</span>

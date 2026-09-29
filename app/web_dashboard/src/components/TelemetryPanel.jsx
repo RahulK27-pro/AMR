@@ -96,8 +96,49 @@ export default function TelemetryPanel({ telemetry }) {
         </div>
       </div>
 
-      {/* Mission */}
-      {ms.state && (
+      {/* Station Navigation or Topological Mission */}
+      {telemetry?.active_place_nav ? (
+        <div className="card">
+          <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>🎯 Station Navigation</span>
+            <span className={`badge ${
+              telemetry.active_place_nav.status === 'NAVIGATING' ? 'badge--pass' : 'badge--cyan'
+            }`} style={{ fontSize: 10 }}>
+              {telemetry.active_place_nav.status === 'NAVIGATING' ? '● NAVIGATING' : telemetry.active_place_nav.status}
+            </span>
+          </div>
+          <div className="flex-col mt-xs" style={{ gap: 6 }}>
+            <div className="flex-row" style={{ justifyContent: 'space-between' }}>
+              <span className="text-dim text-sm">Station</span>
+              <span className="text-mono font-bold" style={{ color: 'var(--accent-cyan)', fontSize: 12 }}>
+                {telemetry.active_place_nav.target_place}
+              </span>
+            </div>
+            <div className="flex-row" style={{ justifyContent: 'space-between' }}>
+              <span className="text-dim text-sm">Target Node</span>
+              <span className="text-mono" style={{ color: 'var(--accent-green)', fontSize: 12 }}>
+                {telemetry.active_place_nav.target_node}
+              </span>
+            </div>
+            {telemetry.active_place_nav.distance_to_target_m != null && (
+              <div className="flex-row" style={{ justifyContent: 'space-between' }}>
+                <span className="text-dim text-sm">Dist. Remaining</span>
+                <span className="text-mono font-bold" style={{ color: 'var(--accent-yellow)', fontSize: 12 }}>
+                  {telemetry.active_place_nav.distance_to_target_m} m
+                </span>
+              </div>
+            )}
+            {telemetry.active_place_nav.is_sequence && (
+              <div className="flex-row" style={{ justifyContent: 'space-between' }}>
+                <span className="text-dim text-sm">Mission Stop</span>
+                <span className="text-mono" style={{ fontSize: 12 }}>
+                  Stop {telemetry.active_place_nav.current_stop} / {telemetry.active_place_nav.total_stops}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : ms.state ? (
         <div className="card">
           <div className="card__title">🎯 Mission</div>
           <div className="flex-col" style={{ gap: 6 }}>
@@ -119,7 +160,7 @@ export default function TelemetryPanel({ telemetry }) {
             )}
           </div>
         </div>
-      )}
+      ) : null}
 
     </div>
   );
