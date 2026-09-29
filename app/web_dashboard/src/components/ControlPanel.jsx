@@ -10,6 +10,8 @@ export default function ControlPanel({
   selectedNodes = [],
   setSelectedNodes,
   onOpenMapping,
+  activeMap = 'warehouse_01',
+  onMapChange,
 }) {
   const joystickRef = useRef(null);
   const managerRef  = useRef(null);
@@ -37,16 +39,15 @@ export default function ControlPanel({
 
   useEffect(() => {
     let mounted = true;
-    bridge.getNamedPlaces().then((res) => {
-      if (res?.ok && Array.isArray(res.places) && mounted) {
-        setNamedPlaces(res.places);
-        if (res.places.length > 0) {
-          setSelectedPlaceId((prev) => prev || res.places[0].id);
-        }
+    bridge.getNamedPlaces(activeMap).then((res) => {
+      if (mounted) {
+        const places = res?.ok && Array.isArray(res.places) ? res.places : [];
+        setNamedPlaces(places);
+        setSelectedPlaceId(places.length > 0 ? places[0].id : '');
       }
     });
     return () => { mounted = false; };
-  }, []);
+  }, [activeMap]);
 
   const handleDispatchSelectedPlace = async () => {
     const target = namedPlaces.find((p) => p.id === selectedPlaceId);
@@ -54,7 +55,7 @@ export default function ControlPanel({
     setIsDispatchingPlace(true);
     setControlMode('auto');
     try {
-      await bridge.dispatchPlace(target);
+      await bridge.dispatchPlace(target, activeMap);
     } catch (_) {}
     setIsDispatchingPlace(false);
   };
@@ -311,7 +312,7 @@ export default function ControlPanel({
       {/* ── 3. FLEET STATIONS & PLACE DISPATCH ── */}
       <div className="card">
         <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>🏷️ Fleet Stations</span>
+          <span>🏷️ Fleet Stations ({activeMap})</span>
           <span className="badge badge--cyan" style={{ fontSize: 10 }}>
             {namedPlaces.length} Stations
           </span>

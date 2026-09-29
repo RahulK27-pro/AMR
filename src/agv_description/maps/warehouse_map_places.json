@@ -1,0 +1,44 @@
+[
+  {
+    "id": "wm_p1",
+    "name": "Charging Dock West",
+    "node_id": "N500",
+    "type": "place",
+    "x": -5.397,
+    "y": -0.896,
+    "px": 40,
+    "py": 160,
+    "theta": 0.0,
+    "icon": "⚡",
+    "color": "#10b981",
+    "description": "Primary charging station for warehouse_map"
+  },
+  {
+    "id": "wm_p2",
+    "name": "Storage Dock East",
+    "node_id": "N100",
+    "type": "place",
+    "x": 7.103,
+    "y": -0.896,
+    "px": 290,
+    "py": 160,
+    "theta": 0.0,
+    "icon": "📦",
+    "color": "#06b6d4",
+    "description": "Outbound storage dock east wing"
+  },
+  {
+    "id": "wm_p3",
+    "name": "Assembly Station",
+    "node_id": "N300",
+    "type": "place",
+    "x": -2.997,
+    "y": 3.104,
+    "px": 88,
+    "py": 80,
+    "theta": 0.0,
+    "icon": "🔧",
+    "color": "#f59e0b",
+    "description": "Assembly work cell central aisle"
+  }
+]

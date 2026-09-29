@@ -31,7 +31,10 @@ class AmrBridgeService {
 
   get baseUrl()   { return `http://${this._host}:${this._port}`; }
   get wsUrl()     { return `ws://${this._host}:${this._port}/ws/telemetry`; }
-  get rawMapUrl() { return `${this.baseUrl}/api/map/raw`; }
+  getRawMapUrl(mapName = '') { 
+    return `${this.baseUrl}/api/map/raw${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`; 
+  }
+  get rawMapUrl() { return this.getRawMapUrl(); }
 
   // ---- Connection management ----
 
@@ -183,10 +186,12 @@ class AmrBridgeService {
     return this._post('/api/obstacle/cmd_vel', { linear, angular });
   }
 
-  async getMapImage()    { return this._get('/api/map'); }
-  async getMapMetadata() { return this._get('/api/map/metadata'); }
-  async getGraphData()   { return this._get('/api/graph'); }
-  async getStatus()      { return this._get('/api/status'); }
+  async getMapImage(mapName = '')    { return this._get(`/api/map${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
+  async getMapMetadata(mapName = '') { return this._get(`/api/map/metadata${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
+  async getGraphData(mapName = '')   { return this._get(`/api/graph${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
+  async getStatus()                  { return this._get('/api/status'); }
+  async getActiveMap()               { return this._get('/api/map/active'); }
+  async setActiveMap(mapName)        { return this._post('/api/map/active', { map_name: mapName }); }
 
   // ---- Mapping Pipeline (Phase 1) ----
   async getMappingStatus() { return this._get('/api/mapping/status'); }

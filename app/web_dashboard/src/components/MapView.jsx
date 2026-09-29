@@ -15,7 +15,7 @@ const TRAIL_MIN_DIST   = 0.05;  // metres — min movement before adding a crumb
 // LERP smoothing: lower = smoother but slower response; 0.18 @ 60fps ≈ 100ms settle
 const LERP_FACTOR = 0.18;
 
-export default function MapView({ telemetry, selectedNodes = [], onSelectNode }) {
+export default function MapView({ telemetry, selectedNodes = [], onSelectNode, activeMap = 'warehouse_01' }) {
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
 
@@ -68,30 +68,33 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
   const autoFollowPanRef = useRef(null);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 1. Load map image & graph on mount
+  // 1. Load map image, metadata & graph on mount or when activeMap changes
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
+    trailRef.current = []; // Reset trail so it doesn't carry old coordinates
 
-    bridge.getMapMetadata().then((data) => {
+    bridge.getMapMetadata(activeMap).then((data) => {
       if (data && mounted) {
         setMeta({
           resolution: data.resolution || DEFAULT_MAP_RES,
-          origin_x:   data.origin_x   ?? DEFAULT_ORIGIN_X,
-          origin_y:   data.origin_y   ?? DEFAULT_ORIGIN_Y,
-          width:      data.width       || MAP_WIDTH_PX,
-          height:     data.height      || MAP_HEIGHT_PX,
+          origin_x:   data.origin_x   ?? (activeMap === 'warehouse_01' ? -6.976 : DEFAULT_ORIGIN_X),
+          origin_y:   data.origin_y   ?? (activeMap === 'warehouse_01' ? -4.976 : DEFAULT_ORIGIN_Y),
+          width:      data.width       || (activeMap === 'warehouse_01' ? 279 : MAP_WIDTH_PX),
+          height:     data.height      || (activeMap === 'warehouse_01' ? 199 : MAP_HEIGHT_PX),
         });
       }
     });
 
-    bridge.getGraphData().then((data) => {
-      if (data?.nodes && mounted) setGraphNodes(data.nodes);
+    bridge.getGraphData(activeMap).then((data) => {
+      if (mounted) {
+        setGraphNodes(data?.nodes || []);
+      }
     });
 
-    bridge.getNamedPlaces().then((res) => {
-      if (res?.ok && Array.isArray(res.places) && mounted) {
-        setNamedPlaces(res.places);
+    bridge.getNamedPlaces(activeMap).then((res) => {
+      if (mounted) {
+        setNamedPlaces(res?.ok && Array.isArray(res.places) ? res.places : []);
       }
     });
 
@@ -99,7 +102,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
     img.crossOrigin = 'anonymous';
     img.onload  = () => { if (mounted) setMapImage(img); };
     img.onerror = () => {
-      bridge.getMapImage().then((res) => {
+      bridge.getMapImage(activeMap).then((res) => {
         if (res?.image && mounted) {
           const fb = new Image();
           fb.onload = () => mounted && setMapImage(fb);
@@ -107,10 +110,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
         }
       });
     };
-    img.src = bridge.rawMapUrl;
+    img.src = bridge.getRawMapUrl(activeMap);
 
     return () => { mounted = false; };
-  }, []);
+  }, [activeMap]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // 2. Track raw telemetry pose → trail & smooth pose ref
@@ -663,9 +666,23 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode })
 
       {/* ── Top HUD bar ── */}
       <div className="map-hud-top">
-        <div className="hud-badge">
+        <div className="hud-badge" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <span className="hud-dot" />
           <span>Live Map · 60 FPS</span>
+          <span
+            style={{
+              background: '#0284c7',
+              color: '#ffffff',
+              padding: '1px 7px',
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {activeMap}
+          </span>
         </div>
 
         <div className="hud-controls">

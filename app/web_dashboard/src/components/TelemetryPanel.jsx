@@ -37,7 +37,7 @@ function DistBar({ value, max = 8 }) {
   );
 }
 
-export default function TelemetryPanel({ telemetry }) {
+export default function TelemetryPanel({ telemetry, activeMap = 'warehouse_01' }) {
   const p  = telemetry?.pose     ?? { x: 0, y: 0, yaw: 0 };
   const v  = telemetry?.velocity ?? { linear: 0, angular: 0 };
   const im = telemetry?.imu      ?? { roll: 0, pitch: 0, yaw: 0 };
@@ -51,6 +51,21 @@ export default function TelemetryPanel({ telemetry }) {
 
   return (
     <div className="flex-col" style={{ gap: 12 }}>
+
+      {/* Operating Map Card */}
+      <div className="card" style={{ borderLeft: '3px solid #0284c7' }}>
+        <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="text-dim text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
+            🗺️ Active Map
+          </span>
+          <span style={{ fontSize: 9, background: '#0284c7', color: '#fff', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
+            ONLINE
+          </span>
+        </div>
+        <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, color: '#38bdf8', fontFamily: 'var(--text-mono)' }}>
+          {activeMap}
+        </div>
+      </div>
 
       {/* Obstacle Alert Banner */}
       {obs && (

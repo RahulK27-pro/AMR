@@ -59,11 +59,42 @@ export default function App() {
   const [telemetry, setTelemetry] = useState(null);
   const [selectedNodes, setSelectedNodes] = useState([]);
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'mapping'
+  const [activeMap, setActiveMap] = useState(() => {
+    return localStorage.getItem('amr_active_map') || 'warehouse_01';
+  });
 
   useEffect(() => {
     const unsub = bridge.onTelemetry(setTelemetry);
     return unsub;
   }, []);
+
+  // Fetch initial active map from bridge
+  useEffect(() => {
+    bridge.getActiveMap().then((res) => {
+      if (res?.ok && res.active_map) {
+        setActiveMap(res.active_map);
+        localStorage.setItem('amr_active_map', res.active_map);
+      }
+    });
+  }, []);
+
+  // Keep activeMap in sync if telemetry updates it from backend
+  useEffect(() => {
+    if (telemetry?.active_map && telemetry.active_map !== activeMap) {
+      setActiveMap(telemetry.active_map);
+      localStorage.setItem('amr_active_map', telemetry.active_map);
+    }
+  }, [telemetry?.active_map]);
+
+  const handleMapChange = async (newMap) => {
+    setActiveMap(newMap);
+    localStorage.setItem('amr_active_map', newMap);
+    setSelectedNodes([]); // Clear mission waypoints when switching maps!
+    bridge.emitEvent('info', `Switched active roadmap to "${newMap}"`);
+    try {
+      await bridge.setActiveMap(newMap);
+    } catch (_) {}
+  };
 
   const handleSelectNode = (nodeId) => {
     if (!selectedNodes.includes(nodeId)) {
@@ -82,6 +113,8 @@ export default function App() {
         telemetry={telemetry}
         currentView={currentView}
         onViewChange={setCurrentView}
+        activeMap={activeMap}
+        onMapChange={handleMapChange}
       />
 
       {currentView === 'mapping' ? (
@@ -97,7 +130,7 @@ export default function App() {
         <>
           {/* ── Left: Telemetry Data ── */}
           <aside className="panel-left">
-            <TelemetryPanel telemetry={telemetry} />
+            <TelemetryPanel telemetry={telemetry} activeMap={activeMap} />
           </aside>
 
           {/* ── Centre: 60 FPS Vector Map + Polar Radar + Event Timeline ── */}
@@ -108,6 +141,7 @@ export default function App() {
                 telemetry={telemetry}
                 selectedNodes={selectedNodes}
                 onSelectNode={handleSelectNode}
+                activeMap={activeMap}
               />
             </div>
 
@@ -138,6 +172,8 @@ export default function App() {
               selectedNodes={selectedNodes}
               setSelectedNodes={setSelectedNodes}
               onOpenMapping={() => setCurrentView('mapping')}
+              activeMap={activeMap}
+              onMapChange={handleMapChange}
             />
           </aside>
         </>

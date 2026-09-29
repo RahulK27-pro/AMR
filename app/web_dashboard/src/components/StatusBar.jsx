@@ -4,16 +4,38 @@ import bridge from '../services/amrBridge';
 /**
  * StatusBar — top header bar showing connection state, bridge URL, and key global info.
  */
-export default function StatusBar({ telemetry, currentView = 'dashboard', onViewChange }) {
+export default function StatusBar({
+  telemetry,
+  currentView = 'dashboard',
+  onViewChange,
+  activeMap = 'warehouse_01',
+  onMapChange,
+}) {
   const [status, setStatus] = useState('connecting');
   const [host, setHost]     = useState(window.location.hostname);
   const [port, setPort]     = useState('8000');
   const [editing, setEditing] = useState(false);
+  const [availableMaps, setAvailableMaps] = useState([]);
 
   useEffect(() => {
     bridge.connect(host, Number(port));
     const unsub = bridge.onStatusChange(setStatus);
     return unsub;
+  }, []);
+
+  // Poll / refresh available maps list
+  useEffect(() => {
+    let mounted = true;
+    const fetchMaps = () => {
+      bridge.getSavedMaps().then((res) => {
+        if (mounted && res?.maps) {
+          setAvailableMaps(res.maps);
+        }
+      });
+    };
+    fetchMaps();
+    const interval = setInterval(fetchMaps, 8000);
+    return () => { mounted = false; clearInterval(interval); };
   }, []);
 
   const handleConnect = () => {
@@ -53,6 +75,71 @@ export default function StatusBar({ telemetry, currentView = 'dashboard', onView
       <div className={`nav-state-badge nav-state--${navState}`}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />
         {navState}
+      </div>
+
+      {/* ── Active Map Switcher (Phase 7 / Multi-Map Separation) ── */}
+      <div
+        className="status-bar__map-switcher"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          background: 'rgba(15, 23, 42, 0.85)',
+          border: '1px solid #334155',
+          borderRadius: 8,
+          padding: '3px 10px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+        }}
+        title="Switch active operating map and topological roadmap"
+      >
+        <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span>🗺️</span>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#94a3b8', textTransform: 'uppercase' }}>
+            Map:
+          </span>
+        </span>
+        <select
+          id="select-active-map"
+          value={activeMap}
+          onChange={(e) => onMapChange && onMapChange(e.target.value)}
+          style={{
+            background: 'transparent',
+            color: '#38bdf8',
+            border: 'none',
+            outline: 'none',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: 'pointer',
+            padding: '2px 4px',
+          }}
+        >
+          {availableMaps.length > 0 ? (
+            availableMaps.map((m) => (
+              <option key={m.name} value={m.name} style={{ background: '#1e293b', color: '#f8fafc' }}>
+                {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
+              </option>
+            ))
+          ) : (
+            <>
+              <option value="warehouse_01" style={{ background: '#1e293b', color: '#f8fafc' }}>warehouse_01 (565 nodes)</option>
+              <option value="warehouse_map" style={{ background: '#1e293b', color: '#f8fafc' }}>warehouse_map (764 nodes)</option>
+            </>
+          )}
+        </select>
+        <span
+          style={{
+            fontSize: 9,
+            background: '#0284c7',
+            color: '#ffffff',
+            padding: '1px 5px',
+            borderRadius: 4,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}
+        >
+          Active
+        </span>
       </div>
 
       {/* Dedicated Pipeline Entry Point: Map New Place */}

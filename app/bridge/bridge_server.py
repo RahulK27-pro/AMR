@@ -37,6 +37,8 @@ import threading
 import time
 import heapq
 import logging
+import shutil
+import yaml
 from collections import deque
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
@@ -107,19 +109,134 @@ except Exception as e:
     print(f"[bridge] Warning: Failed to import graph_extractor: {e}")
     graph_extractor = None
 
-# Calibrated Map metadata from warehouse_map.yaml (resolution, origin)
-# resolution: metres per pixel
-MAP_RESOLUTION = 0.05          # 0.05 m/px
-MAP_ORIGIN_X   = -7.397        # map frame X at pixel (0,0)
-MAP_ORIGIN_Y   = -6.596        # map frame Y at pixel (0,0)
-MAP_WIDTH_PX   = 329           # cols in the PNG
-MAP_HEIGHT_PX  = 275           # rows in the PNG
+# Calibrated Map metadata defaults
+MAP_RESOLUTION = 0.05          # default 0.05 m/px
+MAP_ORIGIN_X   = -7.397        # default map frame X at pixel (0,0)
+MAP_ORIGIN_Y   = -6.596        # default map frame Y at pixel (0,0)
+MAP_WIDTH_PX   = 329           # default cols
+MAP_HEIGHT_PX  = 275           # default rows
 
 
-def world_to_pixel(wx: float, wy: float):
-    """Convert world (x,y) metres → (col, row) pixel in the PNG."""
-    col = int((wx - MAP_ORIGIN_X) / MAP_RESOLUTION)
-    row = MAP_HEIGHT_PX - int((wy - MAP_ORIGIN_Y) / MAP_RESOLUTION)
+def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
+    """Read map metadata (resolution, origin, width, height) dynamically from <map_name>.yaml and image."""
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    target = (map_name or 'warehouse_01').strip()
+    yaml_path = maps_dir / f"{target}.yaml"
+    if not yaml_path.exists():
+        if target in ('warehouse_map', 'warehouse'):
+            yaml_path = maps_dir / "warehouse_map.yaml"
+        elif target == 'warehouse_01':
+            yaml_path = maps_dir / "warehouse_01.yaml"
+        else:
+            matches = list(maps_dir.glob(f"*{target}*.yaml"))
+            if matches:
+                yaml_path = matches[0]
+
+    # Map-specific calibrated fallbacks
+    if target == 'warehouse_01':
+        res = 0.05
+        ox = -6.976
+        oy = -4.976
+        width = 279
+        height = 199
+    else:
+        res = 0.05
+        ox = -7.397
+        oy = -6.596
+        width = 329
+        height = 275
+
+    if yaml_path.exists():
+        try:
+            with open(yaml_path, 'r', encoding='utf-8') as f:
+                ydata = yaml.safe_load(f)
+            if isinstance(ydata, dict):
+                res = float(ydata.get('resolution', res))
+                orig = ydata.get('origin', [ox, oy, 0.0])
+                if isinstance(orig, list) and len(orig) >= 2:
+                    ox = float(orig[0])
+                    oy = float(orig[1])
+                img_name = ydata.get('image', f"{target}.png")
+                img_file = yaml_path.parent / img_name
+                if not img_file.exists():
+                    img_file = maps_dir / f"{target}.png"
+                if not img_file.exists():
+                    img_file = maps_dir / f"{yaml_path.stem}.png"
+                if not img_file.exists() and target == 'warehouse_map':
+                    img_file = maps_dir / "clean_warehouse_map.png"
+                
+                if img_file.exists():
+                    try:
+                        from PIL import Image
+                        with Image.open(img_file) as pimg:
+                            width, height = pimg.size
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning(f"Error parsing map yaml {yaml_path}: {e}")
+
+    return {
+        'map_name': target,
+        'resolution': res,
+        'origin_x': ox,
+        'origin_y': oy,
+        'width': width,
+        'height': height,
+    }
+
+
+def resolve_map_image_path(map_name: Optional[str] = None) -> Optional[Path]:
+    """Find or convert the clean floorplan PNG for a given map."""
+    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    target = (map_name or 'warehouse_01').strip()
+    
+    # 1. Direct png file
+    direct_png = maps_dir / f"{target}.png"
+    if direct_png.exists():
+        return direct_png
+    if target == 'warehouse_map' and (maps_dir / "clean_warehouse_map.png").exists():
+        return maps_dir / "clean_warehouse_map.png"
+        
+    # 2. Check yaml
+    yaml_path = maps_dir / f"{target}.yaml"
+    if yaml_path.exists():
+        try:
+            with open(yaml_path, 'r', encoding='utf-8') as f:
+                yd = yaml.safe_load(f)
+            if isinstance(yd, dict) and 'image' in yd:
+                im_path = maps_dir / yd['image']
+                if im_path.suffix.lower() == '.pgm' and not direct_png.exists():
+                    try:
+                        from PIL import Image
+                        with Image.open(im_path) as pimg:
+                            pimg.save(direct_png, format='PNG')
+                        return direct_png
+                    except Exception:
+                        pass
+                if im_path.exists() and im_path.suffix.lower() == '.png':
+                    return im_path
+        except Exception:
+            pass
+            
+    # 3. If .pgm exists, convert to png
+    pgm_path = maps_dir / f"{target}.pgm"
+    if pgm_path.exists():
+        try:
+            from PIL import Image
+            with Image.open(pgm_path) as pimg:
+                pimg.save(direct_png, format='PNG')
+            return direct_png
+        except Exception:
+            pass
+
+    return direct_png if direct_png.exists() else None
+
+
+def world_to_pixel(wx: float, wy: float, map_name: Optional[str] = None):
+    """Convert world (x,y) metres → (col, row) pixel in the map image."""
+    meta = get_map_metadata_by_name(map_name or (node.active_map_name if 'node' in globals() and node else 'warehouse_01'))
+    col = int((wx - meta['origin_x']) / meta['resolution'])
+    row = meta['height'] - int((wy - meta['origin_y']) / meta['resolution'])
     return col, row
 
 
@@ -563,6 +680,8 @@ class AmrBridgeNode(Node):
         self.obstacle_alert: Optional[str] = None
         self.imu              = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0}
         self.mission          = {}
+        self.active_map_name: str = 'warehouse_01'
+        self._cached_graphs: Dict[str, dict] = {}
         self._cached_graph: Optional[dict] = None
         self.active_place_nav: Optional[dict] = None
 
@@ -841,29 +960,81 @@ class AmrBridgeNode(Node):
         self.obstacle_cmd_pub.publish(t)
 
     def set_active_graph(self, graph_dict: dict):
-        self._cached_graph = {
+        map_name = graph_dict.get('map_name', self.active_map_name)
+        cached = {
             'nodes': graph_dict.get('nodes', []),
             'edges': graph_dict.get('edges', []),
+            'places': graph_dict.get('places', []),
             'total_nodes': graph_dict.get('total_nodes', len(graph_dict.get('nodes', []))),
             'total_edges': graph_dict.get('total_edges', len(graph_dict.get('edges', []))),
-            'map_name': graph_dict.get('map_name', 'warehouse_map'),
+            'map_name': map_name,
             'metrics': graph_dict.get('metrics', {}),
             'vis_image_b64': graph_dict.get('vis_image_b64', None),
         }
+        self._cached_graphs[map_name] = cached
+        if map_name == self.active_map_name:
+            self._cached_graph = cached
 
-    def get_graph_data(self) -> dict:
-        if self._cached_graph is None and _GRAPH_JSON_PATH.exists():
+    def set_active_map(self, map_name: str):
+        target_name = map_name.strip()
+        maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+        valid_map = (
+            (maps_dir / f"{target_name}.yaml").exists() or 
+            (maps_dir / f"{target_name}_graph.json").exists() or 
+            (maps_dir / f"{target_name}.png").exists() or
+            (target_name == 'warehouse_map' and (maps_dir / "clean_warehouse_map.png").exists())
+        )
+        if not valid_map:
+            raise FileNotFoundError(f"Map '{target_name}' not found on disk.")
+            
+        self.active_map_name = target_name
+        # Pre-cache graph for active map
+        self.get_graph_data(target_name)
+        
+        # 1. Synchronize active graph to warehouse_graph.json for ROS2 route_runner
+        src_graph = maps_dir / f"{target_name}_graph.json"
+        if src_graph.exists():
+            dest_graph = maps_dir / "warehouse_graph.json"
             try:
-                with open(_GRAPH_JSON_PATH, 'r', encoding='utf-8') as f:
+                shutil.copy2(src_graph, dest_graph)
+                self.get_logger().info(f"Synchronized active map '{target_name}' graph to warehouse_graph.json")
+            except Exception as e:
+                self.get_logger().warning(f"Could not sync graph to warehouse_graph.json: {e}")
+
+        # 2. Synchronize active places to warehouse_places.json
+        src_places = maps_dir / f"{target_name}_places.json"
+        if src_places.exists():
+            dest_places = maps_dir / "warehouse_places.json"
+            try:
+                shutil.copy2(src_places, dest_places)
+                self.get_logger().info(f"Synchronized active map '{target_name}' places to warehouse_places.json")
+            except Exception as e:
+                self.get_logger().warning(f"Could not sync places to warehouse_places.json: {e}")
+
+    def get_graph_data(self, map_name: Optional[str] = None) -> dict:
+        target_name = (map_name or self.active_map_name or 'warehouse_01').strip()
+        if target_name in self._cached_graphs:
+            return self._cached_graphs[target_name]
+
+        maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+        graph_path = maps_dir / f"{target_name}_graph.json"
+        if not graph_path.exists() and target_name == 'warehouse':
+            graph_path = maps_dir / "warehouse_graph.json"
+
+        if graph_path.exists():
+            try:
+                with open(graph_path, 'r', encoding='utf-8') as f:
                     raw = json.load(f)
                 nodes = raw.get('nodes', [])
                 edges = raw.get('edges', [])
+                places = raw.get('places', [])
                 vis_b64 = None
                 vis_candidates = [
-                    _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_01_graph_vis.png",
-                    _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "graph_visualization.png",
-                    _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_map_graph_vis.png",
+                    maps_dir / f"{target_name}_graph_vis.png",
+                    maps_dir / f"{target_name}_vis.png",
                 ]
+                if target_name == 'warehouse_01':
+                    vis_candidates.append(maps_dir / "graph_visualization.png")
                 for vc in vis_candidates:
                     if vc.exists():
                         try:
@@ -872,17 +1043,24 @@ class AmrBridgeNode(Node):
                             break
                         except Exception:
                             pass
-                self._cached_graph = {
+                graph_data = {
                     'nodes': nodes,
                     'edges': edges,
+                    'places': places,
                     'total_nodes': len(nodes),
                     'total_edges': len(edges),
                     'vis_image_b64': vis_b64,
+                    'map_name': target_name,
                 }
+                self._cached_graphs[target_name] = graph_data
+                if target_name == self.active_map_name:
+                    self._cached_graph = graph_data
+                return graph_data
             except Exception as e:
-                self.get_logger().error(f"Failed to load graph: {e}")
-                return {'nodes': [], 'edges': [], 'total_nodes': 0, 'total_edges': 0}
-        return self._cached_graph or {'nodes': [], 'edges': [], 'total_nodes': 0, 'total_edges': 0}
+                self.get_logger().error(f"Failed to load graph for {target_name}: {e}")
+                return {'nodes': [], 'edges': [], 'places': [], 'total_nodes': 0, 'total_edges': 0, 'map_name': target_name}
+
+        return {'nodes': [], 'edges': [], 'places': [], 'total_nodes': 0, 'total_edges': 0, 'map_name': target_name}
 
     def get_live_map_info(self) -> dict:
         return {
@@ -968,6 +1146,7 @@ class AmrBridgeNode(Node):
             'obstacle_alert':  self.obstacle_alert,
             'imu':             self.imu,
             'mission':         self.mission,
+            'active_map':      getattr(self, 'active_map_name', 'warehouse_01'),
             'active_place_nav': getattr(self, 'active_place_nav', None),
             'scan':            scan_ds,
             'scan_angle_min':  round(self.scan_angle_min, 4),
@@ -978,43 +1157,45 @@ class AmrBridgeNode(Node):
 
     # -------- Map PNG with robot overlay --------
 
-    def get_map_image_b64(self) -> Optional[str]:
-        """Return base64-encoded JPEG of static map PNG with robot dot overlaid."""
+    def get_map_image_b64(self, map_name: Optional[str] = None) -> Optional[str]:
+        """Return base64-encoded JPEG of map PNG with robot dot overlaid for specified map."""
+        target = (map_name or self.active_map_name or 'warehouse_01').strip()
+        img_path = resolve_map_image_path(target)
+        if not img_path or not img_path.exists():
+            return None
+
         try:
             from PIL import Image, ImageDraw
-        except ImportError:
-            # Return raw map without overlay if PIL not installed
-            if _MAP_PNG_PATH.exists():
-                with open(_MAP_PNG_PATH, 'rb') as f:
+            img = Image.open(img_path).convert('RGBA')
+            draw = ImageDraw.Draw(img)
+
+            # Robot position dot (red circle)
+            cx, cy = world_to_pixel(self.pose['x'], self.pose['y'], map_name=target)
+            r = 6
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 60, 60, 230))
+
+            # Robot heading line
+            length = 16
+            yaw = self.pose['yaw']
+            ex = int(cx + length * math.cos(yaw))
+            ey = int(cy - length * math.sin(yaw))
+            draw.line([cx, cy, ex, ey], fill=(255, 200, 0, 220), width=3)
+
+            # Path overlay (magenta polyline)
+            if len(self.path_waypoints) >= 2:
+                pix_path = [world_to_pixel(p[0], p[1], map_name=target) for p in self.path_waypoints]
+                draw.line(pix_path, fill=(255, 80, 220, 200), width=2)
+
+            buf = io.BytesIO()
+            img.convert('RGB').save(buf, format='JPEG', quality=82)
+            return base64.b64encode(buf.getvalue()).decode()
+        except Exception as e:
+            self.get_logger().warning(f"Error drawing map overlay for {target}: {e}")
+            try:
+                with open(img_path, 'rb') as f:
                     return base64.b64encode(f.read()).decode()
-            return None
-
-        if not _MAP_PNG_PATH.exists():
-            return None
-
-        img = Image.open(_MAP_PNG_PATH).convert('RGBA')
-        draw = ImageDraw.Draw(img)
-
-        # Robot position dot (red circle)
-        cx, cy = world_to_pixel(self.pose['x'], self.pose['y'])
-        r = 6
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 60, 60, 230))
-
-        # Robot heading line
-        length = 16
-        yaw = self.pose['yaw']
-        ex = int(cx + length * math.cos(yaw))
-        ey = int(cy - length * math.sin(yaw))
-        draw.line([cx, cy, ex, ey], fill=(255, 200, 0, 220), width=3)
-
-        # Path overlay (magenta polyline)
-        if len(self.path_waypoints) >= 2:
-            pix_path = [world_to_pixel(p[0], p[1]) for p in self.path_waypoints]
-            draw.line(pix_path, fill=(255, 80, 220, 200), width=2)
-
-        buf = io.BytesIO()
-        img.convert('RGB').save(buf, format='JPEG', quality=82)
-        return base64.b64encode(buf.getvalue()).decode()
+            except Exception:
+                return None
 
     # -------- Utils --------
 
@@ -1123,20 +1304,40 @@ class DispatchSequenceRequest(BaseModel):
     map_name: Optional[str] = None
 
 
+class SetActiveMapRequest(BaseModel):
+    map_name: str
+
+
 # -------- REST endpoints --------
 
 @app.get('/api/status')
 async def get_status():
     return node.telemetry_snapshot() if node else {'error': 'ROS node not ready'}
 
+@app.get('/api/map/active')
+async def get_active_map():
+    curr = node.active_map_name if node else 'warehouse_01'
+    return {'ok': True, 'active_map': curr}
+
+@app.post('/api/map/active')
+async def post_active_map(req: SetActiveMapRequest):
+    if not node:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    try:
+        node.set_active_map(req.map_name)
+        return {'ok': True, 'active_map': node.active_map_name}
+    except Exception as e:
+        return JSONResponse({'error': str(e)}, status_code=400)
+
 @app.get('/api/map')
-async def get_map():
+async def get_map(map_name: Optional[str] = None):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
-    data = node.get_map_image_b64()
+    target = (map_name or node.active_map_name or 'warehouse_01').strip()
+    data = node.get_map_image_b64(target)
     if data is None:
-        return JSONResponse({'error': 'Map image not found'}, status_code=404)
-    return {'image': data, 'encoding': 'jpeg/base64'}
+        return JSONResponse({'error': f'Map image for {target} not found'}, status_code=404)
+    return {'image': data, 'encoding': 'jpeg/base64', 'map_name': target}
 
 @app.post('/api/cmd_vel')
 async def post_cmd_vel(req: CmdVelRequest):
@@ -1176,32 +1377,30 @@ async def post_goal_sequence(req: GoalSequenceRequest):
     return {'ok': True}
 
 @app.get('/api/map/metadata')
-async def get_map_metadata():
-    return {
-        'resolution': MAP_RESOLUTION,
-        'origin_x': MAP_ORIGIN_X,
-        'origin_y': MAP_ORIGIN_Y,
-        'width': MAP_WIDTH_PX,
-        'height': MAP_HEIGHT_PX,
-    }
+async def get_map_metadata(map_name: Optional[str] = None):
+    target = (map_name or (node.active_map_name if node else None) or 'warehouse_01').strip()
+    return get_map_metadata_by_name(target)
 
 @app.get('/api/map/raw')
-async def get_map_raw():
+async def get_map_raw(map_name: Optional[str] = None):
     """Serve the clean architectural floorplan (no graph overlay)."""
-    if not _MAP_PNG_PATH.exists():
-        return JSONResponse({'error': 'Map file not found'}, status_code=404)
-    return FileResponse(_MAP_PNG_PATH, media_type='image/png')
+    target = (map_name or (node.active_map_name if node else None) or 'warehouse_01').strip()
+    img_path = resolve_map_image_path(target)
+    if not img_path or not img_path.exists():
+        return JSONResponse({'error': f'Map image for {target} not found'}, status_code=404)
+    return FileResponse(img_path, media_type='image/png')
 
 @app.get('/api/map/clean')
-async def get_map_clean():
+async def get_map_clean(map_name: Optional[str] = None):
     """Alias for /api/map/raw — explicitly returns the clean floorplan."""
-    return await get_map_raw()
+    return await get_map_raw(map_name)
 
 @app.get('/api/graph')
-async def get_graph():
+async def get_graph(map_name: Optional[str] = None):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
-    return node.get_graph_data()
+    target = (map_name or node.active_map_name or 'warehouse_01').strip()
+    return node.get_graph_data(target)
 
 @app.post('/api/obstacle/cmd_vel')
 async def post_obstacle_cmd_vel(req: CmdVelRequest):
@@ -1299,19 +1498,49 @@ async def post_mapping_save(req: SaveMapRequest = SaveMapRequest()):
 async def get_saved_maps():
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
     maps = []
+    curr_active = node.active_map_name if node else 'warehouse_01'
     if maps_dir.exists():
         for yaml_file in sorted(maps_dir.glob("*.yaml")):
             name = yaml_file.stem
             pgm_file = maps_dir / f"{name}.pgm"
             png_file = maps_dir / f"{name}.png"
+            graph_file = maps_dir / f"{name}_graph.json"
+            places_file = maps_dir / f"{name}_places.json"
+            meta = get_map_metadata_by_name(name)
+            
+            node_count = 0
+            if graph_file.exists():
+                try:
+                    with open(graph_file, 'r', encoding='utf-8') as gf:
+                        gd = json.load(gf)
+                        node_count = len(gd.get('nodes', []))
+                except Exception:
+                    pass
+            
+            place_count = 0
+            if places_file.exists():
+                try:
+                    with open(places_file, 'r', encoding='utf-8') as pf:
+                        pd = json.load(pf)
+                        place_count = len(pd) if isinstance(pd, list) else 0
+                except Exception:
+                    pass
+
+            has_png = png_file.exists() or (name == 'warehouse_map' and (maps_dir / 'clean_warehouse_map.png').exists())
             maps.append({
                 'name': name,
                 'yaml': str(yaml_file.relative_to(_WORKSPACE_ROOT)),
                 'has_pgm': pgm_file.exists(),
-                'has_png': png_file.exists(),
+                'has_png': has_png,
+                'has_graph': graph_file.exists(),
+                'node_count': node_count,
+                'place_count': place_count,
+                'resolution': meta['resolution'],
+                'dimensions': f"{meta['width']}×{meta['height']}",
                 'size_kb': round(yaml_file.stat().st_size / 1024, 2),
+                'is_active': (name == curr_active)
             })
-    return {'maps': maps}
+    return {'maps': maps, 'active_map': curr_active}
 
 @app.post('/api/mapping/graph/extract')
 async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
@@ -1319,20 +1548,15 @@ async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
     if graph_extractor is None:
         return JSONResponse({'error': 'Graph extractor module not available'}, status_code=500)
 
-    target_name = (req.map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
 
     yaml_path = maps_dir / f"{target_name}.yaml"
     if not yaml_path.exists():
-        candidates = [
-            maps_dir / f"{target_name}_map.yaml",
-            maps_dir / "warehouse_map.yaml",
-            maps_dir / "warehouse_01.yaml"
-        ]
-        for c in candidates:
-            if c.exists():
-                yaml_path = c
-                break
+        if target_name in ('warehouse_map', 'warehouse'):
+            yaml_path = maps_dir / "warehouse_map.yaml"
+        elif target_name == 'warehouse_01':
+            yaml_path = maps_dir / "warehouse_01.yaml"
 
     if not yaml_path.exists():
         return JSONResponse({'error': f'Map YAML file not found for "{target_name}" in {maps_dir}'}, status_code=404)
@@ -1461,23 +1685,13 @@ async def get_latest_graph(map_name: Optional[str] = None):
 async def get_graph_verification(map_name: Optional[str] = None):
     """Phase 4: Performs topological, clearance, and routing audits on the graph roadmap."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_json = None
-    target_name = (map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
-
-    if target_name:
-        for cand in [
-            maps_dir / f"{target_name}_graph.json",
-            maps_dir / f"{target_name}.json",
-            maps_dir / "warehouse_01_graph.json",
-            maps_dir / "warehouse_graph.json",
-            maps_dir / "warehouse_map_graph.json",
-        ]:
-            if cand.exists():
-                target_json = cand
-                break
-
-    if not target_json or not target_json.exists():
-        return JSONResponse({'error': 'No graph file found to verify'}, status_code=404)
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    cand = maps_dir / f"{target_name}_graph.json"
+    if not cand.exists():
+        cand = maps_dir / f"{target_name}.json"
+    if not cand.exists():
+        return JSONResponse({'error': f'Graph roadmap "{target_name}_graph.json" not found to verify'}, status_code=404)
+    target_json = cand
 
     try:
         with open(target_json, 'r', encoding='utf-8') as f:
@@ -1648,23 +1862,13 @@ async def get_graph_verification(map_name: Optional[str] = None):
 async def post_plan_route(req: PlanRouteRequest):
     """Phase 4: Computes shortest path and waypoint metrics between two roadmap nodes."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_json = None
-    target_name = (req.map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
-
-    if target_name:
-        for cand in [
-            maps_dir / f"{target_name}_graph.json",
-            maps_dir / f"{target_name}.json",
-            maps_dir / "warehouse_01_graph.json",
-            maps_dir / "warehouse_graph.json",
-            maps_dir / "warehouse_map_graph.json",
-        ]:
-            if cand.exists():
-                target_json = cand
-                break
-
-    if not target_json or not target_json.exists():
-        return JSONResponse({'error': 'Graph file not found'}, status_code=404)
+    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    cand = maps_dir / f"{target_name}_graph.json"
+    if not cand.exists():
+        cand = maps_dir / f"{target_name}.json"
+    if not cand.exists():
+        return JSONResponse({'error': f'Graph roadmap "{target_name}_graph.json" not found for route planning'}, status_code=404)
+    target_json = cand
 
     try:
         with open(target_json, 'r', encoding='utf-8') as f:
@@ -1756,14 +1960,12 @@ async def post_plan_route(req: PlanRouteRequest):
 async def get_named_places(map_name: Optional[str] = None):
     """Phase 5: Retrieve all named places and stations for a roadmap."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
     
+    # Strictly isolated search candidates for target_name only:
     candidates = [
         maps_dir / f"{target_name}_places.json",
         maps_dir / f"{target_name}_graph.json",
-        maps_dir / "warehouse_places.json",
-        maps_dir / "warehouse_graph.json",
-        maps_dir / "warehouse_01_graph.json",
     ]
     
     for cand in candidates:
@@ -1785,7 +1987,8 @@ async def get_named_places(map_name: Optional[str] = None):
 async def post_save_named_places(req: SavePlacesRequest):
     """Phase 5: Persist named places into active graph and dedicated places files."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (req.map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    active_now = node.active_map_name if node else 'warehouse_01'
+    target_name = (req.map_name or active_now).strip()
     places_data = [p.dict() for p in req.places]
     
     saved_files = []
@@ -1796,45 +1999,30 @@ async def post_save_named_places(req: SavePlacesRequest):
         json.dump(places_data, f, indent=2)
     saved_files.append(str(places_file.relative_to(_WORKSPACE_ROOT)))
     
-    # Also save standard warehouse_places.json
-    wh_places_file = maps_dir / "warehouse_places.json"
-    with open(wh_places_file, 'w', encoding='utf-8') as f:
-        json.dump(places_data, f, indent=2)
-    saved_files.append(str(wh_places_file.relative_to(_WORKSPACE_ROOT)))
-    
-    # 2. Inject places into corresponding graph JSON files
-    for graph_cand in [
-        maps_dir / f"{target_name}_graph.json",
-        maps_dir / "warehouse_graph.json",
-        maps_dir / "warehouse_01_graph.json"
-    ]:
-        if graph_cand.exists():
-            try:
-                with open(graph_cand, 'r', encoding='utf-8') as f:
-                    raw_graph = json.load(f)
-                if isinstance(raw_graph, dict):
-                    raw_graph['places'] = places_data
-                    with open(graph_cand, 'w', encoding='utf-8') as f:
-                        json.dump(raw_graph, f, indent=2)
-                    saved_files.append(str(graph_cand.relative_to(_WORKSPACE_ROOT)))
-            except Exception as e:
-                logger.error(f"Error injecting places into {graph_cand}: {e}")
-                
-    # 3. Synchronize to install share directory if it exists
-    share_maps = _WORKSPACE_ROOT / "install" / "agv_description" / "share" / "agv_description" / "maps"
-    if share_maps.exists():
+    # 2. Inject places into corresponding <target_name>_graph.json ONLY
+    target_graph = maps_dir / f"{target_name}_graph.json"
+    if target_graph.exists():
         try:
-            with open(share_maps / "warehouse_places.json", 'w', encoding='utf-8') as f:
-                json.dump(places_data, f, indent=2)
-            if (share_maps / "warehouse_graph.json").exists():
-                with open(share_maps / "warehouse_graph.json", 'r', encoding='utf-8') as f:
-                    sg = json.load(f)
-                if isinstance(sg, dict):
-                    sg['places'] = places_data
-                    with open(share_maps / "warehouse_graph.json", 'w', encoding='utf-8') as f:
-                        json.dump(sg, f, indent=2)
+            with open(target_graph, 'r', encoding='utf-8') as f:
+                raw_graph = json.load(f)
+            if isinstance(raw_graph, dict):
+                raw_graph['places'] = places_data
+                with open(target_graph, 'w', encoding='utf-8') as f:
+                    json.dump(raw_graph, f, indent=2)
+                saved_files.append(str(target_graph.relative_to(_WORKSPACE_ROOT)))
+                if node and hasattr(node, '_cached_graphs') and target_name in node._cached_graphs:
+                    node._cached_graphs[target_name]['places'] = places_data
         except Exception as e:
-            logger.warning(f"Could not sync places to install share: {e}")
+            logger.error(f"Error injecting places into {target_graph}: {e}")
+            
+    # 3. Synchronize to runtime fallback (warehouse_places.json) ONLY if target_name is the active map
+    if target_name == active_now:
+        try:
+            with open(maps_dir / "warehouse_places.json", 'w', encoding='utf-8') as f:
+                json.dump(places_data, f, indent=2)
+            saved_files.append(str((maps_dir / "warehouse_places.json").relative_to(_WORKSPACE_ROOT)))
+        except Exception as e:
+            logger.warning(f"Could not sync to warehouse_places.json: {e}")
 
     return {
         'ok': True,
@@ -1849,21 +2037,12 @@ async def post_save_named_places(req: SavePlacesRequest):
 async def post_generate_default_templates(map_name: Optional[str] = None):
     """Phase 5: Auto-generate intelligent default warehouse stations based on roadmap topology."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
     
-    # Load roadmap nodes
-    target_graph = None
-    for cand in [
-        maps_dir / f"{target_name}_graph.json",
-        maps_dir / "warehouse_01_graph.json",
-        maps_dir / "warehouse_graph.json",
-    ]:
-        if cand.exists():
-            target_graph = cand
-            break
-
-    if not target_graph:
-        return JSONResponse({'error': 'Graph roadmap not found to generate place templates'}, status_code=404)
+    # Load roadmap nodes strictly from target map
+    target_graph = maps_dir / f"{target_name}_graph.json"
+    if not target_graph.exists():
+        return JSONResponse({'error': f'Graph roadmap "{target_name}_graph.json" not found to generate place templates'}, status_code=404)
 
     try:
         with open(target_graph, 'r', encoding='utf-8') as f:
@@ -1966,14 +2145,11 @@ async def post_generate_default_templates(map_name: Optional[str] = None):
 async def delete_named_place(place_id: str, map_name: Optional[str] = None):
     """Phase 5: Remove a named place from the saved places list."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
     
     places_file = maps_dir / f"{target_name}_places.json"
     if not places_file.exists():
-        places_file = maps_dir / "warehouse_places.json"
-        
-    if not places_file.exists():
-        return JSONResponse({'error': 'No places file found to delete from'}, status_code=404)
+        return JSONResponse({'error': f'No places file found for map "{target_name}"'}, status_code=404)
         
     try:
         with open(places_file, 'r', encoding='utf-8') as f:
@@ -1983,7 +2159,7 @@ async def delete_named_place(place_id: str, map_name: Optional[str] = None):
         places = [p for p in places if p.get('id') != place_id]
         
         if len(places) == orig_len:
-            return JSONResponse({'error': f'Place ID "{place_id}" not found'}, status_code=404)
+            return JSONResponse({'error': f'Place ID "{place_id}" not found in map "{target_name}"'}, status_code=404)
             
         req = SavePlacesRequest(map_name=target_name, places=[NamedPlace(**p) for p in places])
         return await post_save_named_places(req)
@@ -2000,6 +2176,12 @@ async def post_dispatch_place(req: DispatchPlaceRequest):
     """Phase 6: Dispatch AMR to a named place using its topological node and world coordinates."""
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+
+    if req.map_name and req.map_name != node.active_map_name:
+        try:
+            node.set_active_map(req.map_name)
+        except Exception as e:
+            logger.warning(f"Could not switch active map to {req.map_name}: {e}")
 
     # 1. Publish to /goal_sequence with the assigned node_id
     node.publish_goal_sequence([req.node_id])
@@ -2038,6 +2220,12 @@ async def post_dispatch_sequence(req: DispatchSequenceRequest):
 
     if not req.places:
         return JSONResponse({'error': 'Places sequence cannot be empty'}, status_code=400)
+
+    if req.map_name and req.map_name != node.active_map_name:
+        try:
+            node.set_active_map(req.map_name)
+        except Exception as e:
+            logger.warning(f"Could not switch active map to {req.map_name}: {e}")
 
     node_ids = [p.node_id for p in req.places]
     node.publish_goal_sequence(node_ids)
