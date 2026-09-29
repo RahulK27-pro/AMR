@@ -1001,16 +1001,6 @@ class AmrBridgeNode(Node):
             except Exception as e:
                 self.get_logger().warning(f"Could not sync graph to warehouse_graph.json: {e}")
 
-        # 2. Synchronize active places to warehouse_places.json
-        src_places = maps_dir / f"{target_name}_places.json"
-        if src_places.exists():
-            dest_places = maps_dir / "warehouse_places.json"
-            try:
-                shutil.copy2(src_places, dest_places)
-                self.get_logger().info(f"Synchronized active map '{target_name}' places to warehouse_places.json")
-            except Exception as e:
-                self.get_logger().warning(f"Could not sync places to warehouse_places.json: {e}")
-
     def get_graph_data(self, map_name: Optional[str] = None) -> dict:
         target_name = (map_name or self.active_map_name or 'warehouse_01').strip()
         if target_name in self._cached_graphs:
@@ -2012,17 +2002,11 @@ async def post_save_named_places(req: SavePlacesRequest):
                 saved_files.append(str(target_graph.relative_to(_WORKSPACE_ROOT)))
                 if node and hasattr(node, '_cached_graphs') and target_name in node._cached_graphs:
                     node._cached_graphs[target_name]['places'] = places_data
+                if node and hasattr(node, '_cached_graph') and node.active_map_name == target_name:
+                    if isinstance(node._cached_graph, dict):
+                        node._cached_graph['places'] = places_data
         except Exception as e:
             logger.error(f"Error injecting places into {target_graph}: {e}")
-            
-    # 3. Synchronize to runtime fallback (warehouse_places.json) ONLY if target_name is the active map
-    if target_name == active_now:
-        try:
-            with open(maps_dir / "warehouse_places.json", 'w', encoding='utf-8') as f:
-                json.dump(places_data, f, indent=2)
-            saved_files.append(str((maps_dir / "warehouse_places.json").relative_to(_WORKSPACE_ROOT)))
-        except Exception as e:
-            logger.warning(f"Could not sync to warehouse_places.json: {e}")
 
     return {
         'ok': True,

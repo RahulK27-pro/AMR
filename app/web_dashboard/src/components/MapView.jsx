@@ -115,6 +115,33 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     return () => { mounted = false; };
   }, [activeMap]);
 
+  // Synchronize namedPlaces live whenever a place is created, renamed, or deleted
+  useEffect(() => {
+    const handlePlacesUpdated = (e) => {
+      const targetMap = e.detail?.mapName || activeMap;
+      if (targetMap === activeMap) {
+        if (Array.isArray(e.detail?.places)) {
+          setNamedPlaces(e.detail.places);
+        } else {
+          bridge.getNamedPlaces(activeMap).then((res) => {
+            if (res?.ok && Array.isArray(res.places)) {
+              setNamedPlaces(res.places);
+            }
+          });
+        }
+      }
+    };
+    const handleShowGraphNodes = () => {
+      setShowGraph(true);
+    };
+    window.addEventListener('amr-places-updated', handlePlacesUpdated);
+    window.addEventListener('amr-show-graph-nodes', handleShowGraphNodes);
+    return () => {
+      window.removeEventListener('amr-places-updated', handlePlacesUpdated);
+      window.removeEventListener('amr-show-graph-nodes', handleShowGraphNodes);
+    };
+  }, [activeMap]);
+
   // ─────────────────────────────────────────────────────────────────────────
   // 2. Track raw telemetry pose → trail & smooth pose ref
   // ─────────────────────────────────────────────────────────────────────────
@@ -617,6 +644,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
 
     // Prioritize clicking a station pin
     if (showPlaces && hoveredPlace) {
+      window.dispatchEvent(new CustomEvent('amr-node-clicked', { detail: { id: hoveredPlace.node_id, x: hoveredPlace.x, y: hoveredPlace.y, name: hoveredPlace.name } }));
       onSelectNode?.(hoveredPlace.node_id);
       setGoalFeedback(`Station selected: ${hoveredPlace.name} (${hoveredPlace.node_id})`);
       setTimeout(() => setGoalFeedback(null), 2500);
@@ -624,6 +652,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     }
 
     if (showGraph && hoveredNode) {
+      window.dispatchEvent(new CustomEvent('amr-node-clicked', { detail: hoveredNode }));
       onSelectNode?.(hoveredNode.id);
       setGoalFeedback(`Added Waypoint ${hoveredNode.id}`);
       setTimeout(() => setGoalFeedback(null), 2500);
