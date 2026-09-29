@@ -36,9 +36,13 @@ import sys
 import threading
 import time
 import heapq
+import logging
 from collections import deque
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
+
+logger = logging.getLogger("amr_bridge")
+logging.basicConfig(level=logging.INFO)
 
 from PIL import Image, ImageDraw
 import numpy as np
@@ -560,6 +564,7 @@ class AmrBridgeNode(Node):
         self.imu              = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0}
         self.mission          = {}
         self._cached_graph: Optional[dict] = None
+        self.active_place_nav: Optional[dict] = None
 
         # --- Autonomous exploration state ---
         self.explore_raw_status: str = 'idle'
@@ -626,6 +631,15 @@ class AmrBridgeNode(Node):
 
     def _state_cb(self, msg):
         self.nav_state = msg.data
+        if self.active_place_nav:
+            self.active_place_nav['nav_state'] = msg.data
+            if msg.data == 'IDLE' and self.active_place_nav.get('status') == 'NAVIGATING':
+                tx = self.active_place_nav.get('target_x')
+                ty = self.active_place_nav.get('target_y')
+                if tx is not None and ty is not None:
+                    d = math.hypot(self.pose['x'] - tx, self.pose['y'] - ty)
+                    if d < 0.6:
+                        self.active_place_nav['status'] = 'ARRIVED'
 
     def _path_cb(self, msg):
         self.path_waypoints = [
@@ -650,6 +664,16 @@ class AmrBridgeNode(Node):
     def _mission_cb(self, msg):
         try:
             self.mission = json.loads(msg.data)
+            if self.active_place_nav:
+                st = self.mission.get('state')
+                if st == 'MISSION_COMPLETE':
+                    self.active_place_nav['status'] = 'COMPLETED'
+                elif st:
+                    self.active_place_nav['status'] = st
+                if 'current' in self.mission:
+                    self.active_place_nav['current_stop'] = self.mission['current']
+                if 'total' in self.mission:
+                    self.active_place_nav['total_stops'] = self.mission['total']
         except Exception:
             pass
 
@@ -944,6 +968,7 @@ class AmrBridgeNode(Node):
             'obstacle_alert':  self.obstacle_alert,
             'imu':             self.imu,
             'mission':         self.mission,
+            'active_place_nav': getattr(self, 'active_place_nav', None),
             'scan':            scan_ds,
             'scan_angle_min':  round(self.scan_angle_min, 4),
             'scan_angle_inc':  round(self.scan_angle_inc, 4),
@@ -1067,19 +1092,35 @@ class NamedPlace(BaseModel):
     id: str
     name: str
     node_id: str
-    type: str = "dock"  # dock, charging, pickup, dropoff, staging, waypoint
+    type: Optional[str] = "place"
     x: float = 0.0
     y: float = 0.0
     px: int = 0
     py: int = 0
-    theta: float = 0.0
+    theta: Optional[float] = 0.0
     icon: Optional[str] = "📍"
-    color: Optional[str] = "#10b981"
+    color: Optional[str] = "#06b6d4"
     description: Optional[str] = ""
+
 
 class SavePlacesRequest(BaseModel):
     map_name: Optional[str] = None
     places: List[NamedPlace]
+
+
+class DispatchPlaceRequest(BaseModel):
+    place_id: Optional[str] = None
+    place_name: str
+    node_id: str
+    x: float
+    y: float
+    yaw: Optional[float] = 0.0
+    map_name: Optional[str] = None
+
+
+class DispatchSequenceRequest(BaseModel):
+    places: List[DispatchPlaceRequest]
+    map_name: Optional[str] = None
 
 
 # -------- REST endpoints --------
@@ -1948,6 +1989,115 @@ async def delete_named_place(place_id: str, map_name: Optional[str] = None):
         return await post_save_named_places(req)
     except Exception as e:
         return JSONResponse({'error': f'Delete failed: {str(e)}'}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Navigation Using Place Names REST Endpoints
+# ---------------------------------------------------------------------------
+
+@app.post('/api/mapping/navigation/dispatch_place')
+async def post_dispatch_place(req: DispatchPlaceRequest):
+    """Phase 6: Dispatch AMR to a named place using its topological node and world coordinates."""
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+
+    # 1. Publish to /goal_sequence with the assigned node_id
+    node.publish_goal_sequence([req.node_id])
+
+    # 2. Also publish to /goal_pose as standard Nav2 / AMCL pose fallback
+    node.publish_goal(req.x, req.y, req.yaw or 0.0)
+
+    # 3. Track active place navigation
+    node.active_place_nav = {
+        'target_place': req.place_name,
+        'target_node': req.node_id,
+        'target_x': float(req.x),
+        'target_y': float(req.y),
+        'status': 'NAVIGATING',
+        'is_sequence': False,
+        'dispatched_at': time.time(),
+        'total_stops': 1,
+        'current_stop': 1,
+    }
+    logger.info(f"Dispatched AMR to place '{req.place_name}' (node {req.node_id}) at ({req.x:.2f}, {req.y:.2f})")
+    return {
+        'ok': True,
+        'target_place': req.place_name,
+        'node_id': req.node_id,
+        'x': req.x,
+        'y': req.y,
+        'status': 'NAVIGATING'
+    }
+
+
+@app.post('/api/mapping/navigation/dispatch_sequence')
+async def post_dispatch_sequence(req: DispatchSequenceRequest):
+    """Phase 6: Dispatch AMR to a multi-stop sequence of named places."""
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+
+    if not req.places:
+        return JSONResponse({'error': 'Places sequence cannot be empty'}, status_code=400)
+
+    node_ids = [p.node_id for p in req.places]
+    node.publish_goal_sequence(node_ids)
+
+    # First stop
+    first = req.places[0]
+    node.publish_goal(first.x, first.y, first.yaw or 0.0)
+
+    node.active_place_nav = {
+        'target_place': first.place_name,
+        'target_node': first.node_id,
+        'target_x': float(first.x),
+        'target_y': float(first.y),
+        'sequence': [p.dict() for p in req.places],
+        'total_stops': len(req.places),
+        'current_stop': 1,
+        'status': 'NAVIGATING',
+        'is_sequence': True,
+        'dispatched_at': time.time(),
+    }
+    names = ' -> '.join(p.place_name for p in req.places)
+    logger.info(f"Dispatched AMR multi-stop mission [{names}] ({len(req.places)} stops)")
+    return {
+        'ok': True,
+        'total_stops': len(req.places),
+        'first_target': first.place_name,
+        'status': 'NAVIGATING'
+    }
+
+
+@app.post('/api/mapping/navigation/cancel')
+async def post_cancel_navigation():
+    """Phase 6: Cancel active navigation, halt robot motors, and clear mission queue."""
+    if node:
+        node.publish_cmd_vel(0.0, 0.0)
+        node.publish_goal_sequence([])
+        if hasattr(node, 'active_place_nav') and node.active_place_nav:
+            node.active_place_nav['status'] = 'CANCELLED'
+    return {'ok': True, 'status': 'CANCELLED'}
+
+
+@app.get('/api/mapping/navigation/status')
+async def get_navigation_status():
+    """Phase 6: Return real-time navigation status, active place destination, and distance."""
+    if node is None:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+
+    active = getattr(node, 'active_place_nav', None)
+    dist = None
+    if active and 'target_x' in active and 'target_y' in active:
+        dist = math.hypot(node.pose['x'] - active['target_x'], node.pose['y'] - active['target_y'])
+
+    return {
+        'ok': True,
+        'nav_state': node.nav_state,
+        'pose': node.pose,
+        'active_nav': active,
+        'distance_to_target_m': round(dist, 2) if dist is not None else None,
+        'mission': node.mission,
+    }
 
 
 # -------- WebSocket --------

@@ -15,6 +15,12 @@ import bridge from '../services/amrBridge';
 export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   // Mapping state from telemetry or local fallback
   const mappingData = telemetry?.mapping ?? {};
+  const pose = telemetry?.pose ?? { x: 0, y: 0, yaw: 0 };
+  const vel = telemetry?.velocity ?? { linear: 0, angular: 0 };
+  const velocity = vel;
+  const navState = telemetry?.nav_state ?? 'IDLE';
+  const minObs = telemetry?.min_obstacle_dist;
+
   const [mapName, setMapName] = useState(mappingData.map_name || 'warehouse_01');
   const [world, setWorld] = useState('test1.world');
   const [runExplore, setRunExplore] = useState(Boolean(mappingData.run_explore));
@@ -88,25 +94,27 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const [selectedPlaceId, setSelectedPlaceId] = useState(null);
   const [isEditingPlace, setIsEditingPlace] = useState(false);
   const [isPickNodeOnCanvasMode, setIsPickNodeOnCanvasMode] = useState(false);
-  const [placeTypeFilter, setPlaceTypeFilter] = useState('ALL');
   const [isPlacesApproved, setIsPlacesApproved] = useState(false);
   const [placeForm, setPlaceForm] = useState({
     id: '',
     name: '',
     node_id: 'N0',
-    type: 'charging',
     x: 0,
     y: 0,
     px: 0,
     py: 0,
-    theta: 0,
-    icon: '⚡',
-    color: '#10b981',
-    description: '',
   });
 
-
-  // Viewport pan & zoom
+  // Phase 6: Navigation Using Place Names state
+  const [navMode, setNavMode] = useState('single'); // 'single' | 'multi'
+  const [navDestinationPlaceId, setNavDestinationPlaceId] = useState('');
+  const [selectedStopToAdd, setSelectedStopToAdd] = useState('');
+  const [navSequence, setNavSequence] = useState([]);
+  const [isDispatchingNav, setIsDispatchingNav] = useState(false);
+  const [navRoutePreview, setNavRoutePreview] = useState(null);
+  const [navError, setNavError] = useState(null);
+  const [isNavApproved, setIsNavApproved] = useState(false);
+  const [activeNavInfo, setActiveNavInfo] = useState(null);
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -575,13 +583,10 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     try {
       const target = selectedMapForGraph || mapName || 'warehouse_01';
       const res = await bridge.getNamedPlaces(target);
-      if (res?.ok && Array.isArray(res.places) && res.places.length > 0) {
+      if (res?.ok && Array.isArray(res.places)) {
         setNamedPlaces(res.places);
       } else {
-        const tmpl = await bridge.getDefaultPlaceTemplates(target);
-        if (tmpl?.ok && Array.isArray(tmpl.templates)) {
-          setNamedPlaces(tmpl.templates);
-        }
+        setNamedPlaces([]);
       }
     } catch (err) {
       setPlacesError(err.message || 'Failed to fetch places');
@@ -627,17 +632,6 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     }
   };
 
-  const handleApplyPlaceQuickChip = (chip) => {
-    setPlaceForm((prev) => ({
-      ...prev,
-      name: chip.name,
-      type: chip.type,
-      icon: chip.icon,
-      color: chip.color,
-      description: chip.description || prev.description,
-    }));
-  };
-
   const handleSelectPlaceForEdit = (place) => {
     setSelectedPlaceId(place.id);
     setIsEditingPlace(true);
@@ -645,15 +639,10 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       id: place.id,
       name: place.name,
       node_id: place.node_id,
-      type: place.type || 'charging',
       x: place.x || 0,
       y: place.y || 0,
       px: place.px || 0,
       py: place.py || 0,
-      theta: place.theta || 0,
-      icon: place.icon || '📍',
-      color: place.color || '#10b981',
-      description: place.description || '',
     });
   };
 
@@ -665,21 +654,16 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       id: '',
       name: '',
       node_id: nodes[0]?.id || 'N0',
-      type: 'charging',
       x: nodes[0]?.x || 0,
       y: nodes[0]?.y || 0,
       px: nodes[0]?.px || 0,
       py: nodes[0]?.py || 0,
-      theta: 0,
-      icon: '⚡',
-      color: '#10b981',
-      description: '',
     });
   };
 
   const handleAddOrUpdatePlace = () => {
     if (!placeForm.name.trim()) {
-      setPlacesError('Please enter a valid station name');
+      setPlacesError('Please enter a place name');
       return;
     }
     const nodes = extractedGraphReport?.nodes || [];
@@ -695,15 +679,10 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       id: isEditingPlace && placeForm.id ? placeForm.id : `place_${Date.now()}`,
       name: placeForm.name.trim(),
       node_id: placeForm.node_id || (nodes[0]?.id ?? 'N0'),
-      type: placeForm.type || 'charging',
       x: Number(Number(targetNode.x ?? targetNode.wx ?? placeForm.x).toFixed(3)),
       y: Number(Number(targetNode.y ?? targetNode.wy ?? placeForm.y).toFixed(3)),
       px: targetNode.px ?? placeForm.px ?? 0,
       py: targetNode.py ?? placeForm.py ?? 0,
-      theta: Number(placeForm.theta) || 0,
-      icon: placeForm.icon || '📍',
-      color: placeForm.color || '#10b981',
-      description: placeForm.description?.trim() || '',
     };
 
     setNamedPlaces((prev) => {
@@ -747,21 +726,6 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     }
   };
 
-  const handleResetToPlaceTemplates = async () => {
-    setIsLoadingPlaces(true);
-    setPlacesError(null);
-    try {
-      const target = selectedMapForGraph || mapName || 'warehouse_01';
-      const res = await bridge.getDefaultPlaceTemplates(target);
-      if (res?.ok && Array.isArray(res.templates)) {
-        setNamedPlaces(res.templates);
-      }
-    } catch (err) {
-      setPlacesError(err.message || 'Failed to generate templates');
-    } finally {
-      setIsLoadingPlaces(false);
-    }
-  };
 
   const handleApprovePlaces = async () => {
     if (namedPlaces.length === 0) {
@@ -771,6 +735,157 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     await handleSavePlacesToDisk();
     setIsPlacesApproved(true);
     setCurrentStep(6);
+  };
+
+  // ---- Phase 6: Navigation Using Place Names Callbacks & Handlers ----
+
+  const calculateRoutePreview = useCallback(async (targetPlace) => {
+    if (!targetPlace) return;
+    const targetMap = selectedMapForGraph || mapName || 'warehouse_01';
+    const nodes = extractedGraphReport?.nodes || [];
+    if (nodes.length === 0) return;
+
+    let startNodeId = nodes[0].id;
+    let minD = Infinity;
+    for (const n of nodes) {
+      const d = Math.hypot((n.x ?? n.wx ?? 0) - pose.x, (n.y ?? n.wy ?? 0) - pose.y);
+      if (d < minD) {
+        minD = d;
+        startNodeId = n.id;
+      }
+    }
+
+    try {
+      const res = await bridge.planRoute(startNodeId, targetPlace.node_id, targetMap);
+      if (res?.ok && res.route) {
+        setNavRoutePreview(res.route);
+      }
+    } catch (_) {}
+  }, [selectedMapForGraph, mapName, extractedGraphReport, pose.x, pose.y]);
+
+  const hasAttemptedFetchPlacesRef = useRef(false);
+
+  useEffect(() => {
+    if (currentStep === 6) {
+      if (namedPlaces.length > 0) {
+        const first = namedPlaces[0];
+        if (!navDestinationPlaceId) {
+          setNavDestinationPlaceId(first.id);
+          calculateRoutePreview(first);
+        }
+        if (!selectedStopToAdd) {
+          setSelectedStopToAdd(first.id);
+        }
+      } else if (!hasAttemptedFetchPlacesRef.current && !isLoadingPlaces) {
+        hasAttemptedFetchPlacesRef.current = true;
+        fetchNamedPlaces();
+      }
+      if (!extractedGraphReport) {
+        fetchExistingGraph();
+      }
+    } else {
+      hasAttemptedFetchPlacesRef.current = false;
+    }
+  }, [currentStep, namedPlaces.length, navDestinationPlaceId, selectedStopToAdd, calculateRoutePreview, fetchNamedPlaces, fetchExistingGraph, extractedGraphReport, isLoadingPlaces]);
+
+  useEffect(() => {
+    if (telemetry?.active_place_nav) {
+      setActiveNavInfo(telemetry.active_place_nav);
+    }
+  }, [telemetry?.active_place_nav]);
+
+  const handleSelectPlaceAsDestination = (place) => {
+    setNavDestinationPlaceId(place.id);
+    setSelectedPlaceId(place.id);
+    setNavError(null);
+    calculateRoutePreview(place);
+  };
+
+  const handleDispatchSinglePlace = async () => {
+    const target = namedPlaces.find((p) => p.id === navDestinationPlaceId);
+    if (!target) {
+      setNavError('Please select a destination place.');
+      return;
+    }
+    setIsDispatchingNav(true);
+    setNavError(null);
+    try {
+      const res = await bridge.dispatchPlace(target, selectedMapForGraph || mapName);
+      if (res?.ok) {
+        setActiveNavInfo({
+          target_place: target.name,
+          target_node: target.node_id,
+          target_x: target.x,
+          target_y: target.y,
+          status: 'NAVIGATING',
+        });
+        calculateRoutePreview(target);
+      } else {
+        setNavError(res?.error || 'Failed to dispatch navigation');
+      }
+    } catch (err) {
+      setNavError(err.message || 'Error dispatching navigation');
+    } finally {
+      setIsDispatchingNav(false);
+    }
+  };
+
+  const handleAddStopToSequence = () => {
+    const p = namedPlaces.find((item) => item.id === selectedStopToAdd);
+    if (p) {
+      setNavSequence((prev) => [...prev, p]);
+    }
+  };
+
+  const handleRemoveStopFromSequence = (idx) => {
+    setNavSequence((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleDispatchSequence = async () => {
+    if (navSequence.length === 0) {
+      setNavError('Please add at least one stop to the mission queue.');
+      return;
+    }
+    setIsDispatchingNav(true);
+    setNavError(null);
+    try {
+      const res = await bridge.dispatchPlaceSequence(navSequence, selectedMapForGraph || mapName);
+      if (res?.ok) {
+        setActiveNavInfo({
+          target_place: navSequence[0].name,
+          target_node: navSequence[0].node_id,
+          target_x: navSequence[0].x,
+          target_y: navSequence[0].y,
+          status: 'NAVIGATING',
+          total_stops: navSequence.length,
+          current_stop: 1,
+        });
+        calculateRoutePreview(navSequence[0]);
+      } else {
+        setNavError(res?.error || 'Failed to dispatch mission sequence');
+      }
+    } catch (err) {
+      setNavError(err.message || 'Error dispatching sequence');
+    } finally {
+      setIsDispatchingNav(false);
+    }
+  };
+
+  const handleCancelNavigation = async () => {
+    await bridge.cancelPlaceNavigation();
+    setActiveNavInfo(null);
+    setNavRoutePreview(null);
+  };
+
+  const handleEmergencyStop = async () => {
+    await bridge.sendStop();
+    setActiveNavInfo(null);
+    setNavRoutePreview(null);
+  };
+
+  const handleApproveNavigation = () => {
+    setIsNavApproved(true);
+    setCurrentStep(7);
   };
 
   const handleCanvasClickForNodePick = (e) => {
@@ -837,10 +952,6 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     ? 'Waiting for SLAM Toolbox to publish /map...'
     : 'Ready to start mapping';
 
-  const pose = telemetry?.pose ?? { x: 0, y: 0, yaw: 0 };
-  const vel = telemetry?.velocity ?? { linear: 0, angular: 0 };
-  const minObs = telemetry?.min_obstacle_dist;
-
   // Active step subtitle
   const stepSubtitle =
     currentStep === 1
@@ -853,7 +964,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       ? 'Step 4: Roadmap Quality Verification & Route Pathfinding'
       : currentStep === 5
       ? 'Step 5: Semantic Place Naming & Station Setup'
-      : 'Step 6: Fleet Navigation Using Place Names';
+      : currentStep === 6
+      ? 'Step 6: Fleet Navigation Using Place Names'
+      : 'Step 7: Live Fleet Monitoring & Supervised Dashboard';
 
   return (
     <div className="mapping-workflow-container">
@@ -972,14 +1085,32 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             className={`stepper-step ${
               currentStep === 6
                 ? 'stepper-step--active'
+                : (isNavApproved || currentStep > 6)
+                ? 'stepper-step--completed'
                 : 'stepper-step--pending'
             }`}
-            onClick={() => isPlacesApproved && setCurrentStep(6)}
-            style={{ cursor: isPlacesApproved ? 'pointer' : 'default' }}
-            title={isPlacesApproved ? 'Step 6 (Navigation)' : 'Pending Step 5 completion'}
+            onClick={() => (isPlacesApproved || currentStep >= 6) && setCurrentStep(6)}
+            style={{ cursor: isPlacesApproved || currentStep >= 6 ? 'pointer' : 'default' }}
+            title={isPlacesApproved || currentStep >= 6 ? 'Step 6 (Navigation)' : 'Pending Step 5 completion'}
           >
-            <span className="step-num">6</span>
+            <span className="step-num">{(isNavApproved || currentStep > 6) ? '✓' : '6'}</span>
             <span className="step-label">Navigation</span>
+          </div>
+
+          <div className="stepper-arrow">➔</div>
+
+          <div
+            className={`stepper-step ${
+              currentStep === 7
+                ? 'stepper-step--active'
+                : 'stepper-step--pending'
+            }`}
+            onClick={() => isNavApproved && setCurrentStep(7)}
+            style={{ cursor: isNavApproved ? 'pointer' : 'default' }}
+            title={isNavApproved ? 'Step 7 (Live Monitoring)' : 'Pending Step 6 completion'}
+          >
+            <span className="step-num">7</span>
+            <span className="step-label">Live Monitoring</span>
           </div>
         </div>
       </div>
@@ -2088,142 +2219,28 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
           {/* ================= STEP 5: PLACE NAMING & FLEET STATIONS ================= */}
           {currentStep === 5 && (
             <div className="places-panel-container flex-col" style={{ gap: 12 }}>
-              {/* Card 1: Station & Place Builder */}
+              {/* Card 1: Simple & Clean Place Naming Form */}
               <div className="card place-builder-card">
                 <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="card__title" style={{ fontSize: 15 }}>
-                    🏷️ {isEditingPlace ? 'Edit Place / Station' : 'Create Named Place'}
+                  <div className="card__title" style={{ fontSize: 14 }}>
+                    🏷️ {isEditingPlace ? 'Edit Place Name' : 'Name a Place'}
                   </div>
                   <span className={`audit-check-row__badge ${isEditingPlace ? 'badge--warn' : 'badge--pass'}`}>
-                    {isEditingPlace ? '✏️ EDITING' : '➕ NEW PLACE'}
+                    {isEditingPlace ? 'EDITING' : 'READY'}
                   </span>
-                </div>
-
-                {/* Quick Templates Chips */}
-                <div className="quick-chips-section">
-                  <span className="text-dim text-xs" style={{ fontSize: 11 }}>Quick Templates:</span>
-                  <div className="quick-chips-row">
-                    <button
-                      type="button"
-                      className="chip-btn"
-                      onClick={() => handleApplyPlaceQuickChip({
-                        name: 'Home Charging Station',
-                        type: 'charging',
-                        icon: '⚡',
-                        color: '#10b981',
-                        description: 'Primary automated recharging dock'
-                      })}
-                    >
-                      ⚡ Charging Dock
-                    </button>
-                    <button
-                      type="button"
-                      className="chip-btn"
-                      onClick={() => handleApplyPlaceQuickChip({
-                        name: 'Inbound Intake Bay',
-                        type: 'pickup',
-                        icon: '📦',
-                        color: '#38bdf8',
-                        description: 'Pallet receiving and intake staging'
-                      })}
-                    >
-                      📦 Inbound Pickup
-                    </button>
-                    <button
-                      type="button"
-                      className="chip-btn"
-                      onClick={() => handleApplyPlaceQuickChip({
-                        name: 'Outbound Dispatch Bay',
-                        type: 'dropoff',
-                        icon: '📤',
-                        color: '#f59e0b',
-                        description: 'Finished goods dispatch & shipping bay'
-                      })}
-                    >
-                      📤 Outbound Bay
-                    </button>
-                    <button
-                      type="button"
-                      className="chip-btn"
-                      onClick={() => handleApplyPlaceQuickChip({
-                        name: 'Assembly WIP Staging',
-                        type: 'staging',
-                        icon: '🏢',
-                        color: '#a855f7',
-                        description: 'Work-in-progress buffer station'
-                      })}
-                    >
-                      🏢 Assembly WIP
-                    </button>
-                    <button
-                      type="button"
-                      className="chip-btn"
-                      onClick={() => handleApplyPlaceQuickChip({
-                        name: 'Inspection Checkpoint',
-                        type: 'waypoint',
-                        icon: '🎯',
-                        color: '#ec4899',
-                        description: 'Automated scan & quality checkpoint'
-                      })}
-                    >
-                      🎯 Inspection
-                    </button>
-                  </div>
-                </div>
-
-                {/* Place Name Input */}
-                <div className="mapping-field" style={{ margin: 0 }}>
-                  <label className="mapping-label">Station / Place Name</label>
-                  <input
-                    id="input-place-name"
-                    type="text"
-                    className="input-field mapping-input"
-                    placeholder="e.g. Home Charging Station, Dock 1, Inbound Bay A"
-                    value={placeForm.name}
-                    onChange={(e) => setPlaceForm({ ...placeForm, name: e.target.value })}
-                  />
-                </div>
-
-                {/* Station Category / Type Selector */}
-                <div className="mapping-field" style={{ margin: 0 }}>
-                  <label className="mapping-label">Place Type & Function</label>
-                  <div className="place-type-selector-grid">
-                    {[
-                      { type: 'charging', label: 'Charging Dock', icon: '⚡', color: '#10b981' },
-                      { type: 'pickup', label: 'Inbound Pickup', icon: '📦', color: '#38bdf8' },
-                      { type: 'dropoff', label: 'Outbound Dropoff', icon: '📤', color: '#f59e0b' },
-                      { type: 'staging', label: 'Assembly Staging', icon: '🏢', color: '#a855f7' },
-                      { type: 'waypoint', label: 'Nav Waypoint', icon: '🎯', color: '#ec4899' },
-                    ].map((cat) => (
-                      <div
-                        key={cat.type}
-                        className={`place-type-pill ${placeForm.type === cat.type ? 'place-type-pill--active' : ''}`}
-                        style={{
-                          borderColor: placeForm.type === cat.type ? cat.color : undefined,
-                          background: placeForm.type === cat.type ? `${cat.color}22` : undefined,
-                        }}
-                        onClick={() => setPlaceForm({ ...placeForm, type: cat.type, icon: cat.icon, color: cat.color })}
-                      >
-                        <span>{cat.icon}</span>
-                        <span style={{ fontSize: 11, fontWeight: placeForm.type === cat.type ? 700 : 500 }}>
-                          {cat.label}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
 
                 {/* Target Node Selector */}
                 <div className="mapping-field" style={{ margin: 0 }}>
-                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                    <label className="mapping-label">Assigned Roadmap Node</label>
+                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <label className="mapping-label">1. Pick Roadmap Node</label>
                     <button
                       type="button"
                       className={`btn btn--xs ${isPickNodeOnCanvasMode ? 'btn--success' : 'btn--outline'}`}
                       onClick={() => setIsPickNodeOnCanvasMode(!isPickNodeOnCanvasMode)}
                       style={{ fontSize: 11, padding: '3px 8px' }}
                     >
-                      {isPickNodeOnCanvasMode ? '🎯 Canvas Pick ACTIVE' : '📍 Pick on Canvas'}
+                      {isPickNodeOnCanvasMode ? '🎯 Canvas Pick ACTIVE' : '📍 Pick on Map'}
                     </button>
                   </div>
                   <select
@@ -2233,72 +2250,38 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                   >
                     {extractedGraphReport?.nodes?.slice(0, 300).map((n) => (
                       <option key={n.id} value={n.id}>
-                        {n.id} ({Number(n.x ?? n.wx ?? 0).toFixed(2)}, {Number(n.y ?? n.wy ?? 0).toFixed(2)}) — clr {Number(n.clearance ?? 0).toFixed(2)}m
+                        {n.id} ({Number(n.x ?? n.wx ?? 0).toFixed(2)}, {Number(n.y ?? n.wy ?? 0).toFixed(2)})
                       </option>
                     )) || <option value="N0">N0</option>}
                   </select>
                   <div className="node-coords-badge">
-                    <span>📍 Node <strong>{placeForm.node_id}</strong></span>
-                    <span>World: ({placeForm.x}m, {placeForm.y}m)</span>
-                    <span>Canvas: ({placeForm.px}, {placeForm.py})</span>
+                    <span>Selected: <strong>{placeForm.node_id}</strong></span>
+                    <span>Coords: ({placeForm.x}m, {placeForm.y}m)</span>
                   </div>
                 </div>
 
-                {/* Orientation & Heading Slider */}
+                {/* Place Name Input */}
                 <div className="mapping-field" style={{ margin: 0 }}>
-                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                    <label className="mapping-label">Docking / Approach Heading</label>
-                    <span className="text-mono text-xs font-bold" style={{ color: 'var(--accent-cyan)' }}>
-                      {Math.round(((placeForm.theta || 0) * 180) / Math.PI)}° ({(placeForm.theta || 0).toFixed(2)} rad)
-                    </span>
-                  </div>
+                  <label className="mapping-label">2. Place Name</label>
                   <input
-                    type="range"
-                    min="0"
-                    max="360"
-                    step="15"
-                    value={Math.round(((placeForm.theta || 0) * 180) / Math.PI)}
-                    onChange={(e) => {
-                      const deg = parseFloat(e.target.value);
-                      setPlaceForm({ ...placeForm, theta: (deg * Math.PI) / 180 });
-                    }}
-                    className="slider"
-                  />
-                  <div className="flex-row" style={{ gap: 6, marginTop: 4 }}>
-                    {[
-                      { label: '0° East', deg: 0 },
-                      { label: '90° North', deg: 90 },
-                      { label: '180° West', deg: 180 },
-                      { label: '270° South', deg: 270 },
-                    ].map((d) => (
-                      <button
-                        key={d.deg}
-                        type="button"
-                        className="btn btn--ghost btn--xs flex-1 text-center"
-                        style={{ fontSize: 10, padding: '3px 0' }}
-                        onClick={() => setPlaceForm({ ...placeForm, theta: (d.deg * Math.PI) / 180 })}
-                      >
-                        {d.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Description / Notes */}
-                <div className="mapping-field" style={{ margin: 0 }}>
-                  <label className="mapping-label">Station Notes / Description (Optional)</label>
-                  <input
+                    id="input-place-name"
                     type="text"
                     className="input-field mapping-input"
-                    placeholder="e.g. Forklift zone, pallet rack 12, max weight 500kg"
-                    value={placeForm.description}
-                    onChange={(e) => setPlaceForm({ ...placeForm, description: e.target.value })}
+                    placeholder="e.g. Charging Dock, Station A, Warehouse Bay 1..."
+                    value={placeForm.name}
+                    onChange={(e) => setPlaceForm({ ...placeForm, name: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddOrUpdatePlace();
+                      }
+                    }}
                   />
                 </div>
 
                 {/* Error Banner */}
                 {placesError && (
-                  <div className="save-error-banner" style={{ margin: 0, padding: '6px 10px' }}>
+                  <div className="save-error-banner" style={{ margin: 0, padding: '6px 10px', fontSize: 12 }}>
                     ⚠️ {placesError}
                   </div>
                 )}
@@ -2312,7 +2295,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                     onClick={handleAddOrUpdatePlace}
                     style={{ padding: '8px 16px', fontSize: 13 }}
                   >
-                    {isEditingPlace ? '✓ Update Named Place' : '➕ Add Named Place'}
+                    {isEditingPlace ? '✓ Update Place' : '➕ Save Place'}
                   </button>
                   {isEditingPlace && (
                     <button
@@ -2331,107 +2314,73 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
               <div className="card places-list-card">
                 <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <div className="card__title" style={{ fontSize: 14 }}>
-                    📋 Configured Stations & Places ({namedPlaces.length})
+                    📋 Named Places ({namedPlaces.length})
                   </div>
-                  <div className="flex-row" style={{ gap: 6 }}>
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--xs"
-                      onClick={handleResetToPlaceTemplates}
-                      title="Reset to 5 smart template stations"
-                      style={{ fontSize: 10, padding: '2px 6px' }}
-                    >
-                      ✨ Smart Templates
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--icon"
-                      onClick={fetchNamedPlaces}
-                      title="Reload places from disk"
-                      style={{ height: 22, width: 22, fontSize: 11 }}
-                    >
-                      ⟳
-                    </button>
-                  </div>
-                </div>
-
-                {/* Filter Tabs */}
-                <div className="places-filter-tabs">
-                  {['ALL', 'charging', 'pickup', 'dropoff', 'staging', 'waypoint'].map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      className={`places-filter-btn ${placeTypeFilter === cat ? 'places-filter-btn--active' : ''}`}
-                      onClick={() => setPlaceTypeFilter(cat)}
-                    >
-                      {cat === 'ALL'
-                        ? `All (${namedPlaces.length})`
-                        : `${cat === 'charging' ? '⚡' : cat === 'pickup' ? '📦' : cat === 'dropoff' ? '📤' : cat === 'staging' ? '🏢' : '🎯'} ${cat}`}
-                    </button>
-                  ))}
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--icon"
+                    onClick={fetchNamedPlaces}
+                    title="Reload places from disk"
+                    style={{ height: 22, width: 22, fontSize: 11 }}
+                  >
+                    ⟳
+                  </button>
                 </div>
 
                 {/* Places Scroll Container */}
                 <div className="places-items-container">
-                  {namedPlaces
-                    .filter((p) => placeTypeFilter === 'ALL' || p.type === placeTypeFilter)
-                    .map((place) => {
-                      const isSelected = selectedPlaceId === place.id;
-                      return (
-                        <div
-                          key={place.id}
-                          className={`place-card-item ${isSelected ? 'place-card-item--selected' : ''}`}
-                          style={{ borderLeftColor: place.color || '#10b981' }}
-                          onClick={() => setSelectedPlaceId(place.id)}
-                        >
-                          <div className="place-card-item__icon-box" style={{ background: `${place.color || '#10b981'}22` }}>
-                            <span>{place.icon || '📍'}</span>
+                  {namedPlaces.map((place) => {
+                    const isSelected = selectedPlaceId === place.id;
+                    return (
+                      <div
+                        key={place.id}
+                        className={`place-card-item ${isSelected ? 'place-card-item--selected' : ''}`}
+                        onClick={() => setSelectedPlaceId(place.id)}
+                      >
+                        <div className="place-item-dot" />
+                        <div className="place-card-item__info">
+                          <div className="flex-row" style={{ gap: 6, alignItems: 'center' }}>
+                            <span className="place-card-item__name">{place.name}</span>
+                            <span className="badge badge--primary text-mono" style={{ fontSize: 10, padding: '1px 5px' }}>
+                              {place.node_id}
+                            </span>
                           </div>
-                          <div className="place-card-item__info">
-                            <div className="flex-row" style={{ gap: 6, alignItems: 'center' }}>
-                              <span className="place-card-item__name">{place.name}</span>
-                              <span className="badge badge--primary text-mono" style={{ fontSize: 10, padding: '1px 5px' }}>
-                                {place.node_id}
-                              </span>
-                            </div>
-                            <div className="place-card-item__meta text-mono text-dim text-xs">
-                              <span>({place.x}m, {place.y}m)</span>
-                              <span>• {Math.round(((place.theta || 0) * 180) / Math.PI)}°</span>
-                              {place.description && <span style={{ color: 'var(--text-secondary)' }}>• {place.description}</span>}
-                            </div>
-                          </div>
-                          <div className="place-card-item__actions">
-                            <button
-                              type="button"
-                              className="btn btn--ghost btn--icon"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSelectPlaceForEdit(place);
-                              }}
-                              title="Edit place"
-                              style={{ height: 26, width: 26, fontSize: 12 }}
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn--ghost btn--icon text-danger"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeletePlace(place.id);
-                              }}
-                              title="Delete place"
-                              style={{ height: 26, width: 26, fontSize: 12 }}
-                            >
-                              🗑️
-                            </button>
+                          <div className="place-card-item__meta text-mono text-dim text-xs">
+                            <span>({place.x}m, {place.y}m)</span>
                           </div>
                         </div>
-                      );
-                    })}
+                        <div className="place-card-item__actions">
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectPlaceForEdit(place);
+                            }}
+                            title="Edit place"
+                            style={{ height: 26, width: 26, fontSize: 12 }}
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--icon text-danger"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePlace(place.id);
+                            }}
+                            title="Delete place"
+                            style={{ height: 26, width: 26, fontSize: 12 }}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                   {namedPlaces.length === 0 && (
                     <div className="text-dim text-xs text-center p-md">
-                      No places configured yet. Use the builder above or click "Smart Templates" to generate default stations.
+                      No places configured yet. Pick a node on the roadmap and enter a name above.
                     </div>
                   )}
                 </div>
@@ -2439,7 +2388,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 {/* Save Success Banner */}
                 {placesSaveSuccess && (
                   <div className="save-success-banner" style={{ margin: 0, padding: '6px 12px' }}>
-                    <span>✓</span> Successfully saved {namedPlaces.length} places to graph roadmap and disk files!
+                    <span>✓</span> Successfully saved {namedPlaces.length} places to disk!
                   </div>
                 )}
 
@@ -2452,17 +2401,17 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                   disabled={isSavingPlaces || namedPlaces.length === 0}
                   style={{ width: '100%', padding: '7px 0', fontSize: 12 }}
                 >
-                  {isSavingPlaces ? 'Saving Places to Roadmap...' : `💾 Save ${namedPlaces.length} Places to Disk`}
+                  {isSavingPlaces ? 'Saving Places...' : `💾 Save ${namedPlaces.length} Places to Disk`}
                 </button>
               </div>
 
               {/* Card 3: Progression to Step 6 */}
               <div className="card save-config-card">
                 <div className="card__title" style={{ fontSize: 14 }}>
-                  🏁 Step 5 Sign-Off & Navigation Dispatch
+                  🏁 Complete Place Naming
                 </div>
                 <div className="text-dim text-xs" style={{ lineHeight: 1.5 }}>
-                  All fleet stations, charging docks, and work cells are assigned to topological roadmap nodes. Approving places will advance the operational pipeline to Phase 6 (Navigation Using Place Names).
+                  Roadmap places configured. Approving places will advance the operational pipeline to Phase 6 (Navigation Using Place Names).
                 </div>
                 <div className="mapping-actions">
                   <button
@@ -2498,47 +2447,339 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             </div>
           )}
 
-          {/* ================= STEP 6: NAVIGATION (PHASE 6 AWAITING APPROVAL) ================= */}
+          {/* ================= STEP 6: NAVIGATION USING PLACE NAMES ================= */}
           {currentStep === 6 && (
-            <div className="card phase4-ready-card" style={{ background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(12, 16, 28, 0.9))', borderColor: 'rgba(6, 182, 212, 0.3)' }}>
+            <div className="places-panel-container flex-col" style={{ gap: 12 }}>
+              {/* Card 1: Destination & Route Dispatch */}
+              <div className="card nav-dispatch-card">
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="card__title" style={{ fontSize: 14 }}>
+                    🚀 Place Navigation Dispatch
+                  </div>
+                  {/* Mode Selector */}
+                  <div className="view-mode-pill-group">
+                    <button
+                      type="button"
+                      className={`btn-view-pill ${navMode === 'single' ? 'btn-view-pill--active' : ''}`}
+                      onClick={() => setNavMode('single')}
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                    >
+                      📍 Single Place
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-view-pill ${navMode === 'multi' ? 'btn-view-pill--active' : ''}`}
+                      onClick={() => setNavMode('multi')}
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                    >
+                      🔄 Multi-Stop
+                    </button>
+                  </div>
+                </div>
+
+                {/* Single Place Mode */}
+                {navMode === 'single' ? (
+                  <div className="flex-col" style={{ gap: 10 }}>
+                    <div className="mapping-field" style={{ margin: 0 }}>
+                      <label className="mapping-label">Select Destination Place</label>
+                      <select
+                        id="select-nav-place"
+                        className="input-field mapping-input text-mono"
+                        value={navDestinationPlaceId}
+                        onChange={(e) => {
+                          const p = namedPlaces.find((item) => item.id === e.target.value);
+                          if (p) handleSelectPlaceAsDestination(p);
+                        }}
+                      >
+                        {namedPlaces.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            📍 {p.name} [{p.node_id}] — ({p.x}m, {p.y}m)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Target Place Details Card */}
+                    {(() => {
+                      const selectedNavPlace = namedPlaces.find((p) => p.id === navDestinationPlaceId) || namedPlaces[0];
+                      return selectedNavPlace ? (
+                        <div className="nav-target-card">
+                          <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className="nav-target-card__name font-bold">{selectedNavPlace.name}</span>
+                            <span className="badge badge--primary text-mono">{selectedNavPlace.node_id}</span>
+                          </div>
+                          <div className="text-dim text-xs text-mono" style={{ marginTop: 2 }}>
+                            World Coordinates: ({selectedNavPlace.x}m, {selectedNavPlace.y}m)
+                          </div>
+
+                          {/* Route Calculation Preview */}
+                          {navRoutePreview && (
+                            <div className="nav-route-metrics-bar">
+                              <span>🛣️ <strong>{navRoutePreview.total_distance_m} m</strong></span>
+                              <span>• <strong>{navRoutePreview.hop_count} hops</strong></span>
+                              <span>• Est: <strong>{navRoutePreview.est_time_sec}s</strong></span>
+                            </div>
+                          )}
+                        </div>
+                      ) : null;
+                    })()}
+
+                    {navError && (
+                      <div className="save-error-banner" style={{ margin: 0, padding: '6px 10px', fontSize: 12 }}>
+                        ⚠️ {navError}
+                      </div>
+                    )}
+
+                    {/* Dispatch Action */}
+                    <button
+                      id="btn-dispatch-single"
+                      type="button"
+                      className="btn btn--primary"
+                      onClick={handleDispatchSinglePlace}
+                      disabled={isDispatchingNav || namedPlaces.length === 0}
+                      style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700 }}
+                    >
+                      {isDispatchingNav ? 'Dispatching...' : `🚀 DISPATCH AMR TO ${(namedPlaces.find((p) => p.id === navDestinationPlaceId)?.name || 'PLACE').toUpperCase()}`}
+                    </button>
+                  </div>
+                ) : (
+                  /* Multi-Stop Mission Mode */
+                  <div className="flex-col" style={{ gap: 10 }}>
+                    <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
+                      <select
+                        id="select-add-stop"
+                        className="input-field mapping-input text-mono flex-1"
+                        value={selectedStopToAdd}
+                        onChange={(e) => setSelectedStopToAdd(e.target.value)}
+                      >
+                        {namedPlaces.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            📍 {p.name} [{p.node_id}]
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn btn--outline btn--sm"
+                        onClick={handleAddStopToSequence}
+                        style={{ fontSize: 12, padding: '7px 12px' }}
+                      >
+                        ➕ Add Stop
+                      </button>
+                    </div>
+
+                    {/* Sequence List */}
+                    <div className="nav-sequence-list">
+                      {navSequence.map((stop, idx) => (
+                        <div key={`${stop.id}_${idx}`} className="nav-sequence-item">
+                          <span className="nav-sequence-item__idx">{idx + 1}</span>
+                          <span className="nav-sequence-item__name flex-1 font-bold text-xs">{stop.name}</span>
+                          <span className="badge badge--primary text-mono" style={{ fontSize: 10 }}>{stop.node_id}</span>
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--icon text-danger"
+                            onClick={() => handleRemoveStopFromSequence(idx)}
+                            style={{ height: 22, width: 22, fontSize: 11 }}
+                            title="Remove stop"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      {navSequence.length === 0 && (
+                        <div className="text-dim text-xs text-center p-sm">
+                          No stops added yet. Pick a place above and click "Add Stop" to build a delivery route.
+                        </div>
+                      )}
+                    </div>
+
+                    {navError && (
+                      <div className="save-error-banner" style={{ margin: 0, padding: '6px 10px', fontSize: 12 }}>
+                        ⚠️ {navError}
+                      </div>
+                    )}
+
+                    {/* Dispatch Multi-Stop Mission */}
+                    <div className="flex-row" style={{ gap: 8 }}>
+                      <button
+                        id="btn-dispatch-sequence"
+                        type="button"
+                        className="btn btn--primary flex-1"
+                        onClick={handleDispatchSequence}
+                        disabled={isDispatchingNav || navSequence.length === 0}
+                        style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700 }}
+                      >
+                        {isDispatchingNav ? 'Dispatching...' : `📦 DISPATCH MISSION (${navSequence.length} STOPS)`}
+                      </button>
+                      {navSequence.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn--outline btn--sm"
+                          onClick={() => setNavSequence([])}
+                          style={{ fontSize: 12 }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Card 2: Live Navigation HUD & Active State */}
+              <div className="card nav-status-card">
+                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="card__title" style={{ fontSize: 14 }}>
+                    📡 Live Navigation Monitor
+                  </div>
+                  <span className={`badge ${
+                    (activeNavInfo?.status === 'NAVIGATING' || navState === 'NAVIGATING')
+                      ? 'badge--pass'
+                      : navState === 'PLANNING'
+                      ? 'badge--info'
+                      : navState === 'ESTOP'
+                      ? 'badge--danger'
+                      : 'badge--default'
+                  }`}>
+                    {(activeNavInfo?.status === 'NAVIGATING' || navState === 'NAVIGATING') ? '● NAVIGATING' : (activeNavInfo?.status || navState || 'IDLE')}
+                  </span>
+                </div>
+
+                <div className="nav-hud-grid">
+                  <div className="nav-hud-metric">
+                    <span className="text-dim text-xs">Active Target</span>
+                    <span className="font-bold text-sm text-truncate" style={{ color: 'var(--accent-cyan)' }}>
+                      {activeNavInfo?.target_place || (namedPlaces.find((p) => p.id === navDestinationPlaceId)?.name) || 'Standby / Idle'}
+                    </span>
+                  </div>
+                  <div className="nav-hud-metric">
+                    <span className="text-dim text-xs">Dist to Goal</span>
+                    <span className="text-mono font-bold text-sm" style={{ color: 'var(--accent-green)' }}>
+                      {(() => {
+                        const target = namedPlaces.find((p) => p.id === navDestinationPlaceId) || namedPlaces[0];
+                        if (target) {
+                          const d = Math.hypot(pose.x - target.x, pose.y - target.y);
+                          return `${d.toFixed(2)} m`;
+                        }
+                        return '--';
+                      })()}
+                    </span>
+                  </div>
+                  <div className="nav-hud-metric">
+                    <span className="text-dim text-xs">Speed</span>
+                    <span className="text-mono font-bold text-sm">
+                      {Math.abs(velocity.linear).toFixed(2)} m/s
+                    </span>
+                  </div>
+                  <div className="nav-hud-metric">
+                    <span className="text-dim text-xs">Mission Progress</span>
+                    <span className="text-mono font-bold text-sm">
+                      {telemetry?.mission?.total ? `${telemetry.mission.current || 1} / ${telemetry.mission.total}` : activeNavInfo?.total_stops ? `${activeNavInfo.current_stop || 1} / ${activeNavInfo.total_stops}` : '1 / 1'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Cancel & E-STOP controls */}
+                <div className="flex-row" style={{ gap: 8, marginTop: 4 }}>
+                  <button
+                    type="button"
+                    className="btn btn--outline flex-1"
+                    onClick={handleCancelNavigation}
+                    style={{ fontSize: 12, padding: '7px 0' }}
+                  >
+                    ⏹ Cancel Navigation
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--danger flex-1"
+                    onClick={handleEmergencyStop}
+                    style={{ fontSize: 12, padding: '7px 0', fontWeight: 700 }}
+                  >
+                    🛑 E-STOP
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 3: Phase 6 Approval & Advancement to Phase 7 */}
+              <div className="card save-config-card">
+                <div className="card__title" style={{ fontSize: 14 }}>
+                  🏁 Step 6 Sign-Off & Live Monitoring
+                </div>
+                <div className="text-dim text-xs" style={{ lineHeight: 1.5 }}>
+                  Fleet navigation using place names is operational. Approving navigation will complete Phase 6 and advance the pipeline to Phase 7 (Live Fleet Monitoring & Supervised Dashboard).
+                </div>
+                <div className="mapping-actions">
+                  <button
+                    id="btn-approve-navigation"
+                    type="button"
+                    className="btn--proceed-graph"
+                    onClick={handleApproveNavigation}
+                    style={{ background: 'linear-gradient(135deg, #0284c7, #10b981)' }}
+                  >
+                    <span>✓</span> APPROVE NAVIGATION & PROCEED TO MONITORING (STEP 7)
+                  </button>
+                  <div className="flex-row" style={{ gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn--outline flex-1"
+                      onClick={() => setCurrentStep(5)}
+                      style={{ fontSize: 12 }}
+                    >
+                      ← Back to Step 5 (Place Naming)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      onClick={onReturnToDashboard}
+                      style={{ fontSize: 12 }}
+                    >
+                      Dashboard
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= STEP 7: LIVE MONITORING (PHASE 7 AWAITING APPROVAL) ================= */}
+          {currentStep === 7 && (
+            <div className="card phase4-ready-card" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(12, 16, 28, 0.9))', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
               <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                 <div className="card__title" style={{ fontSize: 15 }}>
-                  🚀 Step 6: Navigation Using Place Names
+                  🎯 Step 7: Live Fleet Monitoring & Supervised Dashboard
                 </div>
-                <span className="audit-check-row__badge badge--pass">PHASE 5 COMPLETE</span>
+                <span className="audit-check-row__badge badge--pass">PHASE 6 COMPLETE</span>
               </div>
 
               <div className="phase3-meta-table">
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Configured Places:</span>
+                  <span className="text-dim">Navigation Pipeline:</span>
+                  <span className="text-success font-bold">Place-Based Dispatch Operational</span>
+                </div>
+                <div className="phase3-meta-row">
+                  <span className="text-dim">Registered Places:</span>
                   <span className="text-mono font-bold" style={{ color: 'var(--accent-cyan)' }}>
-                    {namedPlaces.length} Stations Active
+                    {namedPlaces.length} Fleet Stations
                   </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Roadmap File:</span>
+                  <span className="text-dim">Roadmap Graph:</span>
                   <span className="text-mono font-bold" style={{ color: 'var(--accent-green)' }}>
                     {selectedMapForGraph || mapName}_graph.json
                   </span>
                 </div>
                 <div className="phase3-meta-row">
-                  <span className="text-dim">Places JSON:</span>
-                  <span className="text-mono font-bold">
-                    {selectedMapForGraph || mapName}_places.json
-                  </span>
-                </div>
-                <div className="phase3-meta-row">
-                  <span className="text-dim">Phase 5 Status:</span>
-                  <span className="text-success font-bold">Verified & Persisted</span>
+                  <span className="text-dim">Phase Status:</span>
+                  <span className="text-mono font-bold">Phase 6 Verified</span>
                 </div>
               </div>
 
-              <div className="save-success-banner" style={{ background: 'rgba(6, 182, 212, 0.08)', borderColor: 'rgba(6, 182, 212, 0.3)' }}>
-                <div className="text-sm font-bold" style={{ color: 'var(--accent-cyan)' }}>
-                  🎯 Phase 5 Milestone Achieved: Stations & Places Named
+              <div className="save-success-banner" style={{ background: 'rgba(16, 185, 129, 0.08)', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                <div className="text-sm font-bold" style={{ color: 'var(--accent-green)' }}>
+                  ✅ Phase 6 Milestone Achieved: Navigation Using Place Names Verified
                 </div>
                 <div className="text-dim text-xs" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Semantic places (Charging Dock, Inbound Intake, Assembly WIP, Outbound Dispatch) are bound to roadmap nodes and saved on disk. In Phase 6, autonomous mission dispatch, multi-stop delivery routes, and point-to-point transit will be executed using these place names. Per development rules, awaiting your explicit approval before modifying Phase 6.
+                  Point-to-point destination dispatch, multi-stop mission sequencing, and real-time navigation telemetry are operational. Per development rules, awaiting your explicit approval before modifying Phase 7 (Live Fleet Monitoring / Dashboard).
                 </div>
               </div>
 
@@ -2546,17 +2787,17 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 <button
                   type="button"
                   className="btn btn--outline"
-                  onClick={() => setCurrentStep(5)}
+                  onClick={() => setCurrentStep(6)}
                 >
-                  ← Back to Place Naming (Step 5)
+                  ← Back to Navigation (Step 6)
                 </button>
                 <button
                   type="button"
-                  className="btn btn--ghost btn--sm"
+                  className="btn btn--primary"
                   onClick={onReturnToDashboard}
                   style={{ alignSelf: 'center' }}
                 >
-                  Return to Dashboard
+                  Go to Main Dashboard
                 </button>
               </div>
             </div>
@@ -2834,6 +3075,94 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                   </svg>
                 )}
 
+
+                {/* SVG Route Highlighting Overlay (Step 6 Place Navigation Preview) */}
+                {currentStep === 6 && navRoutePreview && navRoutePreview.waypoints?.length > 1 && (
+                  <svg
+                    className="route-svg-overlay nav-route-overlay"
+                    viewBox={`0 0 ${imgDimensions.width} ${imgDimensions.height}`}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      pointerEvents: 'none',
+                      zIndex: 3,
+                    }}
+                  >
+                    {/* Cyan polyline for active/previewed navigation path */}
+                    <polyline
+                      points={navRoutePreview.waypoints.map((w) => `${w.px},${w.py}`).join(' ')}
+                      fill="none"
+                      stroke="#06b6d4"
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray="7 5"
+                      style={{ filter: 'drop-shadow(0 0 8px rgba(6, 182, 212, 0.95))' }}
+                    />
+                    {/* Waypoint beads along path */}
+                    {navRoutePreview.waypoints.map((w, idx) => (
+                      <circle
+                        key={idx}
+                        cx={w.px}
+                        cy={w.py}
+                        r="3"
+                        fill="#38bdf8"
+                      />
+                    ))}
+                    {/* Start point marker */}
+                    {navRoutePreview.waypoints[0] && (
+                      <g>
+                        <circle
+                          cx={navRoutePreview.waypoints[0].px}
+                          cy={navRoutePreview.waypoints[0].py}
+                          r="6"
+                          fill="#10b981"
+                          stroke="#fff"
+                          strokeWidth="2"
+                        />
+                        <text
+                          x={navRoutePreview.waypoints[0].px}
+                          y={navRoutePreview.waypoints[0].py - 9}
+                          fill="#10b981"
+                          fontSize="11"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          style={{ filter: 'drop-shadow(0 0 4px #000)' }}
+                        >
+                          AMR ({navRoutePreview.start_node})
+                        </text>
+                      </g>
+                    )}
+                    {/* Destination marker */}
+                    {navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1] && (
+                      <g>
+                        <circle
+                          cx={navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1].px}
+                          cy={navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1].py}
+                          r="8"
+                          fill="#06b6d4"
+                          stroke="#fff"
+                          strokeWidth="2"
+                        />
+                        <text
+                          x={navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1].px}
+                          y={navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1].py - 11}
+                          fill="#06b6d4"
+                          fontSize="11"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          style={{ filter: 'drop-shadow(0 0 4px #000)' }}
+                        >
+                          DEST ({navRoutePreview.goal_node})
+                        </text>
+                      </g>
+                    )}
+                  </svg>
+                )}
+
                 {/* SVG Place Markers Overlay (Step 5 & 6) */}
                 {currentStep >= 5 && namedPlaces.length > 0 && (
                   <svg
@@ -2850,12 +3179,12 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                     }}
                   >
                     {namedPlaces.map((place) => {
-                      const isSelected = selectedPlaceId === place.id;
-                      const placeColor = place.color || '#10b981';
-                      const thetaRad = place.theta || 0;
-                      const arrowLen = 22;
-                      const ax = place.px + arrowLen * Math.cos(thetaRad);
-                      const ay = place.py + arrowLen * Math.sin(thetaRad);
+                      const isNavDestination = currentStep === 6 && (navDestinationPlaceId === place.id || activeNavInfo?.target_place_id === place.id || activeNavInfo?.target_place === place.name);
+                      const isSelected = selectedPlaceId === place.id || isNavDestination;
+                      const markerColor = isNavDestination ? '#06b6d4' : (isSelected ? '#06b6d4' : '#10b981');
+                      const labelText = place.name.length > 16 ? place.name.slice(0, 15) + '…' : place.name;
+                      const pillW = Math.max(28, Math.min(labelText.length * 6 + 10, 85));
+                      const pillH = 14;
 
                       return (
                         <g
@@ -2863,82 +3192,62 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                           className={`place-pin-marker ${isSelected ? 'place-pin-marker--selected' : ''}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleSelectPlaceForEdit(place);
+                            if (currentStep === 6) {
+                              handleSelectPlaceAsDestination(place);
+                            } else {
+                              handleSelectPlaceForEdit(place);
+                            }
                           }}
                           style={{ cursor: 'pointer' }}
                         >
-                          {/* Heading vector arrow */}
-                          <line
-                            x1={place.px}
-                            y1={place.py}
-                            x2={ax}
-                            y2={ay}
-                            stroke={placeColor}
-                            strokeWidth="3.5"
-                            strokeLinecap="round"
-                            style={{ filter: `drop-shadow(0 0 4px ${placeColor})` }}
-                          />
-                          <circle cx={ax} cy={ay} r="3" fill={placeColor} />
+                          <title>{`${place.name} (${place.node_id}) [${place.x}m, ${place.y}m]`}</title>
 
-                          {/* Outer pulse ring on selected */}
-                          {isSelected && (
+                          {/* Outer highlight ring on selected or nav destination */}
+                          {(isSelected || isNavDestination) && (
                             <circle
                               cx={place.px}
                               cy={place.py}
-                              r="20"
+                              r={isNavDestination ? 10 : 8}
                               fill="none"
-                              stroke={placeColor}
-                              strokeWidth="2.5"
-                              strokeDasharray="4 3"
+                              stroke={isNavDestination ? '#06b6d4' : '#10b981'}
+                              strokeWidth={isNavDestination ? '2' : '1.5'}
+                              strokeDasharray={isNavDestination ? '4 3' : '3 2'}
                             />
                           )}
 
-                          {/* Place Node Pin Circle */}
+                          {/* Small concise place dot */}
                           <circle
                             cx={place.px}
                             cy={place.py}
-                            r="13"
-                            fill="#0b1120"
-                            stroke={placeColor}
-                            strokeWidth={isSelected ? '3.5' : '2'}
-                            style={{ filter: `drop-shadow(0 0 ${isSelected ? '10px' : '5px'} ${placeColor})` }}
+                            r={isNavDestination ? 5 : (isSelected ? 4 : 3)}
+                            fill={markerColor}
+                            stroke="#ffffff"
+                            strokeWidth="1"
                           />
 
-                          {/* Emoji Icon inside circle */}
-                          <text
-                            x={place.px}
-                            y={place.py + 4.5}
-                            fontSize="11"
-                            textAnchor="middle"
-                            dominantBaseline="middle"
-                            style={{ pointerEvents: 'none', userSelect: 'none' }}
-                          >
-                            {place.icon || '📍'}
-                          </text>
-
-                          {/* Station Name Label Pill */}
-                          <g transform={`translate(${place.px}, ${place.py - 18})`}>
+                          {/* Small concise name pill */}
+                          <g transform={`translate(${place.px}, ${place.py - 6})`}>
                             <rect
-                              x="-65"
-                              y="-20"
-                              width="130"
-                              height="20"
-                              rx="5"
-                              fill="rgba(11, 17, 32, 0.92)"
-                              stroke={placeColor}
-                              strokeWidth={isSelected ? '2' : '1'}
-                              style={{ filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.8))' }}
+                              x={-pillW / 2}
+                              y={-pillH}
+                              width={pillW}
+                              height={pillH}
+                              rx="3"
+                              fill="rgba(15, 23, 42, 0.88)"
+                              stroke={markerColor}
+                              strokeWidth={isSelected || isNavDestination ? '1.4' : '0.8'}
                             />
                             <text
                               x="0"
-                              y="-6"
-                              fill="#f8fafc"
-                              fontSize="10"
-                              fontWeight={isSelected ? 'bold' : '600'}
+                              y={-pillH / 2}
+                              fill={isNavDestination ? '#38bdf8' : '#f1f5f9'}
+                              fontSize="8.5"
+                              fontWeight={isSelected || isNavDestination ? '700' : '500'}
                               textAnchor="middle"
+                              dominantBaseline="central"
                               style={{ pointerEvents: 'none', userSelect: 'none' }}
                             >
-                              {place.name.length > 17 ? place.name.slice(0, 16) + '…' : place.name}
+                              {labelText}
                             </text>
                           </g>
                         </g>

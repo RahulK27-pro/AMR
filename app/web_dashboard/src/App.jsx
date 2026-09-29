@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import bridge from './services/amrBridge';
 import StatusBar from './components/StatusBar';
 import TelemetryPanel from './components/TelemetryPanel';
@@ -7,6 +7,53 @@ import ScanRing from './components/ScanRing';
 import ControlPanel from './components/ControlPanel';
 import EventLog from './components/EventLog';
 import MappingScreen from './components/MappingScreen';
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("MappingScreen render error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 32, maxWidth: 640, margin: '60px auto', background: '#1e293b', border: '1px solid #ef4444', borderRadius: 8, color: '#f8fafc' }}>
+          <h2 style={{ color: '#ef4444', marginTop: 0 }}>⚠️ Mapping Screen Error</h2>
+          <p style={{ color: '#94a3b8', fontSize: 14 }}>An error occurred while rendering the Mapping workflow:</p>
+          <pre style={{ background: '#0f172a', padding: 14, borderRadius: 6, color: '#fca5a5', overflowX: 'auto', fontSize: 12 }}>
+            {this.state.error?.toString()}
+          </pre>
+          <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+            <button
+              className="btn btn--primary"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+            >
+              🔄 Reload Page
+            </button>
+            <button
+              className="btn btn--outline"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                if (this.props.onReturnToDashboard) this.props.onReturnToDashboard();
+              }}
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const [telemetry, setTelemetry] = useState(null);
@@ -39,10 +86,12 @@ export default function App() {
 
       {currentView === 'mapping' ? (
         <main className="mapping-screen-wrapper">
-          <MappingScreen
-            telemetry={telemetry}
-            onReturnToDashboard={() => setCurrentView('dashboard')}
-          />
+          <ErrorBoundary onReturnToDashboard={() => setCurrentView('dashboard')}>
+            <MappingScreen
+              telemetry={telemetry}
+              onReturnToDashboard={() => setCurrentView('dashboard')}
+            />
+          </ErrorBoundary>
         </main>
       ) : (
         <>

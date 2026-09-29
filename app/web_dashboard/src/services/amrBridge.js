@@ -372,6 +372,82 @@ class AmrBridgeService {
       return { ok: false, error: err.message };
     }
   }
+
+  // ---- Phase 6: Navigation Using Place Names ----
+
+  async dispatchPlace(place, mapName = '') {
+    this.emitEvent('info', `Dispatching AMR to place "${place.name}" [Node ${place.node_id}]`);
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mapping/navigation/dispatch_place`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          place_id: place.id,
+          place_name: place.name,
+          node_id: place.node_id,
+          x: place.x,
+          y: place.y,
+          yaw: place.theta || 0,
+          map_name: mapName,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('success', `Navigation active: En route to "${place.name}"`);
+        return { ok: true, data };
+      }
+      return { ok: false, error: data?.error || 'Failed to dispatch navigation' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async dispatchPlaceSequence(places, mapName = '') {
+    const names = places.map((p) => p.name).join(' ➔ ');
+    this.emitEvent('info', `Dispatching multi-stop mission [${names}]`);
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mapping/navigation/dispatch_sequence`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          places: places.map((p) => ({
+            place_id: p.id,
+            place_name: p.name,
+            node_id: p.node_id,
+            x: p.x,
+            y: p.y,
+            yaw: p.theta || 0,
+          })),
+          map_name: mapName,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('success', `Multi-stop mission active: ${places.length} stops`);
+        return { ok: true, data };
+      }
+      return { ok: false, error: data?.error || 'Failed to dispatch sequence' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async cancelPlaceNavigation() {
+    this.emitEvent('warn', 'Cancelled active place navigation');
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mapping/navigation/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return await res.json().catch(() => ({ ok: true }));
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async getNavigationStatus() {
+    return this._get('/api/mapping/navigation/status');
+  }
 }
 
 const bridge = new AmrBridgeService();
