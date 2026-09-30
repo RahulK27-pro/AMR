@@ -7,9 +7,25 @@ import os
 
 def launch_setup(context, *args, **kwargs):
     headless = LaunchConfiguration('headless').perform(context)
+    world_val = LaunchConfiguration('world').perform(context).strip()
     pkg_path = get_package_share_directory('agv_description')
     urdf_file = os.path.join(pkg_path, 'urdf', 'warehouse_agv.urdf')
-    world_file = os.path.join(pkg_path, 'worlds', 'warehouse.world')
+
+    # Resolve world file: supports "warehouse.world", "test1.world", "test1", or full path
+    if not world_val.endswith('.world') and not world_val.endswith('.sdf'):
+        world_val += '.world'
+    if os.path.isabs(world_val):
+        world_file = world_val
+    else:
+        cand = os.path.join(pkg_path, 'worlds', world_val)
+        if not os.path.exists(cand):
+            src_cand = os.path.join(
+                os.path.expanduser('~'), 'AMR', 'AMR-main', 'src', 'agv_description', 'worlds', world_val
+            )
+            world_file = src_cand if os.path.exists(src_cand) else cand
+        else:
+            world_file = cand
+
     bridge_file = os.path.join(pkg_path, 'config', 'bridge.yaml')
     ekf_file = os.path.join(pkg_path, 'config', 'ekf.yaml')
 
@@ -79,9 +95,14 @@ def generate_launch_description():
         'headless', default_value='false',
         description='Run Gazebo simulation headlessly (without GUI)'
     )
+    world_arg = DeclareLaunchArgument(
+        'world', default_value='warehouse.world',
+        description='World file name (in worlds/) or full path to world file'
+    )
 
     return LaunchDescription([
         headless_arg,
+        world_arg,
         OpaqueFunction(function=launch_setup)
     ])
 
