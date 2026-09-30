@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -25,6 +25,8 @@ def launch_setup(context, *args, **kwargs):
             world_file = src_cand if os.path.exists(src_cand) else cand
         else:
             world_file = cand
+
+    world_stem = os.path.splitext(os.path.basename(world_file))[0]
 
     bridge_file = os.path.join(pkg_path, 'config', 'bridge.yaml')
     ekf_file = os.path.join(pkg_path, 'config', 'ekf.yaml')
@@ -71,15 +73,21 @@ def launch_setup(context, *args, **kwargs):
         parameters=[ekf_file, {'use_sim_time': True}]
     )
 
-    spawn = Node(
-        package='ros_gz_sim',
-        executable='create',
-        arguments=[
-            '-name', 'warehouse_agv',
-            '-topic', 'robot_description',
-            '-z', '0.05'
-        ],
-        output='screen'
+    spawn = TimerAction(
+        period=2.0,
+        actions=[
+            Node(
+                package='ros_gz_sim',
+                executable='create',
+                arguments=[
+                    '-name', 'warehouse_agv',
+                    '-topic', 'robot_description',
+                    '-world', world_stem,
+                    '-z', '0.05'
+                ],
+                output='screen'
+            )
+        ]
     )
 
     return [

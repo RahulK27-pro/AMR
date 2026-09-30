@@ -297,8 +297,10 @@
   <gazebo reference="base_link">
     <visual>
       <material>
-        <ambient>0.2 0.4 0.8 1</ambient>
-        <diffuse>0.2 0.4 0.8 1</diffuse>
+        <ambient>0.0 0.75 0.95 1</ambient>
+        <diffuse>0.0 0.85 1.0 1</diffuse>
+        <specular>0.4 0.4 0.4 1</specular>
+        <emissive>0.05 0.20 0.30 1</emissive>
       </material>
     </visual>
   </gazebo>
@@ -342,8 +344,9 @@
   <gazebo reference="lidar_link">
     <visual>
       <material>
-        <ambient>0.8 0.1 0.1 1</ambient>
-        <diffuse>0.8 0.1 0.1 1</diffuse>
+        <ambient>1.0 0.35 0.0 1</ambient>
+        <diffuse>1.0 0.45 0.0 1</diffuse>
+        <emissive>0.45 0.12 0.0 1</emissive>
       </material>
     </visual>
   </gazebo>
