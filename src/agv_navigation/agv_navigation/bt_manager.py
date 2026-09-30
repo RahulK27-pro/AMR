@@ -166,14 +166,32 @@ class BTManagerNode(Node):
         self.blackboard = SimpleBlackboard()
 
         # Load topological graph for node-ID → (x, y) lookup in sequence_cb
+        candidates = []
         try:
             pkg_share = get_package_share_directory('agv_description')
-            graph_path = os.path.join(pkg_share, 'maps', 'warehouse_graph.json')
+            candidates.extend([
+                os.path.join(pkg_share, 'maps', 'warehouse_graph.json'),
+                os.path.join(pkg_share, 'maps', 'warehouse_01_graph.json'),
+                os.path.join(pkg_share, 'maps', 'warehouse_map_graph.json'),
+            ])
         except Exception:
-            graph_path = os.path.join(
-                os.environ['HOME'], 'AMR', 'AMR-main',
-                'src', 'agv_description', 'maps', 'warehouse_graph.json'
-            )
+            pass
+
+        ws_maps = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps')
+        candidates.extend([
+            os.path.join(ws_maps, 'warehouse_graph.json'),
+            os.path.join(ws_maps, 'warehouse_01_graph.json'),
+            os.path.join(ws_maps, 'warehouse_map_graph.json'),
+        ])
+
+        graph_path = None
+        for c in candidates:
+            if os.path.exists(c):
+                graph_path = c
+                break
+
+        if not graph_path:
+            raise FileNotFoundError(f"Could not find valid graph file in {candidates}")
         with open(graph_path, 'r') as f:
             raw = json.load(f)
         self.graph_coords = {n['id']: (n['x'], n['y']) for n in raw.get('nodes', [])}

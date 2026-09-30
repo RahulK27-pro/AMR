@@ -17,12 +17,33 @@ class GraphVisualizer(Node):
         self.path_sub = self.create_subscription(Path, '/agv_dense_path', self.path_callback, 10)
         self.active_path_points = []  # list of (x, y)
 
-        # Load the graph — use installed share path (portable)
+        # Load the graph — check active map, warehouse_graph, or map candidates
+        candidates = []
         try:
             pkg_share = get_package_share_directory('agv_description')
-            self.map_path = os.path.join(pkg_share, 'maps', 'warehouse_graph.json')
+            candidates.extend([
+                os.path.join(pkg_share, 'maps', 'warehouse_graph.json'),
+                os.path.join(pkg_share, 'maps', 'warehouse_01_graph.json'),
+                os.path.join(pkg_share, 'maps', 'warehouse_map_graph.json'),
+            ])
         except Exception:
-            self.map_path = os.path.join(os.environ['HOME'], 'AMR', 'AMR-main', 'src', 'agv_description', 'maps', 'warehouse_graph.json')
+            pass
+
+        ws_maps = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps')
+        candidates.extend([
+            os.path.join(ws_maps, 'warehouse_graph.json'),
+            os.path.join(ws_maps, 'warehouse_01_graph.json'),
+            os.path.join(ws_maps, 'warehouse_map_graph.json'),
+        ])
+
+        self.map_path = None
+        for c in candidates:
+            if os.path.exists(c):
+                self.map_path = c
+                break
+
+        if not self.map_path:
+            raise FileNotFoundError(f"Could not find valid graph file in {candidates}")
 
         with open(self.map_path, 'r') as f:
             raw_data = json.load(f)

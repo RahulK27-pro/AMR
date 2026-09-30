@@ -272,8 +272,6 @@ def extract_graph(
 
     vis_path = output_vis or os.path.join(dir_name, f"{map_base_name}_graph_vis.png")
     cv2.imwrite(vis_path, vis_img)
-    default_vis_path = os.path.join(dir_name, "graph_visualization.png")
-    cv2.imwrite(default_vis_path, vis_img)
     print(f"Visualization saved to {vis_path}")
 
     # Base64 encoded PNG for web streaming

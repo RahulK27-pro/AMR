@@ -94,10 +94,10 @@ import uvicorn
 # Config — map image path (static pre-computed PNG)
 # ---------------------------------------------------------------------------
 _WORKSPACE_ROOT = Path(os.environ.get("AMR_WS", Path.home() / "AMR" / "AMR-main"))
-# Use the clean architectural floorplan (no graph clutter burned in)
-_MAP_PNG_PATH       = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "clean_warehouse_map.png"
-_MAP_PNG_GRAPH_PATH = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "graph_visualization.png"
-_GRAPH_JSON_PATH    = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_graph.json"
+# Floorplan image and graph paths
+_MAP_PNG_PATH       = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_map.png"
+_MAP_PNG_GRAPH_PATH = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_map_graph_vis.png"
+_GRAPH_JSON_PATH    = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_map_graph.json"
 
 # Import graph extractor engine
 _MAPS_DIR = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
@@ -162,8 +162,6 @@ def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
                     img_file = maps_dir / f"{target}.png"
                 if not img_file.exists():
                     img_file = maps_dir / f"{yaml_path.stem}.png"
-                if not img_file.exists() and target == 'warehouse_map':
-                    img_file = maps_dir / "clean_warehouse_map.png"
                 
                 if img_file.exists():
                     try:
@@ -194,8 +192,6 @@ def resolve_map_image_path(map_name: Optional[str] = None) -> Optional[Path]:
     direct_png = maps_dir / f"{target}.png"
     if direct_png.exists():
         return direct_png
-    if target == 'warehouse_map' and (maps_dir / "clean_warehouse_map.png").exists():
-        return maps_dir / "clean_warehouse_map.png"
         
     # 2. Check yaml
     yaml_path = maps_dir / f"{target}.yaml"
@@ -1193,8 +1189,7 @@ class AmrBridgeNode(Node):
         valid_map = (
             (maps_dir / f"{target_name}.yaml").exists() or 
             (maps_dir / f"{target_name}_graph.json").exists() or 
-            (maps_dir / f"{target_name}.png").exists() or
-            (target_name == 'warehouse_map' and (maps_dir / "clean_warehouse_map.png").exists())
+            (maps_dir / f"{target_name}.png").exists()
         )
         if not valid_map:
             raise FileNotFoundError(f"Map '{target_name}' not found on disk.")
@@ -1235,8 +1230,6 @@ class AmrBridgeNode(Node):
                     maps_dir / f"{target_name}_graph_vis.png",
                     maps_dir / f"{target_name}_vis.png",
                 ]
-                if target_name == 'warehouse_01':
-                    vis_candidates.append(maps_dir / "graph_visualization.png")
                 for vc in vis_candidates:
                     if vc.exists():
                         try:
@@ -1733,7 +1726,7 @@ async def get_saved_maps():
                 except Exception:
                     pass
 
-            has_png = png_file.exists() or (name == 'warehouse_map' and (maps_dir / 'clean_warehouse_map.png').exists())
+            has_png = png_file.exists()
             maps.append({
                 'name': name,
                 'yaml': str(yaml_file.relative_to(_WORKSPACE_ROOT)),
@@ -1849,15 +1842,18 @@ async def get_latest_graph(map_name: Optional[str] = None):
         if active and active.get('nodes'):
             return {'ok': True, 'graph': active}
 
-    # Fallback to reading warehouse_graph.json
-    if _GRAPH_JSON_PATH.exists():
+    # Fallback to reading active map graph or warehouse_map graph
+    fallback_graph = maps_dir / f"{getattr(node, 'active_map_name', 'warehouse_01')}_graph.json"
+    if not fallback_graph.exists():
+        fallback_graph = _GRAPH_JSON_PATH
+    if fallback_graph.exists():
         try:
-            with open(_GRAPH_JSON_PATH, 'r', encoding='utf-8') as f:
+            with open(fallback_graph, 'r', encoding='utf-8') as f:
                 raw = json.load(f)
             vis_b64 = None
             vis_candidates = [
+                maps_dir / f"{fallback_graph.stem.replace('_graph', '')}_graph_vis.png",
                 maps_dir / "warehouse_01_graph_vis.png",
-                maps_dir / "graph_visualization.png",
                 maps_dir / "warehouse_map_graph_vis.png",
             ]
             for vc in vis_candidates:

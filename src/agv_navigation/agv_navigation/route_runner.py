@@ -43,13 +43,38 @@ class RouteRunner(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.using_map_tf = False
 
-        # Load the graph — use installed share path (portable)
+        # Load the graph — check active map, warehouse_graph, or map candidates
+        self.declare_parameter('map_name', 'warehouse_01')
+        map_name_param = self.get_parameter('map_name').get_parameter_value().string_value or 'warehouse_01'
+
+        candidates = []
         try:
             pkg_share = get_package_share_directory('agv_description')
-            self.map_path = os.path.join(pkg_share, 'maps', 'warehouse_graph.json')
+            candidates.extend([
+                os.path.join(pkg_share, 'maps', f'{map_name_param}_graph.json'),
+                os.path.join(pkg_share, 'maps', 'warehouse_graph.json'),
+                os.path.join(pkg_share, 'maps', 'warehouse_01_graph.json'),
+                os.path.join(pkg_share, 'maps', 'warehouse_map_graph.json'),
+            ])
         except Exception:
-            # Fallback for dev workspace (not installed)
-            self.map_path = os.path.join(os.environ['HOME'], 'AMR', 'AMR-main', 'src', 'agv_description', 'maps', 'warehouse_graph.json')
+            pass
+
+        ws_maps = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps')
+        candidates.extend([
+            os.path.join(ws_maps, f'{map_name_param}_graph.json'),
+            os.path.join(ws_maps, 'warehouse_graph.json'),
+            os.path.join(ws_maps, 'warehouse_01_graph.json'),
+            os.path.join(ws_maps, 'warehouse_map_graph.json'),
+        ])
+
+        self.map_path = None
+        for c in candidates:
+            if os.path.exists(c):
+                self.map_path = c
+                break
+
+        if not self.map_path:
+            raise FileNotFoundError(f"Could not find valid graph file in {candidates}")
 
         with open(self.map_path, 'r') as f:
             raw_data = json.load(f)
