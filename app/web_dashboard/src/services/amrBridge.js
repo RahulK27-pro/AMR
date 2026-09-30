@@ -453,6 +453,52 @@ class AmrBridgeService {
   async getNavigationStatus() {
     return this._get('/api/mapping/navigation/status');
   }
+
+  // ---- Full Navigation System Lifecycle (1-Click Start/Stop) ----
+
+  async startNavigationSystem(mapName = '', world = '') {
+    this.emitEvent('info', `Starting autonomous navigation stack on map "${mapName}"...`);
+    try {
+      const res = await fetch(`${this.baseUrl}/api/system/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ map_name: mapName, world: world || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('success', `Navigation stack launch initiated for "${mapName}"`);
+        return { ok: true, data };
+      }
+      const errMsg = data?.error || 'Failed to start navigation system';
+      this.emitEvent('critical', errMsg);
+      return { ok: false, error: errMsg };
+    } catch (err) {
+      this.emitEvent('critical', `Network error starting system: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async stopNavigationSystem() {
+    this.emitEvent('warn', 'Stopping autonomous navigation stack...');
+    try {
+      const res = await fetch(`${this.baseUrl}/api/system/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('info', 'Navigation stack stopped successfully.');
+        return { ok: true, data };
+      }
+      return { ok: false, error: data?.error || 'Failed to stop navigation system' };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  async getSystemStatus() {
+    return this._get('/api/system/status');
+  }
 }
 
 const bridge = new AmrBridgeService();

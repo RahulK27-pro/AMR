@@ -611,6 +611,218 @@ class MappingManager:
 mapping_mgr = MappingManager(_WORKSPACE_ROOT)
 
 
+class SystemLaunchManager:
+    """Manages the full navigation stack lifecycle:
+       1. navigation_launch.py (Gazebo + RViz + AMCL + map_server)
+       2. route_runner (MPPI Controller)
+       3. bt_manager (Behavior Tree Orchestrator)
+    """
+    def __init__(self, workspace_root: Path):
+        self.ws_root = workspace_root
+        self.state = 'STOPPED'  # 'STOPPED' | 'STARTING' | 'RUNNING' | 'STOPPING' | 'ERROR'
+        self.active_map = 'warehouse_01'
+        self.stage = 0  # 0: Stopped, 1: Launching Nav & Gazebo, 2: Starting MPPI, 3: Starting BT Manager, 4: Running
+        self.stage_text = 'Stopped'
+        self.start_time: Optional[float] = None
+        self.nav_proc: Optional[subprocess.Popen] = None
+        self.runner_proc: Optional[subprocess.Popen] = None
+        self.bt_proc: Optional[subprocess.Popen] = None
+        self.error_msg: Optional[str] = None
+        self.lock = threading.Lock()
+        self._worker_thread: Optional[threading.Thread] = None
+
+    def start(self, map_name: str = 'warehouse_01', world: Optional[str] = None) -> dict:
+        with self.lock:
+            if self.state in ('STARTING', 'RUNNING'):
+                return {'ok': False, 'error': f'System is already {self.state.lower()}'}
+
+            target_map = (map_name or self.active_map or 'warehouse_01').strip()
+            self.active_map = target_map
+            self.state = 'STARTING'
+            self.stage = 1
+            self.stage_text = f'1/3 Initializing simulation and map ({target_map})...'
+            self.start_time = time.time()
+            self.error_msg = None
+
+            # Clean any old stray processes first
+            self._cleanup_processes()
+
+            self._worker_thread = threading.Thread(
+                target=self._start_sequence,
+                args=(target_map, world),
+                daemon=True
+            )
+            self._worker_thread.start()
+
+            return {'ok': True, 'state': self.state, 'map_name': target_map}
+
+    def _start_sequence(self, map_name: str, world: Optional[str]):
+        try:
+            maps_dir = self.ws_root / "src" / "agv_description" / "maps"
+            src_graph = maps_dir / f"{map_name}_graph.json"
+            if src_graph.exists():
+                dest_graph = maps_dir / "warehouse_graph.json"
+                try:
+                    shutil.copy2(src_graph, dest_graph)
+                    logger.info(f"[SystemLaunchManager] Synced {map_name}_graph.json -> warehouse_graph.json")
+                except Exception as e:
+                    logger.warning(f"[SystemLaunchManager] Sync graph warning: {e}")
+
+            # 1. Launch navigation_launch.py
+            world_arg = f"world:={world}" if world else ""
+            nav_cmd = (
+                f"source /opt/ros/jazzy/setup.bash && "
+                f"source {self.ws_root}/install/setup.bash && "
+                f"ros2 launch agv_description navigation_launch.py map:={map_name} {world_arg}"
+            )
+            logger.info(f"[SystemLaunchManager] Starting navigation_launch: {nav_cmd}")
+            self.nav_proc = subprocess.Popen(
+                nav_cmd,
+                shell=True,
+                executable='/bin/bash',
+                cwd=str(self.ws_root),
+                preexec_fn=os.setsid,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+            # Wait ~6.0s for Gazebo and map_server to start
+            for _ in range(6):
+                time.sleep(1.0)
+                if self.state == 'STOPPING':
+                    return
+                if self.nav_proc.poll() is not None:
+                    raise RuntimeError("navigation_launch.py terminated unexpectedly")
+
+            # 2. Launch route_runner
+            with self.lock:
+                self.stage = 2
+                self.stage_text = '2/3 Starting MPPI Route Runner...'
+
+            runner_cmd = (
+                f"source /opt/ros/jazzy/setup.bash && "
+                f"source {self.ws_root}/install/setup.bash && "
+                f"ros2 run agv_navigation route_runner"
+            )
+            logger.info("[SystemLaunchManager] Starting route_runner...")
+            self.runner_proc = subprocess.Popen(
+                runner_cmd,
+                shell=True,
+                executable='/bin/bash',
+                cwd=str(self.ws_root),
+                preexec_fn=os.setsid,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+            time.sleep(2.0)
+            if self.state == 'STOPPING':
+                return
+
+            # 3. Launch bt_manager
+            with self.lock:
+                self.stage = 3
+                self.stage_text = '3/3 Starting Behavior Tree Manager...'
+
+            bt_cmd = (
+                f"source /opt/ros/jazzy/setup.bash && "
+                f"source {self.ws_root}/install/setup.bash && "
+                f"ros2 run agv_navigation bt_manager"
+            )
+            logger.info("[SystemLaunchManager] Starting bt_manager...")
+            self.bt_proc = subprocess.Popen(
+                bt_cmd,
+                shell=True,
+                executable='/bin/bash',
+                cwd=str(self.ws_root),
+                preexec_fn=os.setsid,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+            time.sleep(1.5)
+            with self.lock:
+                if self.state != 'STOPPING':
+                    self.state = 'RUNNING'
+                    self.stage = 4
+                    self.stage_text = f'Running ({map_name})'
+                    logger.info(f"[SystemLaunchManager] Navigation stack is fully RUNNING on {map_name}!")
+        except Exception as e:
+            with self.lock:
+                self.state = 'ERROR'
+                self.error_msg = str(e)
+                self.stage_text = f'Error: {e}'
+                logger.error(f"[SystemLaunchManager] Startup failed: {e}")
+                self._cleanup_processes()
+
+    def stop(self) -> dict:
+        with self.lock:
+            self.state = 'STOPPING'
+            self.stage_text = 'Stopping navigation stack...'
+            self._cleanup_processes()
+            self.state = 'STOPPED'
+            self.stage = 0
+            self.stage_text = 'Stopped'
+            self.start_time = None
+            logger.info("[SystemLaunchManager] System stopped successfully.")
+            return {'ok': True, 'state': self.state}
+
+    def _cleanup_processes(self):
+        for proc, name in [(self.bt_proc, 'bt_manager'), (self.runner_proc, 'route_runner'), (self.nav_proc, 'navigation_launch')]:
+            if proc and proc.poll() is None:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+                    try:
+                        proc.wait(timeout=2.0)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception as e:
+                    logger.warning(f"[SystemLaunchManager] Error terminating {name}: {e}")
+
+        self.bt_proc = None
+        self.runner_proc = None
+        self.nav_proc = None
+
+        for pattern in ['bt_manager', 'route_runner', 'navigation_launch', 'rviz2', 'gz sim', 'map_server', 'amcl']:
+            try:
+                subprocess.run(['pkill', '-f', pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
+    def get_status(self) -> dict:
+        with self.lock:
+            if self.state == 'RUNNING':
+                if self.nav_proc and self.nav_proc.poll() is not None:
+                    self.state = 'ERROR'
+                    self.error_msg = 'navigation_launch process terminated unexpectedly'
+                elif self.runner_proc and self.runner_proc.poll() is not None:
+                    self.state = 'ERROR'
+                    self.error_msg = 'route_runner process terminated unexpectedly'
+                elif self.bt_proc and self.bt_proc.poll() is not None:
+                    self.state = 'ERROR'
+                    self.error_msg = 'bt_manager process terminated unexpectedly'
+
+            uptime = round(time.time() - self.start_time, 1) if (self.start_time and self.state == 'RUNNING') else 0.0
+
+            return {
+                'ok': True,
+                'state': self.state,
+                'stage': self.stage,
+                'stage_text': self.stage_text,
+                'active_map': self.active_map,
+                'uptime_sec': uptime,
+                'error': self.error_msg,
+                'processes': {
+                    'navigation_launch': self.nav_proc.pid if (self.nav_proc and self.nav_proc.poll() is None) else None,
+                    'route_runner': self.runner_proc.pid if (self.runner_proc and self.runner_proc.poll() is None) else None,
+                    'bt_manager': self.bt_proc.pid if (self.bt_proc and self.bt_proc.poll() is None) else None,
+                }
+            }
+
+
+system_mgr = SystemLaunchManager(_WORKSPACE_ROOT)
+
+
 # ---------------------------------------------------------------------------
 # ROS 2 bridge node
 # ---------------------------------------------------------------------------
@@ -1142,6 +1354,7 @@ class AmrBridgeNode(Node):
             'scan_angle_min':  round(self.scan_angle_min, 4),
             'scan_angle_inc':  round(self.scan_angle_inc, 4),
             'mapping':         mapping_mgr.get_status(self._has_live_map, self.get_live_map_info(), ros_node=self),
+            'system_status':   system_mgr.get_status() if 'system_mgr' in globals() else {},
             'ts':              round(time.time(), 3),
         }
 
@@ -1236,6 +1449,10 @@ class InitialPoseRequest(BaseModel):
 
 class GoalSequenceRequest(BaseModel):
     nodes: list
+
+class SystemStartRequest(BaseModel):
+    map_name: Optional[str] = 'warehouse_01'
+    world: Optional[str] = None
 
 class StartMappingRequest(BaseModel):
     map_name: str = 'warehouse_01'
@@ -2270,6 +2487,31 @@ async def get_navigation_status():
         'distance_to_target_m': round(dist, 2) if dist is not None else None,
         'mission': node.mission,
     }
+
+
+# ---------------------------------------------------------------------------
+# Navigation System Stack Master Control Endpoints
+# ---------------------------------------------------------------------------
+
+@app.post('/api/system/start')
+async def post_system_start(req: SystemStartRequest):
+    """Start full AMR navigation stack (navigation_launch + route_runner + bt_manager)."""
+    curr_map = (req.map_name or (node.active_map_name if node else None) or 'warehouse_01').strip()
+    if node:
+        node.set_active_map(curr_map)
+    return system_mgr.start(map_name=curr_map, world=req.world)
+
+
+@app.post('/api/system/stop')
+async def post_system_stop():
+    """Stop the full AMR navigation stack cleanly."""
+    return system_mgr.stop()
+
+
+@app.get('/api/system/status')
+async def get_system_status():
+    """Get current lifecycle status of the navigation stack."""
+    return system_mgr.get_status()
 
 
 # -------- WebSocket --------

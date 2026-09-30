@@ -328,8 +328,154 @@ export default function ControlPanel({
     bridge.sendObstacleCmdVel(linear, angular);
   };
 
+  // ── Navigation System Stack Lifecycle Controls ──
+  const systemStatus = telemetry?.system_status;
+  const systemState = systemStatus?.state || 'STOPPED';
+  const [isSystemLoading, setIsSystemLoading] = useState(false);
+
+  const handleStartNavigationSystem = async () => {
+    setIsSystemLoading(true);
+    try {
+      await bridge.startNavigationSystem(activeMap);
+    } catch (err) {
+      bridge.emitEvent('critical', `Failed to start navigation system: ${err.message}`);
+    } finally {
+      setIsSystemLoading(false);
+    }
+  };
+
+  const handleStopNavigationSystem = async () => {
+    setIsSystemLoading(true);
+    try {
+      await bridge.stopNavigationSystem();
+    } catch (err) {
+      bridge.emitEvent('critical', `Failed to stop navigation system: ${err.message}`);
+    } finally {
+      setIsSystemLoading(false);
+    }
+  };
+
   return (
     <div className="flex-col" style={{ gap: 12 }}>
+
+      {/* ── 0. NAVIGATION SYSTEM LIFECYCLE CONTROLLER ── */}
+      <div
+        className="card"
+        style={{
+          background:
+            systemState === 'RUNNING'
+              ? 'linear-gradient(180deg, rgba(6, 78, 59, 0.3) 0%, rgba(15, 23, 42, 0.8) 100%)'
+              : systemState === 'STARTING'
+              ? 'linear-gradient(180deg, rgba(120, 53, 15, 0.3) 0%, rgba(15, 23, 42, 0.8) 100%)'
+              : 'rgba(15, 23, 42, 0.65)',
+          border:
+            systemState === 'RUNNING'
+              ? '1px solid #059669'
+              : systemState === 'STARTING'
+              ? '1px solid #d97706'
+              : '1px solid #334155',
+          boxShadow:
+            systemState === 'RUNNING'
+              ? '0 0 15px rgba(16, 185, 129, 0.15)'
+              : 'none',
+        }}
+      >
+        <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+            <span>🚀</span>
+            <span>Navigation Stack</span>
+          </span>
+          <span
+            className={`badge ${
+              systemState === 'RUNNING'
+                ? 'badge--green'
+                : systemState === 'STARTING'
+                ? 'badge--yellow'
+                : 'badge--gray'
+            }`}
+          >
+            {systemState === 'RUNNING' ? '● ONLINE' : systemState === 'STARTING' ? '⏳ LAUNCHING…' : 'OFFLINE'}
+          </span>
+        </div>
+
+        <div className="flex-col mt-sm" style={{ gap: 8 }}>
+          <div
+            style={{
+              fontSize: 12,
+              background: 'rgba(0,0,0,0.3)',
+              padding: '8px 10px',
+              borderRadius: 6,
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span className="text-dim">Environment:</span>
+              <strong style={{ color: '#38bdf8' }}>{systemStatus?.active_map || activeMap}</strong>
+            </div>
+            {systemState === 'RUNNING' && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span className="text-dim">Processes:</span>
+                <span style={{ color: '#10b981', fontSize: 11, fontWeight: 600 }}>
+                  3/3 Running (Gazebo, Route Runner, BT)
+                </span>
+              </div>
+            )}
+            {systemState === 'STARTING' && (
+              <div style={{ color: '#f59e0b', fontSize: 11, fontWeight: 600 }}>
+                {systemStatus?.message || `Step ${systemStatus?.stage || 1} of 3 in progress...`}
+              </div>
+            )}
+            {systemState === 'STOPPED' && (
+              <div style={{ color: '#94a3b8', fontSize: 11 }}>
+                Launches Gazebo simulation, Route Runner &amp; BT Manager automatically.
+              </div>
+            )}
+          </div>
+
+          {systemState === 'RUNNING' ? (
+            <button
+              id="btn-stop-system-panel"
+              className="btn btn--outline btn--full"
+              onClick={handleStopNavigationSystem}
+              disabled={isSystemLoading}
+              style={{
+                borderColor: '#ef4444',
+                color: '#f87171',
+                padding: '9px',
+                fontWeight: 700,
+                fontSize: 12,
+                cursor: isSystemLoading ? 'wait' : 'pointer',
+              }}
+            >
+              {isSystemLoading ? '⏳ Stopping Stack…' : '⏹️ Stop Navigation Stack'}
+            </button>
+          ) : (
+            <button
+              id="btn-start-system-panel"
+              className="btn btn--full"
+              onClick={handleStartNavigationSystem}
+              disabled={isSystemLoading || systemState === 'STARTING'}
+              style={{
+                background:
+                  systemState === 'STARTING'
+                    ? '#d97706'
+                    : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '10px',
+                fontWeight: 700,
+                fontSize: 12,
+                boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)',
+                cursor: isSystemLoading || systemState === 'STARTING' ? 'wait' : 'pointer',
+              }}
+            >
+              {systemState === 'STARTING' || isSystemLoading
+                ? '⏳ Initializing Stack…'
+                : `🚀 Start System on ${activeMap}`}
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* ── 1. EMERGENCY STOP ── */}
       {estopActive ? (
