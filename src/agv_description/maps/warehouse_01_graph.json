@@ -160163,20 +160163,5 @@
       "cost": 0.4
     }
   ],
-  "places": [
-    {
-      "id": "place_1790755902369",
-      "name": "Station A",
-      "node_id": "N108",
-      "type": "place",
-      "x": -3.776,
-      "y": 4.124,
-      "px": 64,
-      "py": 16,
-      "theta": 0.0,
-      "icon": "\ud83d\udccd",
-      "color": "#06b6d4",
-      "description": ""
-    }
-  ]
+  "places": []
 }
