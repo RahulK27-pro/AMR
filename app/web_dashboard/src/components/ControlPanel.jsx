@@ -1,9 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import nipplejs from 'nipplejs';
+import { useEffect, useMemo, useState } from 'react';
 import bridge from '../services/amrBridge';
-
-const MAX_LINEAR  = 0.8;
-const MAX_ANGULAR = 1.8;
 
 export default function ControlPanel({
   telemetry,
@@ -12,18 +8,9 @@ export default function ControlPanel({
   onOpenMapping,
   activeMap = 'warehouse_01',
   onMapChange,
+  controlMode = 'auto',
+  setControlMode,
 }) {
-  const joystickRef = useRef(null);
-  const managerRef  = useRef(null);
-  const cmdTimerRef = useRef(null);
-  const cmdRef      = useRef({ linear: 0, angular: 0 });
-
-  // Mode Interlock: 'auto' | 'manual'
-  const [controlMode, setControlMode] = useState('auto');
-
-  // Speed & emergency stop states
-  const [speed, setSpeed] = useState(0.8);
-  const [estopActive, setEstopActive] = useState(false);
 
   // Dynamic Obstacle Simulation Panel state
   const [showObstacleControls, setShowObstacleControls] = useState(false);
@@ -217,7 +204,7 @@ export default function ControlPanel({
     const target = namedPlaces.find((p) => p.id === selectedPlaceId);
     if (!target) return;
     setIsDispatchingPlace(true);
-    setControlMode('auto');
+    if (setControlMode) setControlMode('auto');
     try {
       await bridge.dispatchPlace(target, activeMap);
     } catch (_) {}
@@ -238,71 +225,13 @@ export default function ControlPanel({
   const navState = telemetry?.nav_state;
 
   useEffect(() => {
-    setEstopActive(navState === 'ESTOP');
     // If robot starts actively navigating or planning, default to auto mode
     if (navState === 'NAVIGATING' || navState === 'PLANNING') {
-      setControlMode('auto');
+      if (setControlMode) setControlMode('auto');
     }
-  }, [navState]);
-
-  // ── Joystick Setup ──
-  useEffect(() => {
-    if (!joystickRef.current) return;
-
-    const manager = nipplejs.create({
-      zone: joystickRef.current,
-      mode: 'static',
-      position: { left: '50%', top: '50%' },
-      color: controlMode === 'manual' ? '#00f0ff' : '#4b5563',
-      size: 130,
-      restJoystick: true,
-    });
-    managerRef.current = manager;
-
-    manager.on('move', (_, data) => {
-      if (controlMode !== 'manual') return;
-      if (!data.vector) return;
-      const linearRaw  = data.vector.y;
-      const angularRaw = -data.vector.x;
-      const f = data.force ? Math.min(data.force, 1) : 1;
-      cmdRef.current = {
-        linear:  linearRaw  * f * MAX_LINEAR  * speed,
-        angular: angularRaw * f * MAX_ANGULAR * speed,
-      };
-    });
-
-    manager.on('end', () => {
-      cmdRef.current = { linear: 0, angular: 0 };
-      if (controlMode === 'manual') {
-        bridge.sendCmdVel(0, 0);
-      }
-    });
-
-    cmdTimerRef.current = setInterval(() => {
-      if (controlMode !== 'manual') return;
-      const { linear, angular } = cmdRef.current;
-      if (linear !== 0 || angular !== 0) {
-        bridge.sendCmdVel(linear, angular);
-      }
-    }, 100);
-
-    return () => {
-      manager.destroy();
-      clearInterval(cmdTimerRef.current);
-    };
-  }, [speed, controlMode]);
+  }, [navState, setControlMode]);
 
   // ── Handlers ──
-  const handleEstop = async () => {
-    await bridge.sendStop();
-    setEstopActive(true);
-  };
-
-  const handleEstopClear = async () => {
-    await bridge.clearEstop();
-    setEstopActive(false);
-  };
-
   const handleRemoveNode = (index) => {
     if (setSelectedNodes) {
       setSelectedNodes(selectedNodes.filter((_, i) => i !== index));
@@ -315,13 +244,10 @@ export default function ControlPanel({
 
   const handleDispatchMission = async () => {
     if (selectedNodes.length === 0) return;
-    setControlMode('auto');
+    if (setControlMode) setControlMode('auto');
     await bridge.sendGoalSequence(selectedNodes);
   };
 
-  const applyPreset = (presetNodes) => {
-    if (setSelectedNodes) setSelectedNodes(presetNodes);
-  };
 
   // Obstacle teleop
   const sendObstacle = (linear, angular) => {
@@ -358,15 +284,15 @@ export default function ControlPanel({
   return (
     <div className="flex-col" style={{ gap: 12 }}>
 
-      {/* ── 0. NAVIGATION SYSTEM LIFECYCLE CONTROLLER ── */}
+      {/* ── 0. NAVIGATION SYSTEM LIFECYCLE CONTROLLER (PROFESSIONAL / NO EMOJIS) ── */}
       <div
         className="card"
         style={{
           background:
             systemState === 'RUNNING'
-              ? 'linear-gradient(180deg, rgba(6, 78, 59, 0.3) 0%, rgba(15, 23, 42, 0.8) 100%)'
+              ? 'linear-gradient(180deg, rgba(6, 78, 59, 0.28) 0%, rgba(15, 23, 42, 0.85) 100%)'
               : systemState === 'STARTING'
-              ? 'linear-gradient(180deg, rgba(120, 53, 15, 0.3) 0%, rgba(15, 23, 42, 0.8) 100%)'
+              ? 'linear-gradient(180deg, rgba(120, 53, 15, 0.28) 0%, rgba(15, 23, 42, 0.85) 100%)'
               : 'rgba(15, 23, 42, 0.65)',
           border:
             systemState === 'RUNNING'
@@ -376,14 +302,13 @@ export default function ControlPanel({
               : '1px solid #334155',
           boxShadow:
             systemState === 'RUNNING'
-              ? '0 0 15px rgba(16, 185, 129, 0.15)'
+              ? '0 0 16px rgba(16, 185, 129, 0.12)'
               : 'none',
         }}
       >
         <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
-            <span>🚀</span>
-            <span>Navigation Stack</span>
+          <span style={{ fontWeight: 700, letterSpacing: '0.07em', color: '#e2e8f0', textTransform: 'uppercase' }}>
+            System Lifecycle
           </span>
           <span
             className={`badge ${
@@ -393,8 +318,9 @@ export default function ControlPanel({
                 ? 'badge--yellow'
                 : 'badge--gray'
             }`}
+            style={{ letterSpacing: '0.05em', fontWeight: 700 }}
           >
-            {systemState === 'RUNNING' ? '● ONLINE' : systemState === 'STARTING' ? '⏳ LAUNCHING…' : 'OFFLINE'}
+            {systemState === 'RUNNING' ? 'ONLINE' : systemState === 'STARTING' ? 'INITIALIZING' : 'STANDBY'}
           </span>
         </div>
 
@@ -409,25 +335,31 @@ export default function ControlPanel({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span className="text-dim">Environment:</span>
-              <strong style={{ color: '#38bdf8' }}>{systemStatus?.active_map || activeMap}</strong>
+              <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
+                Environment:
+              </span>
+              <strong style={{ color: '#38bdf8', fontFamily: 'var(--text-mono)' }}>
+                {systemStatus?.active_map || activeMap}
+              </strong>
             </div>
             {systemState === 'RUNNING' && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span className="text-dim">Processes:</span>
+                <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
+                  Stack Status:
+                </span>
                 <span style={{ color: '#10b981', fontSize: 11, fontWeight: 600 }}>
-                  3/3 Running (Gazebo, Route Runner, BT)
+                  Active (Gazebo, Route Runner, BT)
                 </span>
               </div>
             )}
             {systemState === 'STARTING' && (
               <div style={{ color: '#f59e0b', fontSize: 11, fontWeight: 600 }}>
-                {systemStatus?.message || `Step ${systemStatus?.stage || 1} of 3 in progress...`}
+                {systemStatus?.message || `Stage ${systemStatus?.stage || 1} of 3 in progress...`}
               </div>
             )}
             {systemState === 'STOPPED' && (
               <div style={{ color: '#94a3b8', fontSize: 11 }}>
-                Launches Gazebo simulation, Route Runner &amp; BT Manager automatically.
+                Launches Gazebo simulation, Route Runner &amp; BT Manager.
               </div>
             )}
           </div>
@@ -441,13 +373,15 @@ export default function ControlPanel({
               style={{
                 borderColor: '#ef4444',
                 color: '#f87171',
-                padding: '9px',
+                padding: '10px',
                 fontWeight: 700,
                 fontSize: 12,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
                 cursor: isSystemLoading ? 'wait' : 'pointer',
               }}
             >
-              {isSystemLoading ? '⏳ Stopping Stack…' : '⏹️ Stop Navigation Stack'}
+              {isSystemLoading ? 'Stopping Stack...' : 'STOP SYSTEM'}
             </button>
           ) : (
             <button
@@ -459,126 +393,31 @@ export default function ControlPanel({
                 background:
                   systemState === 'STARTING'
                     ? '#d97706'
-                    : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
                 color: '#ffffff',
                 border: 'none',
-                padding: '10px',
+                padding: '11px',
                 fontWeight: 700,
                 fontSize: 12,
-                boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                boxShadow: '0 2px 12px rgba(16, 185, 129, 0.3)',
                 cursor: isSystemLoading || systemState === 'STARTING' ? 'wait' : 'pointer',
               }}
             >
               {systemState === 'STARTING' || isSystemLoading
-                ? '⏳ Initializing Stack…'
-                : `🚀 Start System on ${activeMap}`}
+                ? 'INITIALIZING SYSTEM...'
+                : `START SYSTEM • ${activeMap}`}
             </button>
           )}
         </div>
       </div>
 
-      {/* ── 1. EMERGENCY STOP ── */}
-      {estopActive ? (
-        <div className="estop-banner-active">
-          <div className="estop-text">⛔ EMERGENCY STOP ACTIVE</div>
-          <button className="btn btn--success btn--full mt-sm" onClick={handleEstopClear}>
-            ✓ Clear E-Stop &amp; Resume
-          </button>
-        </div>
-      ) : (
-        <button className="btn-estop" onClick={handleEstop}>
-          ⛔ EMERGENCY STOP
-        </button>
-      )}
 
-      {/* ── 2. CONTROL MODE SWITCHER (INTERLOCK) ── */}
-      <div className="card">
-        <div className="card__title flex-row" style={{ justifyContent: 'space-between' }}>
-          <span>🕹️ Control Interlock</span>
-          <span className={`badge ${controlMode === 'auto' ? 'badge--cyan' : 'badge--yellow'}`}>
-            {controlMode === 'auto' ? 'AUTONOMOUS' : 'MANUAL TELEOP'}
-          </span>
-        </div>
-
-        <div className="mode-toggle-group mt-sm">
-          <button
-            className={`btn-mode ${controlMode === 'auto' ? 'active' : ''}`}
-            onClick={() => {
-              setControlMode('auto');
-              bridge.sendCmdVel(0, 0);
-            }}
-          >
-            🤖 Autonomous
-          </button>
-          <button
-            className={`btn-mode ${controlMode === 'manual' ? 'active' : ''}`}
-            onClick={() => setControlMode('manual')}
-          >
-            🎮 Manual Drive
-          </button>
-        </div>
-
-        {/* Teleop Joystick Zone */}
-        <div style={{ position: 'relative', height: 160, marginTop: 12 }}>
-          <div
-            ref={joystickRef}
-            className="joystick-zone"
-            style={{
-              width: '100%',
-              height: '100%',
-              opacity: controlMode === 'manual' ? 1 : 0.35,
-              pointerEvents: controlMode === 'manual' ? 'auto' : 'none',
-            }}
-          />
-          {controlMode === 'auto' && (
-            <div className="joystick-lock-overlay">
-              <span>🔒 Joystick Locked in Auto Mode</span>
-              <button
-                className="btn btn--xs btn--ghost mt-xs"
-                onClick={() => setControlMode('manual')}
-              >
-                Override to Manual
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Speed throttle slider */}
-        <div style={{ marginTop: 10 }}>
-          <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
-            <span className="text-dim text-xs">Drive Speed Throttle</span>
-            <span className="text-mono text-xs" style={{ color: 'var(--accent-cyan)' }}>
-              {Math.round(speed * 100)}% ({(MAX_LINEAR * speed).toFixed(2)} m/s)
-            </span>
-          </div>
-          <input
-            type="range"
-            min="0.1"
-            max="1.0"
-            step="0.05"
-            value={speed}
-            disabled={controlMode !== 'manual'}
-            onChange={(e) => setSpeed(Number(e.target.value))}
-            style={{ width: '100%', accentColor: 'var(--accent-cyan)' }}
-          />
-        </div>
-
-        {/* Manual quick actions */}
-        {controlMode === 'manual' && (
-          <div className="quick-actions-grid mt-sm">
-            <button className="btn btn--ghost btn--sm" onClick={() => bridge.sendCmdVel(0.35 * speed, 0)}>↑ Fwd</button>
-            <button className="btn btn--ghost btn--sm" onClick={() => bridge.sendCmdVel(-0.35 * speed, 0)}>↓ Rev</button>
-            <button className="btn btn--ghost btn--sm" onClick={() => bridge.sendCmdVel(0, 0.9 * speed)}>↺ Left</button>
-            <button className="btn btn--ghost btn--sm" onClick={() => bridge.sendCmdVel(0, -0.9 * speed)}>↻ Right</button>
-            <button className="btn btn--ghost btn--sm" style={{ gridColumn: 'span 4', color: '#ff3355' }} onClick={() => bridge.sendCmdVel(0, 0)}>■ Stop Motors</button>
-          </div>
-        )}
-      </div>
-
-      {/* ── 3. FLEET STATIONS & PLACE DISPATCH ── */}
+      {/* ── 2. FLEET STATIONS & PLACE DISPATCH ── */}
       <div className="card">
         <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>🏷️ Fleet Stations ({activeMap})</span>
+          <span style={{ letterSpacing: '0.06em' }}>FLEET STATIONS ({activeMap})</span>
           <div className="flex-row" style={{ gap: 6, alignItems: 'center' }}>
             <span className="badge badge--cyan" style={{ fontSize: 10 }}>
               {namedPlaces.length} Stations
@@ -589,7 +428,7 @@ export default function ControlPanel({
               style={{ fontSize: 11, padding: '3px 8px', fontWeight: 600 }}
               title="Add a new named place to this map anytime"
             >
-              {isAddingPlace ? '✕ Close' : '➕ New Place'}
+              {isAddingPlace ? '✕ Close' : '+ New Place'}
             </button>
           </div>
         </div>
@@ -607,7 +446,7 @@ export default function ControlPanel({
           >
             <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-cyan)' }}>
-                📍 Anchor New Station to {activeMap}
+                Anchor New Station to {activeMap}
               </span>
               <span className="text-dim text-xs">Node + Name</span>
             </div>
@@ -650,7 +489,7 @@ export default function ControlPanel({
                 )}
               </div>
               <div className="text-dim" style={{ fontSize: 10, marginTop: 3 }}>
-                💡 Tip: You can also click any node on the map canvas to select it.
+                Tip: You can also click any node on the map canvas to select it.
               </div>
             </div>
 
@@ -707,7 +546,7 @@ export default function ControlPanel({
                 disabled={isSavingNewPlace || !newPlaceName.trim() || !newPlaceNodeId}
                 style={{ fontWeight: 700 }}
               >
-                {isSavingNewPlace ? 'Saving...' : '💾 Save Station'}
+                {isSavingNewPlace ? 'Saving...' : 'Save Station'}
               </button>
               <button
                 className="btn btn--ghost btn--sm"
@@ -732,7 +571,7 @@ export default function ControlPanel({
               </span>
             </div>
             <div style={{ marginTop: 4, fontWeight: 700, fontSize: 13, color: '#f8fafc' }}>
-              🎯 {activePlaceNav.target_place || 'Active Station'} <span className="text-dim text-xs">({activePlaceNav.target_node})</span>
+              Target: {activePlaceNav.target_place || 'Active Station'} <span className="text-dim text-xs">({activePlaceNav.target_node})</span>
             </div>
             {activePlaceNav.is_sequence && (
               <div className="text-dim text-xs" style={{ marginTop: 2 }}>
@@ -744,7 +583,7 @@ export default function ControlPanel({
               onClick={handleCancelPlaceNav}
               style={{ padding: '4px 8px', fontSize: 11 }}
             >
-              ⛔ Cancel Station Navigation
+              Cancel Navigation
             </button>
           </div>
         )}
@@ -774,7 +613,7 @@ export default function ControlPanel({
                 title="Delete this station from map"
                 style={{ padding: '6px 8px', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}
               >
-                🗑️
+                Del
               </button>
             )}
           </div>
@@ -805,7 +644,7 @@ export default function ControlPanel({
                 }}
                 style={{ fontSize: 11, padding: '4px 10px' }}
               >
-                ➕ Add First Station
+                + Add First Station
               </button>
             </div>
           )}
@@ -820,7 +659,7 @@ export default function ControlPanel({
                   onClick={() => setSelectedPlaceId(p.id)}
                   style={{ fontSize: 11, padding: '3px 8px' }}
                 >
-                  📍 {p.name}
+                  {p.name}
                 </button>
               ))}
             </div>
@@ -833,7 +672,7 @@ export default function ControlPanel({
               onClick={handleDispatchSelectedPlace}
               style={{ fontWeight: 700, padding: '7px 12px' }}
             >
-              {isDispatchingPlace ? '🚀 Dispatching...' : '▶ Dispatch to Station'}
+              {isDispatchingPlace ? 'Dispatching...' : 'Dispatch to Station'}
             </button>
             <button
               className="btn btn--ghost btn--sm"
@@ -842,16 +681,16 @@ export default function ControlPanel({
               title="Add this station's node to mission waypoints queue"
               style={{ fontSize: 11, whiteSpace: 'nowrap', padding: '7px 10px' }}
             >
-              ➕ Queue
+              + Queue
             </button>
           </div>
         </div>
       </div>
 
-      {/* ── 4. TOPOLOGICAL MISSION BUILDER ── */}
+      {/* ── 3. TOPOLOGICAL MISSION BUILDER ── */}
       <div className="card">
         <div className="card__title flex-row" style={{ justifyContent: 'space-between' }}>
-          <span>📋 Mission Waypoints</span>
+          <span style={{ letterSpacing: '0.06em' }}>MISSION WAYPOINTS</span>
           {selectedNodes.length > 0 && (
             <button className="btn-link text-xs" onClick={handleClearNodes}>
               Clear
@@ -862,7 +701,7 @@ export default function ControlPanel({
         <div className="waypoint-queue-container mt-sm">
           {selectedNodes.length === 0 ? (
             <div className="text-dim text-xs" style={{ textAlign: 'center', padding: '12px 6px' }}>
-              No waypoints selected. Turn on <b>"🗺️ Nodes"</b> on the map and click nodes, or use a preset below.
+              No waypoints selected. Turn on Nodes on the map canvas to select.
             </div>
           ) : (
             <div className="waypoint-chip-list">
@@ -883,20 +722,13 @@ export default function ControlPanel({
           )}
         </div>
 
-        {/* Mission Presets */}
-        <div className="preset-row mt-sm">
-          <span className="text-dim text-xs">Presets:</span>
-          <button className="btn-preset" onClick={() => applyPreset(['N0', 'N5', 'N12'])}>North Aisle</button>
-          <button className="btn-preset" onClick={() => applyPreset(['N3', 'N8', 'N15', 'N2'])}>Aisle Loop</button>
-          <button className="btn-preset" onClick={() => applyPreset(['N1', 'N10', 'N4'])}>Docking</button>
-        </div>
-
         <button
           className="btn btn--success btn--full mt-sm"
           disabled={selectedNodes.length === 0}
           onClick={handleDispatchMission}
+          style={{ letterSpacing: '0.04em', fontWeight: 700 }}
         >
-          ▶ Dispatch Mission Sequence ({selectedNodes.length})
+          Dispatch Mission Sequence ({selectedNodes.length})
         </button>
       </div>
 
@@ -907,7 +739,7 @@ export default function ControlPanel({
           style={{ justifyContent: 'space-between' }}
           onClick={() => setShowObstacleControls(!showObstacleControls)}
         >
-          <span>🚧 Dynamic Obstacle Tester</span>
+          <span style={{ letterSpacing: '0.06em' }}>DYNAMIC OBSTACLE SIMULATOR</span>
           <span className="text-xs text-dim">{showObstacleControls ? '▲ Hide' : '▼ Test'}</span>
         </div>
 
@@ -927,7 +759,7 @@ export default function ControlPanel({
                 style={{ gridColumn: 'span 4', color: '#ff3355' }}
                 onClick={() => sendObstacle(0, 0)}
               >
-                ■ Stop Obstacle
+                Stop Obstacle
               </button>
             </div>
           </div>

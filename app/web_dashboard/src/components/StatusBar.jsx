@@ -16,6 +16,31 @@ export default function StatusBar({
   const [port, setPort]     = useState('8000');
   const [editing, setEditing] = useState(false);
   const [availableMaps, setAvailableMaps] = useState([]);
+  const [localEstop, setLocalEstop] = useState(false);
+
+  useEffect(() => {
+    if (telemetry?.nav_state === 'ESTOP') {
+      setLocalEstop(true);
+    } else if (telemetry?.nav_state && telemetry.nav_state !== 'ESTOP') {
+      setLocalEstop(false);
+    }
+  }, [telemetry?.nav_state]);
+
+  const isEstopActive = telemetry?.nav_state === 'ESTOP' || localEstop;
+
+  const handleEstop = async () => {
+    setLocalEstop(true);
+    try {
+      await bridge.sendStop();
+    } catch (_) {}
+  };
+
+  const handleEstopClear = async () => {
+    setLocalEstop(false);
+    try {
+      await bridge.clearEstop();
+    } catch (_) {}
+  };
 
   useEffect(() => {
     bridge.connect(host, Number(port));
@@ -54,25 +79,6 @@ export default function StatusBar({
     status === 'error'        ? 'Error' : 'Offline';
 
   const navState = telemetry?.nav_state ?? '—';
-  const systemStatus = telemetry?.system_status;
-  const systemState = systemStatus?.state || 'STOPPED';
-  const [isActionInProgress, setIsActionInProgress] = useState(false);
-
-  const handleStartSystem = async () => {
-    setIsActionInProgress(true);
-    try {
-      await bridge.startNavigationSystem(activeMap);
-    } catch (_) {}
-    setIsActionInProgress(false);
-  };
-
-  const handleStopSystem = async () => {
-    setIsActionInProgress(true);
-    try {
-      await bridge.stopNavigationSystem();
-    } catch (_) {}
-    setIsActionInProgress(false);
-  };
 
   return (
     <header className="status-bar">
@@ -161,92 +167,6 @@ export default function StatusBar({
         </span>
       </div>
 
-      {/* ── System Stack Lifecycle Launcher ── */}
-      <div className="status-bar__system-control" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {systemState === 'RUNNING' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span
-              style={{
-                fontSize: 11,
-                background: 'rgba(16, 185, 129, 0.15)',
-                color: '#10b981',
-                border: '1px solid #059669',
-                padding: '3px 8px',
-                borderRadius: 6,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
-              title={`Stack active on ${systemStatus?.active_map || activeMap}`}
-            >
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-              STACK ONLINE
-            </span>
-            <button
-              id="btn-stop-system-header"
-              className="btn btn--outline"
-              onClick={handleStopSystem}
-              disabled={isActionInProgress}
-              style={{
-                padding: '3px 10px',
-                fontSize: 11,
-                borderColor: '#ef4444',
-                color: '#f87171',
-                fontWeight: 600,
-                cursor: isActionInProgress ? 'wait' : 'pointer',
-              }}
-              title="Stop Gazebo, Route Runner, and BT Manager"
-            >
-              ⏹️ Stop Stack
-            </button>
-          </div>
-        ) : systemState === 'STARTING' ? (
-          <div
-            style={{
-              fontSize: 11,
-              background: 'rgba(245, 158, 11, 0.15)',
-              color: '#f59e0b',
-              border: '1px solid #d97706',
-              padding: '3px 10px',
-              borderRadius: 6,
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <span className="dot dot--connecting" style={{ width: 6, height: 6 }} />
-            <span>Launching {systemStatus?.active_map || activeMap}... (Step {systemStatus?.stage || 1}/3)</span>
-          </div>
-        ) : (
-          <button
-            id="btn-start-system-header"
-            onClick={handleStartSystem}
-            disabled={isActionInProgress}
-            style={{
-              padding: '4px 12px',
-              fontSize: 11,
-              fontWeight: 700,
-              color: '#ffffff',
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              border: '1px solid #34d399',
-              borderRadius: 6,
-              boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
-              cursor: isActionInProgress ? 'wait' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              transition: 'all 0.2s ease',
-            }}
-            title={`Launch Gazebo, Map Server, Route Runner & BT Manager for ${activeMap}`}
-          >
-            <span>🚀</span>
-            <span>Start System</span>
-          </button>
-        )}
-      </div>
-
       {/* Dedicated Pipeline Entry Point: Map New Place */}
       {onViewChange && (
         <div className="status-bar__view-toggle">
@@ -274,6 +194,27 @@ export default function StatusBar({
       )}
 
       <div className="status-bar__sep" />
+
+      {/* Small Emergency Stop */}
+      {isEstopActive ? (
+        <button
+          id="btn-header-estop"
+          className="btn-estop-compact btn-estop-compact--active"
+          onClick={handleEstopClear}
+          title="Emergency Stop is ACTIVE! Click to clear and restore navigation."
+        >
+          CLEAR E-STOP
+        </button>
+      ) : (
+        <button
+          id="btn-header-estop"
+          className="btn-estop-compact"
+          onClick={handleEstop}
+          title="Emergency Stop: Halt robot immediately"
+        >
+          E-STOP
+        </button>
+      )}
 
       {/* Bridge host editor */}
       {editing ? (

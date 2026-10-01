@@ -75,7 +75,7 @@ html, body, #root {
 .dashboard-layout {
   display: grid;
   grid-template-rows: 52px 1fr;
-  grid-template-columns: 340px 1fr 300px;
+  grid-template-columns: 320px 1fr 380px;
   grid-template-areas:
     "header  header  header"
     "left    center  right";
@@ -399,6 +399,55 @@ html, body, #root {
 .btn-estop:hover { transform: scale(1.02); box-shadow: 0 6px 40px rgba(255,51,85,0.7); }
 .btn-estop:active { transform: scale(0.98); }
 
+/* Compact Header ESTOP button */
+.btn-estop-compact {
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: linear-gradient(135deg, #b91c1c 0%, #dc2626 100%);
+  color: #ffffff;
+  border: 1px solid #ef4444;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+  transition: all 0.2s ease;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.btn-estop-compact:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+  box-shadow: 0 3px 12px rgba(239, 68, 68, 0.5);
+  transform: translateY(-1px);
+}
+
+.btn-estop-compact:active {
+  transform: translateY(0);
+}
+
+.btn-estop-compact--active {
+  background: #dc2626;
+  border-color: #f87171;
+  animation: pulse-estop-compact 1.4s infinite;
+}
+
+@keyframes pulse-estop-compact {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
 /* ---- Inputs ---- */
 .input-row {
   display: flex;
@@ -462,9 +511,10 @@ html, body, #root {
 /* ---- Center Bottom Grid ---- */
 .center-bottom-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 380px 1fr;
   gap: 12px;
-  min-height: 160px;
+  height: 220px;
+  flex-shrink: 0;
 }
 
 /* ---- Map HUD & Vector Viewport ---- */

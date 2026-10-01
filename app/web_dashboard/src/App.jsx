@@ -5,6 +5,7 @@ import TelemetryPanel from './components/TelemetryPanel';
 import MapView from './components/MapView';
 import ControlPanel from './components/ControlPanel';
 import EventLog from './components/EventLog';
+import ControlInterlock from './components/ControlInterlock';
 import MappingScreen from './components/MappingScreen';
 
 class ErrorBoundary extends React.Component {
@@ -57,6 +58,7 @@ class ErrorBoundary extends React.Component {
 export default function App() {
   const [telemetry, setTelemetry] = useState(null);
   const [selectedNodes, setSelectedNodes] = useState([]);
+  const [controlMode, setControlMode] = useState('auto');
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'mapping'
   const [activeMap, setActiveMap] = useState(() => {
     return localStorage.getItem('amr_active_map') || 'warehouse_01';
@@ -140,8 +142,13 @@ export default function App() {
               />
             </div>
 
-            {/* Center Bottom: Diagnostics & Autonomous Decisions Event Log */}
+            {/* Center Bottom: Control Interlock & Autonomous Decisions Event Log */}
             <div className="center-bottom-grid">
+              <ControlInterlock
+                telemetry={telemetry}
+                controlMode={controlMode}
+                setControlMode={setControlMode}
+              />
               <EventLog />
             </div>
           </main>
@@ -155,6 +162,8 @@ export default function App() {
               onOpenMapping={() => setCurrentView('mapping')}
               activeMap={activeMap}
               onMapChange={handleMapChange}
+              controlMode={controlMode}
+              setControlMode={setControlMode}
             />
           </aside>
         </>
