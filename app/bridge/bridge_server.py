@@ -259,7 +259,7 @@ class MappingManager:
         self.last_extracted_graph: Optional[dict] = None
         self.lock = threading.Lock()
 
-    def start(self, map_name: str = 'warehouse_01', world: str = 'test1.world', run_explore: bool = False):
+    def start(self, map_name: str = 'warehouse_01', world: str = 'test1.world', run_explore: bool = False, headless: bool = True):
         with self.lock:
             if map_name and map_name.strip():
                 self.map_name = map_name.strip()
@@ -284,6 +284,7 @@ class MappingManager:
 
             run_sim_flag = 'false' if gz_already_running else 'true'
             run_explore_flag = 'true' if run_explore else 'false'
+            headless_flag = 'true' if headless else 'false'
 
             # Spawn mapping_session.launch.py in background if not already started
             if self.proc is None or self.proc.poll() is not None:
@@ -291,7 +292,8 @@ class MappingManager:
                     f"source /opt/ros/jazzy/setup.bash && "
                     f"source {self.ws_root}/install/setup.bash && "
                     f"ros2 launch agv_description mapping_session.launch.py "
-                    f"world:={self.target_world} run_sim:={run_sim_flag} run_explore:={run_explore_flag} use_rviz:=false"
+                    f"world:={self.target_world} run_sim:={run_sim_flag} run_explore:={run_explore_flag} "
+                    f"headless:={headless_flag} use_rviz:=false"
                 )
                 try:
                     self.proc = subprocess.Popen(
@@ -627,7 +629,7 @@ class SystemLaunchManager:
         self.lock = threading.Lock()
         self._worker_thread: Optional[threading.Thread] = None
 
-    def start(self, map_name: str = 'warehouse_01', world: Optional[str] = None) -> dict:
+    def start(self, map_name: str = 'warehouse_01', world: Optional[str] = None, headless: bool = True, use_rviz: bool = False) -> dict:
         with self.lock:
             if self.state in ('STARTING', 'RUNNING'):
                 return {'ok': False, 'error': f'System is already {self.state.lower()}'}
@@ -645,14 +647,14 @@ class SystemLaunchManager:
 
             self._worker_thread = threading.Thread(
                 target=self._start_sequence,
-                args=(target_map, world),
+                args=(target_map, world, headless, use_rviz),
                 daemon=True
             )
             self._worker_thread.start()
 
             return {'ok': True, 'state': self.state, 'map_name': target_map}
 
-    def _start_sequence(self, map_name: str, world: Optional[str]):
+    def _start_sequence(self, map_name: str, world: Optional[str], headless: bool = True, use_rviz: bool = False):
         try:
             maps_dir = self.ws_root / "src" / "agv_description" / "maps"
             src_graph = maps_dir / f"{map_name}_graph.json"
@@ -666,10 +668,12 @@ class SystemLaunchManager:
 
             # 1. Launch navigation_launch.py
             world_arg = f"world:={world}" if world else ""
+            headless_arg = f"headless:={'true' if headless else 'false'}"
+            rviz_arg = f"use_rviz:={'true' if use_rviz else 'false'}"
             nav_cmd = (
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 launch agv_description navigation_launch.py map:={map_name} {world_arg}"
+                f"ros2 launch agv_description navigation_launch.py map:={map_name} {world_arg} {headless_arg} {rviz_arg}"
             )
             logger.info(f"[SystemLaunchManager] Starting navigation_launch: {nav_cmd}")
             self.nav_proc = subprocess.Popen(
@@ -1446,11 +1450,14 @@ class GoalSequenceRequest(BaseModel):
 class SystemStartRequest(BaseModel):
     map_name: Optional[str] = 'warehouse_01'
     world: Optional[str] = None
+    headless: bool = True
+    use_rviz: bool = False
 
 class StartMappingRequest(BaseModel):
     map_name: str = 'warehouse_01'
     world: str = 'test1.world'
     run_explore: bool = False
+    headless: bool = True
 
 class SaveMapRequest(BaseModel):
     map_name: Optional[str] = 'warehouse_01'
@@ -1618,7 +1625,7 @@ async def get_mapping_status():
 
 @app.post('/api/mapping/start')
 async def post_mapping_start(req: StartMappingRequest = StartMappingRequest()):
-    mapping_mgr.start(map_name=req.map_name, world=req.world, run_explore=req.run_explore)
+    mapping_mgr.start(map_name=req.map_name, world=req.world, run_explore=req.run_explore, headless=req.headless)
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
     return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
@@ -2495,7 +2502,7 @@ async def post_system_start(req: SystemStartRequest):
     curr_map = (req.map_name or (node.active_map_name if node else None) or 'warehouse_01').strip()
     if node:
         node.set_active_map(curr_map)
-    return system_mgr.start(map_name=curr_map, world=req.world)
+    return system_mgr.start(map_name=curr_map, world=req.world, headless=req.headless, use_rviz=req.use_rviz)
 
 
 @app.post('/api/system/stop')
