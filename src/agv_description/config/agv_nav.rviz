@@ -5,14 +5,16 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Map1
+        - /RobotModel1
+        - /TF1
+        - /Odometry1
         - /LaserScan1
-        - /LocalCostmap1
-        - /GlobalCostmap1
+        - /ParticleCloud1
+        - /AmclPose1
+        - /DensePath1
         - /MarkerArray1
       Splitter Ratio: 0.5
-    Tree Height: 232
-  - Class: nav2_rviz_plugins/Navigation 2
-    Name: Navigation
+    Tree Height: 340
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -27,7 +29,7 @@ Visualization Manager:
       Color: 80; 80; 84
       Enabled: true
       Line Style:
-        Line Width: 0.029999999329447746
+        Line Width: 0.03
         Value: Lines
       Name: Grid
       Normal Cell Count: 0
@@ -36,91 +38,15 @@ Visualization Manager:
         Y: 0
         Z: 0
       Plane: XY
-      Plane Cell Count: 20
+      Plane Cell Count: 30
       Reference Frame: <Fixed Frame>
       Value: true
-    - Alpha: 1
-      Class: rviz_default_plugins/RobotModel
-      Collision Enabled: false
-      Description File: ""
-      Description Source: Topic
-      Description Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /robot_description
-      Enabled: true
-      Links:
-        All Links Enabled: true
-        Expand Joint Details: false
-        Expand Link Details: false
-        Expand Tree: false
-        Link Tree Style: Links in Alphabetic Order
-        base_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        front_caster:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        imu_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        left_wheel:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        lidar_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        rear_caster:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        right_wheel:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-      Mass Properties:
-        Inertia: false
-        Mass: false
-      Name: RobotModel
-      TF Prefix: ""
-      Update Interval: 0
-      Value: true
-      Visual Enabled: true
-    - Class: rviz_default_plugins/TF
-      Enabled: false
-      Filter (blacklist): ""
-      Filter (whitelist): ""
-      Frame Timeout: 15
-      Frames:
-        All Enabled: false
-      Marker Scale: 0.5
-      Name: TF
-      Show Arrows: true
-      Show Axes: true
-      Show Names: false
-      Tree:
-        {}
-      Update Interval: 0
-      Value: false
-    - Alpha: 0.8999999761581421
+    - Alpha: 0.75
       Binary representation: false
       Binary threshold: 100
       Class: rviz_default_plugins/Map
       Color Scheme: map
-      Draw Behind: false
+      Draw Behind: true
       Enabled: true
       Name: Map
       Topic:
@@ -132,11 +58,90 @@ Visualization Manager:
         Value: /map
       Update Topic:
         Depth: 5
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /map_updates
       Use Timestamp: false
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: RobotModel
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        base_link:
+          Value: true
+        odom:
+          Value: true
+        map:
+          Value: true
+        lidar_link:
+          Value: false
+      Marker Scale: 0.6
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        {}
+      Update Interval: 0
+      Value: true
+    - Alpha: 1
+      Axes Length: 0.5
+      Axes Radius: 0.05
+      Class: rviz_default_plugins/Odometry
+      Color: 255; 40; 80
+      Covariance:
+        Alpha: 0.2
+        Color: 255; 40; 80
+        Color Style: Unique
+        Scale: 1
+        Value: false
+      Enabled: true
+      Head Length: 0.2
+      Head Radius: 0.1
+      Keep: 100
+      Name: Odometry
+      Position Tolerance: 0.1
+      Angle Tolerance: 0.1
+      Shaft Length: 0.4
+      Shaft Radius: 0.04
+      Shape: Arrow
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: System Default
+        Value: /odometry/filtered
       Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -147,9 +152,9 @@ Visualization Manager:
       Axis: Z
       Channel Name: intensity
       Class: rviz_default_plugins/LaserScan
-      Color: 0; 255; 180
+      Color: 0; 255; 255
       Color Transformer: FlatColor
-      Decay Time: 0.30000001192092896
+      Decay Time: 0.1
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
@@ -159,161 +164,91 @@ Visualization Manager:
       Name: LaserScan
       Position Transformer: XYZ
       Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.029999999329447746
+      Size (Pixels): 4
+      Size (m): 0.08
       Style: Flat Squares
       Topic:
         Depth: 5
         Durability Policy: Volatile
         Filter size: 10
         History Policy: Keep Last
-        Reliability Policy: Reliable
+        Reliability Policy: System Default
         Value: /scan
       Use Fixed Frame: true
-      Use rainbow: true
+      Use rainbow: false
       Value: true
-    - Alpha: 0.5
-      Binary representation: false
-      Binary threshold: 100
-      Class: rviz_default_plugins/Map
-      Color Scheme: costmap
-      Draw Behind: false
+    - Alpha: 0.8
+      Arrow Length: 0.25
+      Class: nav2_rviz_plugins/ParticleCloud
+      Color: 255; 180; 0
       Enabled: true
-      Name: LocalCostmap
-      Topic:
-        Depth: 2
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /local_costmap/costmap
-      Update Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /local_costmap/costmap_updates
-      Use Timestamp: false
-      Value: true
-    - Alpha: 0.30000001192092896
-      Binary representation: false
-      Binary threshold: 100
-      Class: rviz_default_plugins/Map
-      Color Scheme: costmap
-      Draw Behind: false
-      Enabled: true
-      Name: GlobalCostmap
-      Topic:
-        Depth: 2
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /global_costmap/costmap
-      Update Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /global_costmap/costmap_updates
-      Use Timestamp: false
-      Value: true
-    - Alpha: 0.6000000238418579
-      Arrow Length: 0.15000000596046448
-      Axes Length: 0.30000001192092896
-      Axes Radius: 0.009999999776482582
-      Class: rviz_default_plugins/PoseArray
-      Color: 255; 140; 0
-      Enabled: true
-      Head Length: 0.07000000029802322
-      Head Radius: 0.029999999329447746
-      Name: AmclParticles
-      Shaft Length: 0.07999999821186066
-      Shaft Radius: 0.009999999776482582
+      Head Length: 0.08
+      Head Radius: 0.04
+      Name: ParticleCloud
+      Shaft Length: 0.12
+      Shaft Radius: 0.015
       Shape: Arrow (Flat)
       Topic:
         Depth: 5
         Durability Policy: Volatile
         Filter size: 10
         History Policy: Keep Last
-        Reliability Policy: Reliable
+        Reliability Policy: System Default
         Value: /particle_cloud
       Value: true
     - Alpha: 1
-      Buffer Length: 1
-      Class: rviz_default_plugins/Path
-      Color: 0; 170; 255
+      Axes Length: 0.6
+      Axes Radius: 0.04
+      Class: rviz_default_plugins/PoseWithCovariance
+      Color: 0; 255; 120
+      Covariance:
+        Alpha: 0.3
+        Color: 0; 255; 120
+        Color Style: Unique
+        Scale: 1
+        Value: true
       Enabled: true
-      Head Diameter: 0.10000000149011612
-      Head Length: 0.07999999821186066
-      Length: 0.30000001192092896
-      Line Style: Lines
-      Line Width: 0.03999999910593033
-      Name: GlobalPlan
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0.05000000074505806
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /plan
-      Value: true
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz_default_plugins/Path
-      Color: 0; 255; 80
-      Enabled: true
-      Head Diameter: 0.30000001192092896
-      Head Length: 0.20000000298023224
-      Length: 0.30000001192092896
-      Line Style: Lines
-      Line Width: 0.029999999329447746
-      Name: LocalPlan
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0.05999999865889549
-      Pose Color: 255; 85; 255
-      Pose Style: None
-      Radius: 0.029999999329447746
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /local_plan
-      Value: true
-    - Alpha: 1
-      Axes Length: 1
-      Axes Radius: 0.10000000149011612
-      Class: rviz_default_plugins/Pose
-      Color: 255; 25; 100
-      Enabled: true
-      Head Length: 0.25
-      Head Radius: 0.11999999731779099
-      Name: GoalPose
-      Shaft Length: 0.4000000059604645
-      Shaft Radius: 0.05000000074505806
+      Head Length: 0.18
+      Head Radius: 0.08
+      Name: AmclPose
+      Shaft Length: 0.35
+      Shaft Radius: 0.04
       Shape: Arrow
       Topic:
         Depth: 5
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: System Default
+        Value: /amcl_pose
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 0; 255
+      Enabled: true
+      Head Diameter: 0.12
+      Head Length: 0.1
+      Length: 0.3
+      Line Style: Lines
+      Line Width: 0.06
+      Name: DensePath
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.05
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
         Durability Policy: Volatile
         Filter size: 10
         History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /goal_pose
+        Reliability Policy: System Default
+        Value: /agv_dense_path
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
@@ -325,13 +260,34 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: agv_graph_markers
+        Reliability Policy: System Default
+        Value: /agv_graph_markers
+      Value: true
+    - Alpha: 1
+      Axes Length: 0.8
+      Axes Radius: 0.08
+      Class: rviz_default_plugins/Pose
+      Color: 255; 25; 100
+      Enabled: true
+      Head Length: 0.25
+      Head Radius: 0.12
+      Name: GoalPose
+      Shaft Length: 0.45
+      Shaft Radius: 0.05
+      Shape: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: System Default
+        Value: /goal_pose
       Value: true
   Enabled: true
   Global Options:
-    Background Color: 24; 24; 28
+    Background Color: 20; 20; 24
     Fixed Frame: map
     Frame Rate: 30
   Name: root
@@ -351,49 +307,72 @@ Visualization Manager:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
-        Reliability Policy: Reliable
+        Reliability Policy: System Default
         Value: /initialpose
-    - Class: nav2_rviz_plugins/GoalTool
     - Class: rviz_default_plugins/SetGoal
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: goal_pose
+        Reliability Policy: System Default
+        Value: /goal_pose
   Transformation:
     Current:
       Class: rviz_default_plugins/TF
   Value: true
   Views:
     Current:
-      Angle: 0
-      Class: rviz_default_plugins/TopDownOrtho
+      Class: rviz_default_plugins/Orbit
+      Distance: 13.0
       Enable Stereo Rendering:
-        Stereo Eye Separation: 0.05999999865889549
+        Stereo Eye Separation: 0.06
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Focal Shape Size: 0.05
       Invert Z Axis: false
       Name: Current View
-      Near Clip Distance: 0.009999999776482582
-      Scale: 35
-      Target Frame: base_link
-      Value: TopDownOrtho (rviz)
-      X: 0
-      Y: 0
-    Saved: ~
+      Near Clip Distance: 0.01
+      Pitch: 1.55
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz)
+      Yaw: 0
+    Saved:
+      - Class: rviz_default_plugins/Orbit
+        Distance: 5.0
+        Focal Point:
+          X: 0
+          Y: 0
+          Z: 0
+        Focal Shape Size: 0.05
+        Invert Z Axis: false
+        Name: Focus Robot
+        Near Clip Distance: 0.01
+        Pitch: 1.2
+        Target Frame: base_link
+        Value: Orbit (rviz)
+        Yaw: 0
+      - Class: rviz_default_plugins/TopDownOrtho
+        Name: TopDown
+        Near Clip Distance: 0.01
+        Scale: 40
+        Target Frame: <Fixed Frame>
+        Value: TopDownOrtho (rviz)
+        X: 0
+        Y: 0
 Window Geometry:
   Displays:
     collapsed: false
   Height: 900
   Hide Left Dock: false
   Hide Right Dock: false
-  Navigation:
-    collapsed: false
-  QMainWindow State: 000000ff00000000fd00000001000000000000019b0000032efc0200000003fb000000100044006900730070006c006100790073010000003b00000171000000c700fffffffb00000014004e0061007600690067006100740069006f006e01000001b2000000c40000006e00fffffffb0000000a00560069006500770073010000027c000000ed000000a000ffffff0000043b0000032e00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000001000000000000019b0000032efc0200000002fb000000100044006900730070006c006100790073010000003b00000171000000c700fffffffb0000000a0056006900650077007301000001b2000000c40000006e00ffffff0000043b0000032e00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 1500
-  X: 102
-  Y: 31
+  Width: 1400
+  X: 100
+  Y: 30

@@ -625,6 +625,7 @@ class SystemLaunchManager:
         self.nav_proc: Optional[subprocess.Popen] = None
         self.runner_proc: Optional[subprocess.Popen] = None
         self.bt_proc: Optional[subprocess.Popen] = None
+        self.graph_proc: Optional[subprocess.Popen] = None
         self.error_msg: Optional[str] = None
         self.lock = threading.Lock()
         self._worker_thread: Optional[threading.Thread] = None
@@ -702,7 +703,7 @@ class SystemLaunchManager:
             runner_cmd = (
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 run agv_navigation route_runner"
+                f"ros2 run agv_navigation route_runner --ros-args -p map_name:={map_name}"
             )
             logger.info("[SystemLaunchManager] Starting route_runner...")
             self.runner_proc = subprocess.Popen(
@@ -727,7 +728,7 @@ class SystemLaunchManager:
             bt_cmd = (
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 run agv_navigation bt_manager"
+                f"ros2 run agv_navigation bt_manager --ros-args -p map_name:={map_name}"
             )
             logger.info("[SystemLaunchManager] Starting bt_manager...")
             self.bt_proc = subprocess.Popen(
@@ -740,7 +741,24 @@ class SystemLaunchManager:
                 stderr=subprocess.DEVNULL
             )
 
-            time.sleep(1.5)
+            # 4. Launch graph_visualizer
+            graph_cmd = (
+                f"source /opt/ros/jazzy/setup.bash && "
+                f"source {self.ws_root}/install/setup.bash && "
+                f"ros2 run agv_navigation graph_visualizer --ros-args -p map_name:={map_name}"
+            )
+            logger.info("[SystemLaunchManager] Starting graph_visualizer...")
+            self.graph_proc = subprocess.Popen(
+                graph_cmd,
+                shell=True,
+                executable='/bin/bash',
+                cwd=str(self.ws_root),
+                preexec_fn=os.setsid,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+            time.sleep(1.0)
             with self.lock:
                 if self.state != 'STOPPING':
                     self.state = 'RUNNING'
@@ -768,7 +786,12 @@ class SystemLaunchManager:
             return {'ok': True, 'state': self.state}
 
     def _cleanup_processes(self):
-        for proc, name in [(self.bt_proc, 'bt_manager'), (self.runner_proc, 'route_runner'), (self.nav_proc, 'navigation_launch')]:
+        for proc, name in [
+            (self.graph_proc, 'graph_visualizer'),
+            (self.bt_proc, 'bt_manager'),
+            (self.runner_proc, 'route_runner'),
+            (self.nav_proc, 'navigation_launch')
+        ]:
             if proc and proc.poll() is None:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGINT)
@@ -779,13 +802,18 @@ class SystemLaunchManager:
                 except Exception as e:
                     logger.warning(f"[SystemLaunchManager] Error terminating {name}: {e}")
 
+        self.graph_proc = None
         self.bt_proc = None
         self.runner_proc = None
         self.nav_proc = None
 
-        for pattern in ['bt_manager', 'route_runner', 'navigation_launch', 'rviz2', 'gz sim', 'map_server', 'amcl']:
+        for pattern in [
+            'graph_visualizer', 'bt_manager', 'route_runner', 'navigation_launch',
+            'gz sim', 'map_server', 'amcl', 'lifecycle_manager',
+            'parameter_bridge', 'ros_gz_bridge', 'ekf_node', 'robot_state_publisher'
+        ]:
             try:
-                subprocess.run(['pkill', '-f', pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(['pkill', '-9', '-f', pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
 
@@ -829,7 +857,16 @@ system_mgr = SystemLaunchManager(_WORKSPACE_ROOT)
 
 class AmrBridgeNode(Node):
     def __init__(self):
-        super().__init__('amr_web_bridge')
+        super().__init__(
+            'amr_web_bridge',
+            parameter_overrides=[
+                rclpy.parameter.Parameter('use_sim_time', rclpy.parameter.Parameter.Type.BOOL, True)
+            ]
+        )
+        try:
+            rclpy.logging.get_logger('tf2_buffer').set_level(rclpy.logging.LoggingSeverity.FATAL)
+        except Exception:
+            pass
 
         # --- Publishers ---
         self.cmd_pub          = self.create_publisher(Twist,                      '/cmd_vel',       10)
@@ -939,8 +976,8 @@ class AmrBridgeNode(Node):
         self.pose['yaw'] = self._quat_to_yaw(msg.pose.pose.orientation)
 
     def _tf_pose_cb(self):
-        """10 Hz TF lookup: map->base_link as secondary map-frame source."""
-        if not _TF2_AVAILABLE or self._amcl_pose_received or self._tf_buffer is None:
+        """10 Hz TF lookup: map->base_link as authoritative map-frame source."""
+        if not _TF2_AVAILABLE or self._tf_buffer is None:
             return
         try:
             tf = self._tf_buffer.lookup_transform(
@@ -950,6 +987,7 @@ class AmrBridgeNode(Node):
             self.pose['x']   = t.x
             self.pose['y']   = t.y
             self.pose['yaw'] = self._quat_to_yaw(tf.transform.rotation)
+            self._amcl_pose_received = True
         except Exception:
             pass  # Quietly fall through to odom fallback
 
@@ -2566,8 +2604,10 @@ async def _startup():
 def _ros_thread():
     global node
     try:
-        rclpy.init()
+        if not rclpy.ok():
+            rclpy.init(args=sys.argv)
         node = AmrBridgeNode()
+        logger.info("[bridge] AmrBridgeNode initialized and ready.")
         executor = SingleThreadedExecutor()
         executor.add_node(node)
         try:

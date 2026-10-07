@@ -166,22 +166,29 @@ class BTManagerNode(Node):
         self.blackboard = SimpleBlackboard()
 
         # Load topological graph for node-ID → (x, y) lookup in sequence_cb
+        self.declare_parameter('map_name', '')
+        map_name_param = self.get_parameter('map_name').get_parameter_value().string_value.strip()
+
         candidates = []
         try:
             pkg_share = get_package_share_directory('agv_description')
+            if map_name_param:
+                candidates.append(os.path.join(pkg_share, 'maps', f'{map_name_param}_graph.json'))
             candidates.extend([
                 os.path.join(pkg_share, 'maps', 'warehouse_graph.json'),
-                os.path.join(pkg_share, 'maps', 'warehouse_01_graph.json'),
                 os.path.join(pkg_share, 'maps', 'warehouse_map_graph.json'),
+                os.path.join(pkg_share, 'maps', 'warehouse_01_graph.json'),
             ])
         except Exception:
             pass
 
         ws_maps = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps')
+        if map_name_param:
+            candidates.append(os.path.join(ws_maps, f'{map_name_param}_graph.json'))
         candidates.extend([
             os.path.join(ws_maps, 'warehouse_graph.json'),
-            os.path.join(ws_maps, 'warehouse_01_graph.json'),
             os.path.join(ws_maps, 'warehouse_map_graph.json'),
+            os.path.join(ws_maps, 'warehouse_01_graph.json'),
         ])
 
         graph_path = None

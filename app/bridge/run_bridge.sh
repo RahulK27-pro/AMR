@@ -51,8 +51,10 @@ echo "[bridge] Starting FastAPI bridge on http://0.0.0.0:8000"
 echo "[bridge] WebSocket telemetry: ws://0.0.0.0:8000/ws/telemetry"
 echo "[bridge] Map endpoint:        http://0.0.0.0:8000/api/map"
 echo ""
-echo "Connect Flutter app to: http://<YOUR_IP>:8000"
 echo "Open web dashboard at:  http://localhost:5173"
 echo ""
+
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
+export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
 
 python3 "$SCRIPT_DIR/bridge_server.py"
