@@ -30,6 +30,7 @@ import io
 import json
 import math
 import os
+os.environ['RCUTILS_LOGGING_SEVERITY_THRESHOLD'] = 'ERROR'
 import signal
 import subprocess
 import sys
@@ -45,6 +46,7 @@ from typing import List, Optional, Tuple, Dict, Any
 
 logger = logging.getLogger("amr_bridge")
 logging.basicConfig(level=logging.INFO)
+
 
 from PIL import Image, ImageDraw
 import numpy as np
@@ -259,8 +261,71 @@ class MappingManager:
         self.last_extracted_graph: Optional[dict] = None
         self.lock = threading.Lock()
 
-    def start(self, map_name: str = 'warehouse_01', world: str = 'test1.world', run_explore: bool = False, headless: bool = True):
+    def _cleanup_processes(self):
+        if self.explore_proc and self.explore_proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(self.explore_proc.pid), signal.SIGTERM)
+                try:
+                    self.explore_proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    os.killpg(os.getpgid(self.explore_proc.pid), signal.SIGKILL)
+            except Exception:
+                pass
+        self.explore_proc = None
+
+        if self.proc and self.proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(self.proc.pid), signal.SIGINT)
+                try:
+                    self.proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
+            except Exception:
+                pass
+        self.proc = None
+
+        # Clean up any lingering mapping sub-processes
+        try:
+            subprocess.run(
+                ['pkill', '-f', 'async_slam_toolbox_node|explore_lite|rviz2'],
+                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
+
+        for pattern in [
+            'mapping_session', 'async_slam_toolbox_node', 'slam_toolbox',
+            'explore_node', 'explore_lite', 'controller_server', 'planner_server',
+            'behavior_server', 'bt_navigator', 'waypoint_follower', 'lifecycle_manager',
+            'gz sim', 'parameter_bridge', 'ros_gz_bridge', 'ekf_node', 'robot_state_publisher'
+        ]:
+            try:
+                subprocess.run(['pkill', '-9', '-f', pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
+    def start(self, map_name: str = 'warehouse_01', world: str = 'test1.world', run_explore: bool = False, headless: bool = True, use_rviz: bool = False):
         with self.lock:
+            # 1. Stop any active navigation stack first to prevent conflicts
+            if 'system_mgr' in globals() and globals()['system_mgr'] is not None:
+                try:
+                    globals()['system_mgr'].stop()
+                except Exception as e:
+                    logger.warning(f"[MappingManager] Warning stopping system_mgr: {e}")
+
+            # 2. Clean up any leftover navigation / mapping processes
+            self._cleanup_processes()
+
+            # 3. Reset bridge node state for clean mapping session
+            if 'node' in globals() and globals()['node'] is not None:
+                try:
+                    globals()['node'].reset_simulation_state()
+                    globals()['node']._has_live_map = False
+                    globals()['node']._live_map_b64 = None
+                    globals()['node']._clean_map_b64 = None
+                except Exception as e:
+                    logger.warning(f"[MappingManager] Node reset warning: {e}")
+
             if map_name and map_name.strip():
                 self.map_name = map_name.strip()
             self.state = 'MAPPING'
@@ -270,43 +335,34 @@ class MappingManager:
             self.saved_map_name = None
             self.saved_paths = {}
             self.verification_report = None
-            self.target_world = world if world.endswith('.world') else f"{world}.world"
+            self.target_world = world if (world.endswith('.world') or world.endswith('.sdf')) else f"{world}.world"
             self.run_explore = run_explore
 
-            # Check if gz sim is already running on the machine
-            gz_already_running = False
-            try:
-                res = subprocess.run(['pgrep', '-f', 'gz sim'], stdout=subprocess.PIPE)
-                if res.returncode == 0 and res.stdout.strip():
-                    gz_already_running = True
-            except Exception:
-                pass
-
-            run_sim_flag = 'false' if gz_already_running else 'true'
+            run_sim_flag = 'true'
             run_explore_flag = 'true' if run_explore else 'false'
             headless_flag = 'true' if headless else 'false'
+            rviz_flag = 'true' if use_rviz else 'false'
 
-            # Spawn mapping_session.launch.py in background if not already started
-            if self.proc is None or self.proc.poll() is not None:
-                cmd = (
-                    f"source /opt/ros/jazzy/setup.bash && "
-                    f"source {self.ws_root}/install/setup.bash && "
-                    f"ros2 launch agv_description mapping_session.launch.py "
-                    f"world:={self.target_world} run_sim:={run_sim_flag} run_explore:={run_explore_flag} "
-                    f"headless:={headless_flag} use_rviz:=false"
+            cmd = (
+                f"source /opt/ros/jazzy/setup.bash && "
+                f"source {self.ws_root}/install/setup.bash && "
+                f"ros2 launch agv_description mapping_session.launch.py "
+                f"world:={self.target_world} run_sim:={run_sim_flag} run_explore:={run_explore_flag} "
+                f"headless:={headless_flag} use_rviz:={rviz_flag}"
+            )
+            logger.info(f"[MappingManager] Starting mapping_session: {cmd}")
+            try:
+                self.proc = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    executable='/bin/bash',
+                    cwd=str(self.ws_root),
+                    preexec_fn=os.setsid,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
                 )
-                try:
-                    self.proc = subprocess.Popen(
-                        cmd,
-                        shell=True,
-                        executable='/bin/bash',
-                        cwd=str(self.ws_root),
-                        preexec_fn=os.setsid,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                except Exception as e:
-                    print(f"[MappingManager] Failed to launch mapping_session: {e}")
+            except Exception as e:
+                logger.error(f"[MappingManager] Failed to launch mapping_session: {e}")
             return True
 
     def start_auto_explore(self, ros_node=None):
@@ -344,9 +400,9 @@ class MappingManager:
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
                     )
-                    print("[MappingManager] Spawning explore_node dynamically...")
+                    logger.info("[MappingManager] Spawning explore_node dynamically...")
                 except Exception as e:
-                    print(f"[MappingManager] Failed to spawn explore_node: {e}")
+                    logger.error(f"[MappingManager] Failed to spawn explore_node: {e}")
             return True
 
     def pause_auto_explore(self, ros_node=None):
@@ -370,47 +426,19 @@ class MappingManager:
             self.state = 'STOPPED'
             self.stop_time = time.time()
             self.run_explore = False
-            if self.explore_proc and self.explore_proc.poll() is None:
+            self._cleanup_processes()
+            if 'node' in globals() and globals()['node'] is not None:
                 try:
-                    os.killpg(os.getpgid(self.explore_proc.pid), signal.SIGTERM)
+                    globals()['node'].publish_cmd_vel(0.0, 0.0)
                 except Exception:
                     pass
-                self.explore_proc = None
-            if self.proc and self.proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(self.proc.pid), signal.SIGINT)
-                    try:
-                        self.proc.wait(timeout=3.0)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
-                except Exception as e:
-                    print(f"[MappingManager] Stop proc error: {e}")
-                self.proc = None
-            try:
-                subprocess.run(['pkill', '-f', 'explore_node'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception:
-                pass
+            logger.info("[MappingManager] Mapping session stopped cleanly.")
             return True
 
     def redo(self):
         with self.lock:
             self.run_explore = False
-            if self.explore_proc and self.explore_proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(self.explore_proc.pid), signal.SIGTERM)
-                except Exception:
-                    pass
-                self.explore_proc = None
-            if self.proc and self.proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
-                except Exception:
-                    pass
-                self.proc = None
-            try:
-                subprocess.run(['pkill', '-f', 'explore_node'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception:
-                pass
+            self._cleanup_processes()
             self.state = 'READY'
             self.start_time = None
             self.stop_time = None
@@ -419,6 +447,15 @@ class MappingManager:
             self.saved_paths = {}
             self.verification_report = None
             self.last_extracted_graph = None
+            if 'node' in globals() and globals()['node'] is not None:
+                try:
+                    globals()['node'].reset_simulation_state()
+                    globals()['node']._has_live_map = False
+                    globals()['node']._live_map_b64 = None
+                    globals()['node']._clean_map_b64 = None
+                except Exception:
+                    pass
+            logger.info("[MappingManager] Mapping session reset (redo).")
             return True
 
     def save_map(self, map_name: str, ros_node=None) -> dict:
@@ -646,6 +683,13 @@ class SystemLaunchManager:
             # Clean any old stray processes first
             self._cleanup_processes()
 
+            # Reset bridge node telemetry state & TF buffer for fresh simulation run
+            if 'node' in globals() and globals()['node'] is not None:
+                try:
+                    globals()['node'].reset_simulation_state()
+                except Exception as e:
+                    logger.warning(f"[SystemLaunchManager] Node reset warning: {e}")
+
             self._worker_thread = threading.Thread(
                 target=self._start_sequence,
                 args=(target_map, world, headless, use_rviz),
@@ -657,6 +701,13 @@ class SystemLaunchManager:
 
     def _start_sequence(self, map_name: str, world: Optional[str], headless: bool = True, use_rviz: bool = False):
         try:
+            # Stop any active mapping session first
+            if 'mapping_mgr' in globals() and globals()['mapping_mgr'] is not None:
+                try:
+                    globals()['mapping_mgr'].stop()
+                except Exception as e:
+                    logger.warning(f"[SystemLaunchManager] Warning stopping mapping_mgr: {e}")
+
             maps_dir = self.ws_root / "src" / "agv_description" / "maps"
             src_graph = maps_dir / f"{map_name}_graph.json"
             if src_graph.exists():
@@ -782,6 +833,11 @@ class SystemLaunchManager:
             self.stage = 0
             self.stage_text = 'Stopped'
             self.start_time = None
+            if 'node' in globals() and globals()['node'] is not None:
+                try:
+                    globals()['node'].reset_simulation_state()
+                except Exception as e:
+                    logger.warning(f"[SystemLaunchManager] Node reset warning: {e}")
             logger.info("[SystemLaunchManager] System stopped successfully.")
             return {'ok': True, 'state': self.state}
 
@@ -902,13 +958,14 @@ class AmrBridgeNode(Node):
                 MarkerArray, '/explore/frontiers', self._explore_frontiers_cb, 10
             )
 
-        # TF2 buffer for map->base_link lookups
+        # TF2 buffer for map->base_link lookups (bound to node clock for time-jump handling)
         self._amcl_pose_received = False
+        self._last_sim_time = 0.0
         self._tf_buffer   = None
         self._tf_listener = None
         if _TF2_AVAILABLE:
             try:
-                self._tf_buffer   = tf2_ros.Buffer()
+                self._tf_buffer   = tf2_ros.Buffer(node=self)
                 self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
                 # Timer: try TF lookup at 10 Hz when no AMCL yet
                 self.create_timer(0.1, self._tf_pose_cb)
@@ -955,12 +1012,43 @@ class AmrBridgeNode(Node):
         self._clean_map_b64: Optional[str] = None
         self._last_raw_occupancy: Optional[np.ndarray] = None
 
+    def reset_simulation_state(self):
+        """Reset all telemetry state, waypoints, and TF buffer for clean new run."""
+        logger.info("[bridge] Resetting simulation state and clearing buffers...")
+        self.pose = {'x': 0.0, 'y': 0.0, 'yaw': 0.0}
+        self.velocity = {'linear': 0.0, 'angular': 0.0}
+        self.min_obstacle_dist = float('inf')
+        self.scan_ranges = []
+        self.scan_angle_min = 0.0
+        self.scan_angle_inc = 0.0
+        self.nav_state = 'IDLE'
+        self.path_waypoints = []
+        self.obstacle_alert = None
+        self.mission = {}
+        self.active_place_nav = None
+        self._amcl_pose_received = False
+        self._last_sim_time = 0.0
+        if self._tf_buffer is not None:
+            try:
+                self._tf_buffer.clear()
+            except Exception as e:
+                logger.warning(f"Error clearing TF buffer: {e}")
+
     # -------- Subscriber callbacks --------
 
     def _odom_cb(self, msg):
         # Use odom only for velocity; pose comes from AMCL / TF (map frame)
         self.velocity['linear']  = msg.twist.twist.linear.x
         self.velocity['angular'] = msg.twist.twist.angular.z
+
+        # Detect simulation restart (time jump backward > 2.0s)
+        stamp_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if hasattr(self, '_last_sim_time') and stamp_sec > 0 and self._last_sim_time > 0:
+            if stamp_sec < (self._last_sim_time - 2.0):
+                logger.warning(f"[bridge] Detected simulation time jump backward ({self._last_sim_time:.2f}s -> {stamp_sec:.2f}s)! Resetting simulation state.")
+                self.reset_simulation_state()
+        self._last_sim_time = stamp_sec
+
         # Fallback: update pose from odom only if AMCL has never fired
         if not self._amcl_pose_received:
             self.pose['x']   = msg.pose.pose.position.x
@@ -1000,6 +1088,8 @@ class AmrBridgeNode(Node):
 
     def _state_cb(self, msg):
         self.nav_state = msg.data
+        if msg.data == 'IDLE' and not self.active_place_nav:
+            self.path_waypoints = []
         if self.active_place_nav:
             self.active_place_nav['nav_state'] = msg.data
             if msg.data == 'IDLE' and self.active_place_nav.get('status') == 'NAVIGATING':
@@ -1496,6 +1586,11 @@ class StartMappingRequest(BaseModel):
     world: str = 'test1.world'
     run_explore: bool = False
     headless: bool = True
+    use_rviz: bool = False
+
+class GuiLaunchRequest(BaseModel):
+    app: str = "rviz"  # "rviz" | "gazebo"
+    mode: Optional[str] = None  # "nav" | "explore"
 
 class SaveMapRequest(BaseModel):
     map_name: Optional[str] = 'warehouse_01'
@@ -1663,7 +1758,13 @@ async def get_mapping_status():
 
 @app.post('/api/mapping/start')
 async def post_mapping_start(req: StartMappingRequest = StartMappingRequest()):
-    mapping_mgr.start(map_name=req.map_name, world=req.world, run_explore=req.run_explore, headless=req.headless)
+    mapping_mgr.start(
+        map_name=req.map_name,
+        world=req.world,
+        run_explore=req.run_explore,
+        headless=req.headless,
+        use_rviz=req.use_rviz
+    )
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
     return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
@@ -2504,6 +2605,7 @@ async def post_cancel_navigation():
     if node:
         node.publish_cmd_vel(0.0, 0.0)
         node.publish_goal_sequence([])
+        node.path_waypoints = []
         if hasattr(node, 'active_place_nav') and node.active_place_nav:
             node.active_place_nav['status'] = 'CANCELLED'
     return {'ok': True, 'status': 'CANCELLED'}
@@ -2555,6 +2657,42 @@ async def get_system_status():
     return system_mgr.get_status()
 
 
+@app.post('/api/gui/launch')
+async def post_gui_launch(req: GuiLaunchRequest):
+    """Launch Gazebo GUI or RViz2 visualizer client in the current display."""
+    target_app = req.app.lower().strip()
+    env = os.environ.copy()
+    env['DISPLAY'] = os.environ.get('DISPLAY', ':0')
+    env['LIBGL_ALWAYS_SOFTWARE'] = '1'
+    env['GALLIUM_DRIVER'] = 'llvmpipe'
+    env['MESA_GL_VERSION_OVERRIDE'] = '4.5'
+
+    if target_app in ('gazebo', 'gz'):
+        script = _WORKSPACE_ROOT / "view_gazebo.sh"
+        cmd = f"/bin/bash {script}"
+    else:
+        mode_arg = req.mode or ("explore" if mapping_mgr.state == 'MAPPING' else "nav")
+        script = _WORKSPACE_ROOT / "view_rviz.sh"
+        cmd = f"/bin/bash {script} {mode_arg}"
+
+    logger.info(f"[bridge] Launching GUI: {cmd}")
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            shell=True,
+            executable='/bin/bash',
+            cwd=str(_WORKSPACE_ROOT),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=os.setsid
+        )
+        return {'ok': True, 'pid': proc.pid, 'app': target_app}
+    except Exception as e:
+        logger.error(f"[bridge] Error launching GUI: {e}")
+        return JSONResponse({'ok': False, 'error': str(e)}, status_code=500)
+
+
 # -------- WebSocket --------
 
 active_ws: list = []
@@ -2604,8 +2742,13 @@ async def _startup():
 def _ros_thread():
     global node
     try:
+        os.environ['RCUTILS_LOGGING_SEVERITY_THRESHOLD'] = 'ERROR'
         if not rclpy.ok():
             rclpy.init(args=sys.argv)
+        try:
+            rclpy.logging.set_logger_level('', rclpy.logging.LoggingSeverity.ERROR)
+        except Exception:
+            pass
         node = AmrBridgeNode()
         logger.info("[bridge] AmrBridgeNode initialized and ready.")
         executor = SingleThreadedExecutor()

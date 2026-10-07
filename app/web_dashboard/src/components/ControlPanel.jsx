@@ -410,6 +410,36 @@ export default function ControlPanel({
                 : `START SYSTEM • ${activeMap}`}
             </button>
           )}
+
+          {/* Desktop Visualizers */}
+          <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
+                Desktop Visualizers:
+              </span>
+              <span className="text-mono" style={{ fontSize: 10, color: '#94a3b8' }}>WSL2 GUI</span>
+            </div>
+            <div className="flex-row" style={{ gap: 6 }}>
+              <button
+                type="button"
+                className="btn btn--outline"
+                style={{ flex: 1, fontSize: 11, padding: '6px 8px', borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
+                onClick={() => bridge.launchGui('gazebo')}
+                title="Open Gazebo Harmonic 3D window (or run ./view_gazebo.sh in terminal)"
+              >
+                🖥️ Gazebo 3D
+              </button>
+              <button
+                type="button"
+                className="btn btn--outline"
+                style={{ flex: 1, fontSize: 11, padding: '6px 8px', borderColor: 'rgba(168, 85, 247, 0.4)', color: '#c084fc' }}
+                onClick={() => bridge.launchGui('rviz', 'nav')}
+                title="Open RViz2 Navigation window (or run ./view_rviz.sh in terminal)"
+              >
+                🗺️ RViz2 Nav
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

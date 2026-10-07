@@ -56,5 +56,6 @@ echo ""
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+export RCUTILS_LOGGING_SEVERITY_THRESHOLD=ERROR
 
 python3 "$SCRIPT_DIR/bridge_server.py"

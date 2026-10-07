@@ -73,6 +73,8 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   useEffect(() => {
     let mounted = true;
     trailRef.current = []; // Reset trail so it doesn't carry old coordinates
+    smoothPoseRef.current = { x: 0, y: 0, yaw: 0 };
+    rawPoseRef.current = { x: 0, y: 0, yaw: 0 };
 
     bridge.getMapMetadata(activeMap).then((data) => {
       if (data && mounted) {
@@ -149,8 +151,11 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     if (!telemetry?.pose) return;
     const { x, y, yaw } = telemetry.pose;
 
-    // Initialise smooth pose on first data
-    if (rawPoseRef.current.x === 0 && rawPoseRef.current.y === 0) {
+    // If pose jumps by > 1.5m (simulation restart, AMCL relocalization, or initial spawn), snap immediately
+    if (Math.hypot(x - smoothPoseRef.current.x, y - smoothPoseRef.current.y) > 1.5) {
+      smoothPoseRef.current = { x, y, yaw };
+      trailRef.current = [];
+    } else if (rawPoseRef.current.x === 0 && rawPoseRef.current.y === 0) {
       smoothPoseRef.current = { x, y, yaw };
     }
     rawPoseRef.current = { x, y, yaw };

@@ -30,6 +30,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const [liveMapImg, setLiveMapImg] = useState(null);
   const [teleopSpeed, setTeleopSpeed] = useState(0.4); // m/s safe mapping speed
   const [activeDir, setActiveDir] = useState(null); // 'fwd' | 'back' | 'left' | 'right' | null
+  const [enableGui, setEnableGui] = useState(true); // Complete GUI mode (Gazebo 3D + RViz2)
+  const [guiFeedback, setGuiFeedback] = useState(null);
 
   // Autonomous exploration state from telemetry
   const exploration = mappingData.exploration || {};
@@ -316,13 +318,30 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     }
   };
 
+  const handleLaunchGui = async (app) => {
+    setGuiFeedback({ app, status: 'launching', text: `Opening ${app.toUpperCase()} GUI...` });
+    try {
+      const res = await bridge.launchGui(app, 'explore');
+      if (res?.ok) {
+        setGuiFeedback({ app, status: 'success', text: `${app.toUpperCase()} GUI opened in desktop!` });
+      } else {
+        setGuiFeedback({ app, status: 'error', text: res?.error || `Failed to open ${app}` });
+      }
+    } catch (err) {
+      setGuiFeedback({ app, status: 'error', text: err.message });
+    }
+    setTimeout(() => setGuiFeedback(null), 4000);
+  };
+
   // Actions
   const handleStartMapping = async () => {
     setIsProcessing(true);
     setSaveErrorMsg(null);
     setSaveSuccessMsg(null);
     try {
-      const ok = await bridge.startMapping(mapName, world, runExplore);
+      const headless = !enableGui;
+      const useRviz = enableGui;
+      const ok = await bridge.startMapping(mapName, world, runExplore, headless, useRviz);
       if (ok) {
         setStatus('MAPPING');
         setCurrentStep(1);
@@ -1182,6 +1201,34 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                   </div>
                 </div>
 
+                {/* GUI Visualizer Mode */}
+                <div className="mapping-field">
+                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="mapping-label">GUI Windows</label>
+                    <span className="text-dim text-mono" style={{ fontSize: 10 }}>Gazebo 3D + RViz2</span>
+                  </div>
+                  <div className="mode-toggle-group">
+                    <button
+                      type="button"
+                      className={`btn-mode-toggle ${enableGui ? 'btn-mode-toggle--active' : ''}`}
+                      onClick={() => setEnableGui(true)}
+                      disabled={isProcessing || status === 'MAPPING'}
+                      title="Launch full desktop GUI with Gazebo 3D simulation and RViz2 SLAM windows"
+                    >
+                      🖥️ Complete GUI (Gazebo + RViz)
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-mode-toggle ${!enableGui ? 'btn-mode-toggle--active' : ''}`}
+                      onClick={() => setEnableGui(false)}
+                      disabled={isProcessing || status === 'MAPPING'}
+                      title="Run headless in background for lower resource usage"
+                    >
+                      ⚡ Headless (Background)
+                    </button>
+                  </div>
+                </div>
+
                 {/* Mapping Status Badge */}
                 <div className="mapping-field">
                   <label className="mapping-label">Mapping Status</label>
@@ -1293,6 +1340,43 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                       Restart (Redo)
                     </button>
                   )}
+                </div>
+
+                {/* Desktop GUI Quick Visualizer Launchers */}
+                <div className="mapping-field" style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#94a3b8' }}>
+                      Desktop Visualizers
+                    </span>
+                    {guiFeedback && (
+                      <span style={{ fontSize: 10, color: guiFeedback.status === 'success' ? '#10b981' : '#f59e0b' }}>
+                        {guiFeedback.text}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-row" style={{ gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn--outline"
+                      style={{ flex: 1, fontSize: 11, padding: '7px 8px', borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
+                      onClick={() => handleLaunchGui('gazebo')}
+                      title="Open Gazebo Harmonic 3D window (or run ./view_gazebo.sh in terminal)"
+                    >
+                      🖥️ Gazebo 3D
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--outline"
+                      style={{ flex: 1, fontSize: 11, padding: '7px 8px', borderColor: 'rgba(168, 85, 247, 0.4)', color: '#c084fc' }}
+                      onClick={() => handleLaunchGui('rviz')}
+                      title="Open RViz2 SLAM Map window (or run ./view_rviz.sh in terminal)"
+                    >
+                      🗺️ RViz2 SLAM
+                    </button>
+                  </div>
+                  <div className="text-dim text-mono" style={{ fontSize: 10, marginTop: 4, textAlign: 'center' }}>
+                    Terminal commands: <code style={{ color: '#38bdf8' }}>./view_gazebo.sh</code> | <code style={{ color: '#c084fc' }}>./view_rviz.sh</code>
+                  </div>
                 </div>
               </div>
 

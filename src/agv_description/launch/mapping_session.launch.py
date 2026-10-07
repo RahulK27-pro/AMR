@@ -53,6 +53,7 @@ def launch_setup(context, *args, **kwargs):
     else:
         world_file = os.path.join(pkg_agv, 'worlds', world_val)
 
+    world_stem = os.path.splitext(os.path.basename(world_file))[0]
     headless_val = context.perform_substitution(LaunchConfiguration('headless')).lower() in ['true', '1']
 
     gz_cmd = ['gz', 'sim', '-r', '-v', '2', world_file]
@@ -61,6 +62,11 @@ def launch_setup(context, *args, **kwargs):
 
     gazebo = ExecuteProcess(
         cmd=gz_cmd,
+        additional_env={
+            'LIBGL_ALWAYS_SOFTWARE': '1',
+            'GALLIUM_DRIVER': 'llvmpipe',
+            'MESA_GL_VERSION_OVERRIDE': '4.5',
+        },
         condition=IfCondition(LaunchConfiguration('run_sim')),
         output='screen'
     )
@@ -82,29 +88,10 @@ def launch_setup(context, *args, **kwargs):
         output='screen'
     )
 
-    spawn_node = TimerAction(
-        period=5.0,
-        actions=[
-            LogInfo(msg='[MAPPING] t=5s: Spawning robot into Gazebo world...'),
-            Node(
-                package='ros_gz_sim',
-                executable='create',
-                name='robot_spawner',
-                arguments=[
-                    '-name', 'warehouse_agv',
-                    '-topic', 'robot_description',
-                    '-z', '0.05'
-                ],
-                condition=IfCondition(LaunchConfiguration('run_sim')),
-                output='screen'
-            )
-        ]
-    )
-
     rsp_node = TimerAction(
-        period=3.0,
+        period=1.0,
         actions=[
-            LogInfo(msg='[MAPPING] t=3s: Starting Robot State Publisher...'),
+            LogInfo(msg='[MAPPING] t=1s: Starting Robot State Publisher...'),
             Node(
                 package='robot_state_publisher',
                 executable='robot_state_publisher',
@@ -118,10 +105,30 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
 
-    slam_node = TimerAction(
-        period=8.0,
+    spawn_node = TimerAction(
+        period=3.0,
         actions=[
-            LogInfo(msg='[MAPPING] t=8s: Starting SLAM Toolbox (online async)...'),
+            LogInfo(msg=f'[MAPPING] t=3s: Spawning robot into Gazebo world ({world_stem})...'),
+            Node(
+                package='ros_gz_sim',
+                executable='create',
+                name='robot_spawner',
+                arguments=[
+                    '-name', 'warehouse_agv',
+                    '-topic', 'robot_description',
+                    '-world', world_stem,
+                    '-z', '0.05'
+                ],
+                condition=IfCondition(LaunchConfiguration('run_sim')),
+                output='screen'
+            )
+        ]
+    )
+
+    slam_node = TimerAction(
+        period=5.0,
+        actions=[
+            LogInfo(msg='[MAPPING] t=5s: Starting SLAM Toolbox (online async)...'),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     os.path.join(
@@ -138,15 +145,20 @@ def launch_setup(context, *args, **kwargs):
     )
 
     rviz_node = TimerAction(
-        period=10.0,
+        period=4.0,
         actions=[
-            LogInfo(msg='[MAPPING] t=10s: Starting RViz2...'),
+            LogInfo(msg='[MAPPING] t=4s: Starting RViz2...'),
             Node(
                 package='rviz2',
                 executable='rviz2',
                 name='rviz2',
                 arguments=['-d', rviz_config_file],
                 parameters=[{'use_sim_time': True}],
+                additional_env={
+                    'LIBGL_ALWAYS_SOFTWARE': '1',
+                    'GALLIUM_DRIVER': 'llvmpipe',
+                    'MESA_GL_VERSION_OVERRIDE': '4.5',
+                },
                 condition=IfCondition(LaunchConfiguration('use_rviz')),
                 output='screen'
             )
