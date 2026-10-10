@@ -40,7 +40,6 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   // ── UI layer toggles ──────────────────────────────────────────────────────
   const [showPlaces, setShowPlaces] = useState(true);
   const [showGraph,  setShowGraph]  = useState(false);
-  const [showLidar,  setShowLidar]  = useState(true);
   const [showPath,   setShowPath]   = useState(true);
   const [showTrail,  setShowTrail]  = useState(true);
   const [autoFollow, setAutoFollow] = useState(false);
@@ -398,31 +397,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         ctx.restore();
       }
 
-      // ── Layer 4: LiDAR Obstacle Points ─────────────────────────────────
-      const pose     = telemetry?.pose || { x: 0, y: 0, yaw: 0 };
-      const scan     = telemetry?.scan || [];
-      const angMin   = telemetry?.scan_angle_min ?? -Math.PI;
-      const angInc   = telemetry?.scan_angle_inc ?? 0.0174;
-
-      if (showLidar && scan.length > 0) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(239,68,68,0.8)';
-        for (let i = 0; i < scan.length; i++) {
-          const r = scan[i];
-          if (r <= 0.05 || r > 8.0) continue;
-          const angle = pose.yaw + (angMin + i * angInc);
-          const { px: opx, py: opy } = worldToPixel(
-            pose.x + r * Math.cos(angle),
-            pose.y + r * Math.sin(angle)
-          );
-          ctx.beginPath();
-          ctx.arc(opx, opy, 1.2 / zoom, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.restore();
-      }
-
-      // ── Layer 5: Breadcrumb Trail ───────────────────────────────────────
+      // ── Layer 4: Breadcrumb Trail ───────────────────────────────────────
       const trail = trailRef.current;
       if (showTrail && trail.length >= 2) {
         ctx.save();
@@ -724,7 +699,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     return () => cancelAnimationFrame(animId);
   }, [
     mapImage, meta, zoom, pan, telemetry,
-    showPlaces, showGraph, showLidar, showPath, showTrail,
+    showPlaces, showGraph, showPath, showTrail,
     showObstacle, isDropObstacleMode, cursorWorld,
     graphNodes, selectedNodes, hoveredNode,
     namedPlaces, hoveredPlace,
@@ -916,13 +891,6 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
             title="Toggle topological waypoint nodes"
           >
             🗺️ Nodes {graphNodes.length > 0 && `(${graphNodes.length})`}
-          </button>
-          <button
-            className={`btn-toggle ${showLidar ? 'active' : ''}`}
-            onClick={(e) => { e.stopPropagation(); setShowLidar(l => !l); }}
-            title="Toggle LiDAR obstacle hits"
-          >
-            🔴 LiDAR
           </button>
           <button
             className={`btn-toggle ${showPath ? 'active' : ''}`}

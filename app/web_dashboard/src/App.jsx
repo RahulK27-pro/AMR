@@ -130,7 +130,7 @@ export default function App() {
             <TelemetryPanel telemetry={telemetry} activeMap={activeMap} />
           </aside>
 
-          {/* ── Centre: 60 FPS Vector Map + Polar Radar + Event Timeline ── */}
+          {/* ── Centre: 60 FPS Vector Map + Event Timeline ── */}
           <main className="panel-center">
             {/* Dynamic Vector Map */}
             <div style={{ flex: 1, minHeight: 440, position: 'relative' }}>
