@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import nipplejs from 'nipplejs';
 import bridge from '../services/amrBridge';
 
 /**
@@ -29,9 +30,19 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [liveMapImg, setLiveMapImg] = useState(null);
   const [teleopSpeed, setTeleopSpeed] = useState(0.4); // m/s safe mapping speed
-  const [activeDir, setActiveDir] = useState(null); // 'fwd' | 'back' | 'left' | 'right' | null
   const [enableGui, setEnableGui] = useState(true); // Complete GUI mode (Gazebo 3D + RViz2)
   const [guiFeedback, setGuiFeedback] = useState(null);
+
+  // Virtual Joystick & Teleop refs
+  const joystickRef = useRef(null);
+  const managerRef = useRef(null);
+  const cmdTimerRef = useRef(null);
+  const cmdRef = useRef({ linear: 0, angular: 0 });
+  const speedRef = useRef(teleopSpeed);
+
+  useEffect(() => {
+    speedRef.current = teleopSpeed;
+  }, [teleopSpeed]);
 
   // Autonomous exploration state from telemetry
   const exploration = mappingData.exploration || {};
@@ -218,52 +229,92 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     bridge.sendCmdVel(linear, angular);
   }, []);
 
+  // NippleJS Virtual Joystick Setup (Identical to Live Dashboard ControlInterlock)
+  useEffect(() => {
+    if (!joystickRef.current) return;
+
+    const isInteractive = status === 'MAPPING' && !runExplore;
+
+    const manager = nipplejs.create({
+      zone: joystickRef.current,
+      mode: 'static',
+      position: { left: '50%', top: '50%' },
+      color: isInteractive ? '#00d4ff' : '#475569',
+      size: 110,
+      restJoystick: true,
+    });
+    managerRef.current = manager;
+
+    manager.on('move', (_, data) => {
+      if (!isInteractive || !data.vector) return;
+      const linearRaw = data.vector.y;
+      const angularRaw = -data.vector.x;
+      const f = data.force ? Math.min(data.force, 1) : 1;
+
+      cmdRef.current = {
+        linear: linearRaw * f * speedRef.current,
+        angular: angularRaw * f * 1.6,
+      };
+    });
+
+    manager.on('end', () => {
+      cmdRef.current = { linear: 0, angular: 0 };
+      sendDrive(0, 0);
+    });
+
+    // 10 Hz continuous velocity stream
+    cmdTimerRef.current = setInterval(() => {
+      if (!isInteractive) return;
+      const { linear, angular } = cmdRef.current;
+      if (linear !== 0 || angular !== 0) {
+        sendDrive(linear, angular);
+      }
+    }, 100);
+
+    return () => {
+      manager.destroy();
+      clearInterval(cmdTimerRef.current);
+    };
+  }, [status, runExplore, currentStep, sendDrive]);
+
   // Keyboard driving controls (W/A/S/D & Arrow keys) during mapping
   useEffect(() => {
     if (status !== 'MAPPING' || runExplore) return;
 
     const handleKeyDown = (e) => {
-      if (e.target.tagName === 'INPUT') return;
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
       if (e.repeat) return;
-      switch (e.key.toLowerCase()) {
-        case 'w':
-        case 'arrowup':
-          e.preventDefault();
-          setActiveDir('fwd');
-          sendDrive(teleopSpeed, 0);
-          break;
-        case 's':
-        case 'arrowdown':
-          e.preventDefault();
-          setActiveDir('back');
-          sendDrive(-teleopSpeed * 0.7, 0);
-          break;
-        case 'a':
-        case 'arrowleft':
-          e.preventDefault();
-          setActiveDir('left');
-          sendDrive(0, 0.9);
-          break;
-        case 'd':
-        case 'arrowright':
-          e.preventDefault();
-          setActiveDir('right');
-          sendDrive(0, -0.9);
-          break;
-        case ' ':
-          e.preventDefault();
-          setActiveDir(null);
-          sendDrive(0, 0);
-          break;
-        default:
-          break;
+
+      const spd = speedRef.current;
+      const ang = 1.0;
+
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        cmdRef.current = { linear: spd, angular: 0 };
+        sendDrive(spd, 0);
+      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        cmdRef.current = { linear: -spd * 0.7, angular: 0 };
+        sendDrive(-spd * 0.7, 0);
+      } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        cmdRef.current = { linear: 0, angular: ang };
+        sendDrive(0, ang);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        cmdRef.current = { linear: 0, angular: -ang };
+        sendDrive(0, -ang);
+      } else if (e.key === ' ' || e.key === 'x' || e.key === 'X') {
+        e.preventDefault();
+        cmdRef.current = { linear: 0, angular: 0 };
+        sendDrive(0, 0);
       }
     };
 
     const handleKeyUp = (e) => {
-      if (e.target.tagName === 'INPUT') return;
-      if (['w', 's', 'a', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
-        setActiveDir(null);
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'].includes(e.key)) {
+        cmdRef.current = { linear: 0, angular: 0 };
         sendDrive(0, 0);
       }
     };
@@ -274,7 +325,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [status, runExplore, teleopSpeed, sendDrive]);
+  }, [status, runExplore, sendDrive]);
 
   // Format MM:SS
   const formatTime = (secs) => {
@@ -1436,9 +1487,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 <div className="card teleop-mapping-card">
                   <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <div className="card__title" style={{ fontSize: 13 }}>
-                      🎮 Precision Teleop Keypad
+                      🎮 Precision Teleop Joystick
                     </div>
-                    <span className="text-dim text-mono text-xs">{teleopSpeed.toFixed(1)} m/s</span>
+                    <span className="text-dim text-mono text-xs">{teleopSpeed.toFixed(2)} m/s</span>
                   </div>
 
                   <div className="teleop-speed-slider">
@@ -1454,58 +1505,55 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                     />
                   </div>
 
-                  <div className="dpad-container">
-                    <div className="dpad-row">
-                      <button
-                        className={`dpad-btn ${activeDir === 'fwd' ? 'dpad-btn--active' : ''}`}
-                        onMouseDown={() => { setActiveDir('fwd'); sendDrive(teleopSpeed, 0); }}
-                        onMouseUp={() => { setActiveDir(null); sendDrive(0, 0); }}
-                        title="Forward (W or Up Arrow)"
-                        disabled={status !== 'MAPPING'}
-                      >
-                        ▲
-                      </button>
-                    </div>
-                    <div className="dpad-row">
-                      <button
-                        className={`dpad-btn ${activeDir === 'left' ? 'dpad-btn--active' : ''}`}
-                        onMouseDown={() => { setActiveDir('left'); sendDrive(0, 0.9); }}
-                        onMouseUp={() => { setActiveDir(null); sendDrive(0, 0); }}
-                        title="Turn Left (A or Left Arrow)"
-                        disabled={status !== 'MAPPING'}
-                      >
-                        ◀
-                      </button>
-                      <button
-                        className="dpad-btn dpad-btn--stop"
-                        onClick={() => { setActiveDir(null); sendDrive(0, 0); }}
-                        title="Brake / Stop (Spacebar)"
-                        disabled={status !== 'MAPPING'}
-                      >
-                        ■
-                      </button>
-                      <button
-                        className={`dpad-btn ${activeDir === 'right' ? 'dpad-btn--active' : ''}`}
-                        onMouseDown={() => { setActiveDir('right'); sendDrive(0, -0.9); }}
-                        onMouseUp={() => { setActiveDir(null); sendDrive(0, 0); }}
-                        title="Turn Right (D or Right Arrow)"
-                        disabled={status !== 'MAPPING'}
-                      >
-                        ▶
-                      </button>
-                    </div>
-                    <div className="dpad-row">
-                      <button
-                        className={`dpad-btn ${activeDir === 'back' ? 'dpad-btn--active' : ''}`}
-                        onMouseDown={() => { setActiveDir('back'); sendDrive(-teleopSpeed * 0.7, 0); }}
-                        onMouseUp={() => { setActiveDir(null); sendDrive(0, 0); }}
-                        title="Reverse (S or Down Arrow)"
-                        disabled={status !== 'MAPPING'}
-                      >
-                        ▼
-                      </button>
-                    </div>
+                  {/* Virtual Joystick Zone like in Live Dashboard */}
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: '100%',
+                      minHeight: 140,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '4px 0',
+                    }}
+                  >
+                    <div
+                      ref={joystickRef}
+                      className="joystick-zone"
+                      style={{
+                        width: 130,
+                        height: 130,
+                        opacity: status === 'MAPPING' ? 1 : 0.25,
+                        pointerEvents: status === 'MAPPING' ? 'auto' : 'none',
+                        transition: 'opacity 0.2s ease',
+                      }}
+                    />
+                    {status !== 'MAPPING' && (
+                      <div className="joystick-lock-overlay" style={{ padding: 6, gap: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8' }}>
+                          LOCKED (NOT MAPPING)
+                        </span>
+                        <span style={{ fontSize: 9, color: '#64748b' }}>
+                          Start mapping in Step 1 to steer robot
+                        </span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Stop Button */}
+                  <button
+                    type="button"
+                    className="btn btn--sm btn--danger"
+                    onClick={() => {
+                      cmdRef.current = { linear: 0, angular: 0 };
+                      sendDrive(0, 0);
+                    }}
+                    disabled={status !== 'MAPPING'}
+                    style={{ width: '100%', fontWeight: 700, padding: '6px 12px' }}
+                    title="Stop robot motors immediately (Spacebar)"
+                  >
+                    ⏹ Stop Motors (Space)
+                  </button>
 
                   <div className="text-dim text-xs text-center">
                     Keyboard: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or Arrow Keys • <kbd>Space</kbd> Stop
