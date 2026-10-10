@@ -44,6 +44,8 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   const [showPath,   setShowPath]   = useState(true);
   const [showTrail,  setShowTrail]  = useState(true);
   const [autoFollow, setAutoFollow] = useState(false);
+  const [showObstacle, setShowObstacle] = useState(true);
+  const [isDropObstacleMode, setIsDropObstacleMode] = useState(false);
 
   // ── Interaction state ─────────────────────────────────────────────────────
   const [namedPlaces,  setNamedPlaces]  = useState([]);
@@ -52,6 +54,23 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   const [cursorWorld,  setCursorWorld]  = useState(null);
   const [goalFeedback, setGoalFeedback] = useState(null);
   const [lastGoal,     setLastGoal]     = useState(null);
+
+  // External trigger for dropping obstacle (e.g. from control panel)
+  useEffect(() => {
+    const handleTriggerDrop = () => {
+      setIsDropObstacleMode(true);
+      setGoalFeedback('Click anywhere on map to drop dynamic obstacle (ESC to cancel)');
+    };
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') setIsDropObstacleMode(false);
+    };
+    window.addEventListener('amr-trigger-drop-obstacle', handleTriggerDrop);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('amr-trigger-drop-obstacle', handleTriggerDrop);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, []);
 
   // ── Smoothed robot pose (LERP target) ─────────────────────────────────────
   // Stored in a ref so the 60fps render loop reads the latest without re-renders
@@ -566,6 +585,136 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       }
 
       ctx.restore();
+
+      // ── Layer 9: Dynamic Obstacle & Tactical Avoidance Vector ───────────────────
+      const dynObs = telemetry?.dynamic_obstacle;
+      if (showObstacle && dynObs && dynObs.active && dynObs.x != null && dynObs.y != null) {
+        const { px: ox, py: oy } = worldToPixel(dynObs.x, dynObs.y);
+        const obsRadiusPx = 0.25 / meta.resolution;      // 0.25m physical radius
+        const evadeRadiusPx = 0.85 / meta.resolution;    // 0.85m MPPI tactical evasion zone
+        const distToRobot = dynObs.dist_to_robot ?? Math.hypot(dynObs.x - sp.x, dynObs.y - sp.y);
+        const isEvading = dynObs.avoidance_status === 'TACTICAL_EVASION' || distToRobot < 0.85;
+        const isProximity = dynObs.avoidance_status === 'PROXIMITY_SLOWDOWN' || (distToRobot < 1.5 && !isEvading);
+
+        ctx.save();
+
+        // 1. Proximity / Evasion connection vector between Robot and Obstacle
+        if (distToRobot < 3.0) {
+          ctx.beginPath();
+          ctx.setLineDash([3 / zoom, 3 / zoom]);
+          ctx.moveTo(rx, ry);
+          ctx.lineTo(ox, oy);
+          ctx.strokeStyle = isEvading ? 'rgba(239, 68, 68, 0.9)' : (isProximity ? 'rgba(249, 115, 22, 0.8)' : 'rgba(56, 189, 248, 0.5)');
+          ctx.lineWidth = (isEvading ? 2.2 : 1.2) / zoom;
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Clearance pill at midpoint
+          const midX = (rx + ox) / 2;
+          const midY = (ry + oy) / 2;
+          const clearText = `Clearance: ${distToRobot.toFixed(2)}m`;
+          ctx.font = `bold ${Math.max(8, 9 / Math.sqrt(zoom))}px Inter, sans-serif`;
+          const ctW = ctx.measureText(clearText).width + 8 / zoom;
+          const ctH = 12 / zoom;
+          ctx.fillStyle = isEvading ? 'rgba(185, 28, 28, 0.95)' : 'rgba(15, 23, 42, 0.9)';
+          ctx.fillRect(midX - ctW / 2, midY - ctH / 2, ctW, ctH);
+          ctx.strokeStyle = isEvading ? '#ef4444' : '#f97316';
+          ctx.lineWidth = 1 / zoom;
+          ctx.strokeRect(midX - ctW / 2, midY - ctH / 2, ctW, ctH);
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(clearText, midX, midY);
+        }
+
+        // 2. MPPI Tactical Evasion Buffer Halo (0.85m)
+        const pRing = 0.5 + 0.5 * Math.sin(pulseRef.current * 2.5);
+        ctx.beginPath();
+        ctx.arc(ox, oy, evadeRadiusPx + (isEvading ? pRing * 4 / zoom : 0), 0, Math.PI * 2);
+        ctx.fillStyle = isEvading
+          ? `rgba(239, 68, 68, ${0.14 + pRing * 0.1})`
+          : 'rgba(249, 115, 22, 0.08)';
+        ctx.fill();
+        ctx.strokeStyle = isEvading ? '#ef4444' : 'rgba(249, 115, 22, 0.6)';
+        ctx.lineWidth = (isEvading ? 1.8 : 1.0) / zoom;
+        ctx.setLineDash([4 / zoom, 3 / zoom]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 3. Physical Obstacle Body (0.25m cylinder)
+        ctx.beginPath();
+        ctx.arc(ox, oy, obsRadiusPx, 0, Math.PI * 2);
+        const obsGrad = ctx.createRadialGradient(ox, oy, 1 / zoom, ox, oy, obsRadiusPx);
+        obsGrad.addColorStop(0, '#fdba74');
+        obsGrad.addColorStop(0.7, '#ea580c');
+        obsGrad.addColorStop(1, '#9a3412');
+        ctx.fillStyle = obsGrad;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5 / zoom;
+        ctx.shadowColor = '#ea580c';
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // 4. Directional heading indicator
+        const obsYaw = dynObs.yaw ?? 0;
+        const obsAngle = -obsYaw;
+        const arrowDist = obsRadiusPx + 8 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        ctx.lineTo(ox + arrowDist * Math.cos(obsAngle), oy + arrowDist * Math.sin(obsAngle));
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2 / zoom;
+        ctx.stroke();
+
+        // 5. Overhead Label Pill
+        const obsLabel = isEvading
+          ? `⚠️ EVADING (${(dynObs.speed || 0).toFixed(1)} m/s)`
+          : `🚧 OBSTACLE (${(dynObs.speed || 0).toFixed(1)} m/s)`;
+        const labelSize = Math.max(8, Math.min(10, 9 / Math.sqrt(zoom)));
+        ctx.font = `bold ${labelSize}px Inter, sans-serif`;
+        const olW = ctx.measureText(obsLabel).width + 8 / zoom;
+        const olH = 13 / zoom;
+        const olX = ox - olW / 2;
+        const olY = oy - obsRadiusPx - 4 / zoom - olH;
+
+        ctx.fillStyle = isEvading ? 'rgba(185, 28, 28, 0.95)' : 'rgba(234, 88, 12, 0.92)';
+        ctx.fillRect(olX, olY, olW, olH);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1 / zoom;
+        ctx.strokeRect(olX, olY, olW, olH);
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(obsLabel, ox, olY + olH / 2);
+
+        ctx.restore();
+      }
+
+      // ── Layer 10: Drop Obstacle Target Reticle Preview ─────────────────────────
+      if (isDropObstacleMode && cursorWorld) {
+        const { px: cpx, py: cpy } = worldToPixel(cursorWorld.wx, cursorWorld.wy);
+        const previewRadius = 0.25 / meta.resolution;
+        const evadePreview = 0.85 / meta.resolution;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cpx, cpy, evadePreview, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(249, 115, 22, 0.6)';
+        ctx.lineWidth = 1.2 / zoom;
+        ctx.setLineDash([3 / zoom, 3 / zoom]);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(cpx, cpy, previewRadius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(234, 88, 12, 0.45)';
+        ctx.fill();
+        ctx.strokeStyle = '#f97316';
+        ctx.lineWidth = 1.5 / zoom;
+        ctx.stroke();
+        ctx.restore();
+      }
+
       ctx.restore(); // undo pan/zoom transform
 
       animId = requestAnimationFrame(render);
@@ -576,6 +725,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   }, [
     mapImage, meta, zoom, pan, telemetry,
     showPlaces, showGraph, showLidar, showPath, showTrail,
+    showObstacle, isDropObstacleMode, cursorWorld,
     graphNodes, selectedNodes, hoveredNode,
     namedPlaces, hoveredPlace,
     lastGoal, autoFollow, worldToPixel,
@@ -646,6 +796,25 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     const canvas = canvasRef.current;
     const world  = screenToWorld(e.clientX, e.clientY, canvas);
     if (!world) return;
+
+    // Handle Drop Obstacle Mode
+    if (isDropObstacleMode) {
+      setGoalFeedback(`Dropping Dynamic Obstacle at (${world.wx.toFixed(2)}, ${world.wy.toFixed(2)})...`);
+      try {
+        const res = await bridge.spawnObstacle(world.wx, world.wy);
+        if (res?.ok) {
+          setGoalFeedback(`Dynamic Obstacle placed at (${world.wx.toFixed(2)}, ${world.wy.toFixed(2)})`);
+          window.dispatchEvent(new CustomEvent('amr-obstacle-placed', { detail: { x: world.wx, y: world.wy } }));
+        } else {
+          setGoalFeedback(`Obstacle placement: ${res?.msg || 'placed'}`);
+        }
+      } catch (err) {
+        setGoalFeedback(`Error placing obstacle: ${err.message}`);
+      }
+      setIsDropObstacleMode(false);
+      setTimeout(() => setGoalFeedback(null), 3000);
+      return;
+    }
 
     // Prioritize clicking a station pin
     if (showPlaces && hoveredPlace) {
@@ -762,8 +931,63 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
           >
             〰️ Path
           </button>
+          <button
+            className={`btn-toggle ${isDropObstacleMode ? 'active' : ''}`}
+            onClick={(e) => { e.stopPropagation(); setIsDropObstacleMode(m => !m); }}
+            style={isDropObstacleMode ? { background: '#ea580c', borderColor: '#f97316', color: '#fff', fontWeight: 700 } : {}}
+            title="Drop Dynamic Obstacle: click button, then click anywhere on map"
+          >
+            🚧 Drop Obstacle
+          </button>
         </div>
       </div>
+
+      {/* ── Drop Obstacle Active Banner ── */}
+      {isDropObstacleMode && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 48,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 35,
+            background: 'rgba(234, 88, 12, 0.95)',
+            color: '#ffffff',
+            padding: '7px 16px',
+            borderRadius: 24,
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            boxShadow: '0 4px 20px rgba(234, 88, 12, 0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            backdropFilter: 'blur(4px)',
+            pointerEvents: 'auto',
+          }}
+        >
+          <span>🎯 CLICK MAP TO DROP DYNAMIC OBSTACLE</span>
+          <span style={{ fontSize: 10, opacity: 0.8 }}>(ESC to cancel)</span>
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsDropObstacleMode(false); }}
+            style={{
+              background: 'rgba(0,0,0,0.3)',
+              border: 'none',
+              color: '#fff',
+              borderRadius: '50%',
+              width: 18,
+              height: 18,
+              cursor: 'pointer',
+              fontSize: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── Zoom controls ── */}
       <div className="map-hud-zoom">

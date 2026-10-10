@@ -934,6 +934,7 @@ class AmrBridgeNode(Node):
         self.explore_resume_pub = self.create_publisher(Bool,                     '/explore/resume', 10)
 
         # --- Subscribers ---
+        self.create_subscription(Odometry,      '/dynamic_obstacle/odom', self._obstacle_odom_cb, 10)
         self.create_subscription(Odometry,      '/odometry/filtered', self._odom_cb,    10)
         self.create_subscription(LaserScan,     '/scan',              self._scan_cb,    10)
         self.create_subscription(String,        '/agv_state',         self._state_cb,   10)
@@ -990,6 +991,7 @@ class AmrBridgeNode(Node):
         self._cached_graphs: Dict[str, dict] = {}
         self._cached_graph: Optional[dict] = None
         self.active_place_nav: Optional[dict] = None
+        self.obstacle_pose: Optional[dict] = None
 
         # --- Autonomous exploration state ---
         self.explore_raw_status: str = 'idle'
@@ -1026,6 +1028,7 @@ class AmrBridgeNode(Node):
         self.obstacle_alert = None
         self.mission = {}
         self.active_place_nav = None
+        self.obstacle_pose = None
         self._amcl_pose_received = False
         self._last_sim_time = 0.0
         if self._tf_buffer is not None:
@@ -1035,6 +1038,24 @@ class AmrBridgeNode(Node):
                 logger.warning(f"Error clearing TF buffer: {e}")
 
     # -------- Subscriber callbacks --------
+
+    def _obstacle_odom_cb(self, msg: Odometry):
+        p = msg.pose.pose.position
+        o = msg.pose.pose.orientation
+        siny_cosp = 2.0 * (o.w * o.z + o.x * o.y)
+        cosy_cosp = 1.0 - 2.0 * (o.y * o.y + o.z * o.z)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+        vx = msg.twist.twist.linear.x
+        vy = msg.twist.twist.linear.y
+        speed = math.hypot(vx, vy)
+        self.obstacle_pose = {
+            'x': round(float(p.x), 3),
+            'y': round(float(p.y), 3),
+            'yaw': round(float(yaw), 3),
+            'speed': round(float(speed), 3),
+            'active': True,
+            'ts': time.time(),
+        }
 
     def _odom_cb(self, msg):
         # Use odom only for velocity; pose comes from AMCL / TF (map frame)
@@ -1298,6 +1319,73 @@ class AmrBridgeNode(Node):
         t.linear.x  = float(linear)
         t.angular.z = float(angular)
         self.obstacle_cmd_pub.publish(t)
+        if self.obstacle_pose:
+            self.obstacle_pose['speed'] = round(abs(float(linear)), 3)
+            self.obstacle_pose['ts'] = time.time()
+
+    def spawn_or_move_obstacle(self, x: float, y: float, yaw: float = 0.0) -> dict:
+        """Spawn or relocate dynamic obstacle in Gazebo Harmonic simulation."""
+        self.obstacle_pose = {
+            'x': round(float(x), 3),
+            'y': round(float(y), 3),
+            'yaw': round(float(yaw), 3),
+            'speed': 0.0,
+            'active': True,
+            'ts': time.time(),
+        }
+
+        # Model SDF path
+        sdf_path = _WORKSPACE_ROOT / "src" / "agv_description" / "models" / "dynamic_obstacle" / "model.sdf"
+        if not sdf_path.exists():
+            sdf_path = _WORKSPACE_ROOT / "install" / "agv_description" / "share" / "agv_description" / "models" / "dynamic_obstacle" / "model.sdf"
+
+        def _worker():
+            try:
+                # Check if Gazebo Harmonic is running
+                pg = subprocess.run(["pgrep", "-f", "gz sim|gz-sim"], capture_output=True, text=True)
+                if pg.returncode != 0:
+                    logger.info(f"[DynamicObstacle] Gazebo not running. Pose recorded at ({x:.2f}, {y:.2f}).")
+                    return
+
+                # Delete entity first to completely reset momentum & velocities
+                del_cmd = "source /opt/ros/jazzy/setup.bash && ros2 run ros_gz_sim delete_entity --name dynamic_obstacle"
+                subprocess.run(del_cmd, shell=True, executable='/bin/bash', capture_output=True, timeout=5)
+                time.sleep(0.3)
+
+                # Spawn clean obstacle
+                create_cmd = (
+                    f"source /opt/ros/jazzy/setup.bash && source {_WORKSPACE_ROOT}/install/setup.bash && "
+                    f"ros2 run ros_gz_sim create -name dynamic_obstacle -file '{str(sdf_path)}' -x {x} -y {y} -z 0.5 -Y {yaw}"
+                )
+                logger.info(f"[DynamicObstacle] Executing spawn: {create_cmd}")
+                res = subprocess.run(create_cmd, shell=True, executable='/bin/bash', capture_output=True, text=True, timeout=8)
+                if res.returncode == 0:
+                    logger.info(f"[DynamicObstacle] Successfully spawned obstacle at ({x:.2f}, {y:.2f})")
+                else:
+                    logger.warning(f"[DynamicObstacle] Spawn returned {res.returncode}: {res.stderr}. Attempting set_entity_pose fallback...")
+                    set_cmd = (
+                        f"source /opt/ros/jazzy/setup.bash && "
+                        f"ros2 run ros_gz_sim set_entity_pose --name dynamic_obstacle --pos {x} {y} 0.5 --euler 0 0 {yaw}"
+                    )
+                    subprocess.run(set_cmd, shell=True, executable='/bin/bash', capture_output=True, timeout=5)
+            except Exception as e:
+                logger.error(f"[DynamicObstacle] Spawn worker error: {e}")
+
+        threading.Thread(target=_worker, daemon=True).start()
+        return {'ok': True, 'msg': f'Dynamic obstacle placed at ({x:.2f}, {y:.2f})', 'obstacle': self.obstacle_pose}
+
+    def remove_obstacle(self) -> dict:
+        """Remove dynamic obstacle from simulation."""
+        self.obstacle_pose = None
+        def _worker():
+            try:
+                del_cmd = "source /opt/ros/jazzy/setup.bash && ros2 run ros_gz_sim delete_entity --name dynamic_obstacle"
+                subprocess.run(del_cmd, shell=True, executable='/bin/bash', capture_output=True, timeout=5)
+                logger.info("[DynamicObstacle] Removed dynamic obstacle entity from Gazebo.")
+            except Exception as e:
+                logger.warning(f"[DynamicObstacle] Remove obstacle error: {e}")
+        threading.Thread(target=_worker, daemon=True).start()
+        return {'ok': True, 'msg': 'Dynamic obstacle removed from simulation'}
 
     def set_active_graph(self, graph_dict: dict):
         map_name = graph_dict.get('map_name', self.active_map_name)
@@ -1464,6 +1552,22 @@ class AmrBridgeNode(Node):
             for i in range(0, len(self.scan_ranges), step):
                 r = self.scan_ranges[i]
                 scan_ds.append(round(r, 3) if not (math.isnan(r) or math.isinf(r)) else 0.0)
+        dyn_obs = None
+        if getattr(self, 'obstacle_pose', None):
+            dyn_obs = dict(self.obstacle_pose)
+            rx = self.pose.get('x', 0.0)
+            ry = self.pose.get('y', 0.0)
+            d_robot = math.hypot(dyn_obs['x'] - rx, dyn_obs['y'] - ry)
+            dyn_obs['dist_to_robot'] = round(d_robot, 2)
+            if d_robot < 0.85:
+                dyn_obs['avoidance_status'] = 'TACTICAL_EVASION'
+            elif d_robot < 1.5:
+                dyn_obs['avoidance_status'] = 'PROXIMITY_SLOWDOWN'
+            elif d_robot < 2.5:
+                dyn_obs['avoidance_status'] = 'DETECTED'
+            else:
+                dyn_obs['avoidance_status'] = 'CLEAR'
+
         return {
             'pose':            self.pose,
             'velocity':        self.velocity,
@@ -1475,6 +1579,7 @@ class AmrBridgeNode(Node):
             'mission':         self.mission,
             'active_map':      getattr(self, 'active_map_name', 'warehouse_01'),
             'active_place_nav': getattr(self, 'active_place_nav', None),
+            'dynamic_obstacle': dyn_obs,
             'scan':            scan_ds,
             'scan_angle_min':  round(self.scan_angle_min, 4),
             'scan_angle_inc':  round(self.scan_angle_inc, 4),
@@ -1561,6 +1666,12 @@ app.add_middleware(
 class CmdVelRequest(BaseModel):
     linear:  float = 0.0
     angular: float = 0.0
+
+class SpawnObstacleRequest(BaseModel):
+    x:   float
+    y:   float
+    yaw: float = 0.0
+    name: str = 'dynamic_obstacle'
 
 class GoalRequest(BaseModel):
     x:   float
@@ -1747,6 +1858,24 @@ async def post_obstacle_cmd_vel(req: CmdVelRequest):
     if node:
         node.publish_obstacle_cmd_vel(req.linear, req.angular)
     return {'ok': True}
+
+@app.post('/api/obstacle/spawn')
+async def post_obstacle_spawn(req: SpawnObstacleRequest):
+    if not node:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    return node.spawn_or_move_obstacle(req.x, req.y, req.yaw)
+
+@app.post('/api/obstacle/remove')
+async def post_obstacle_remove():
+    if not node:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    return node.remove_obstacle()
+
+@app.get('/api/obstacle/status')
+async def get_obstacle_status():
+    if not node:
+        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+    return {'ok': True, 'obstacle': getattr(node, 'obstacle_pose', None)}
 
 # -------- Mapping REST endpoints (Phase 1) --------
 

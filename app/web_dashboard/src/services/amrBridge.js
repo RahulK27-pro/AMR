@@ -185,6 +185,17 @@ class AmrBridgeService {
   sendObstacleCmdVel(linear, angular) {
     return this._post('/api/obstacle/cmd_vel', { linear, angular });
   }
+  spawnObstacle(x, y, yaw = 0.0) {
+    this.emitEvent('info', `Placed Dynamic Obstacle at (${Number(x).toFixed(2)}, ${Number(y).toFixed(2)})`);
+    return this._post('/api/obstacle/spawn', { x, y, yaw });
+  }
+  removeObstacle() {
+    this.emitEvent('info', 'Removed Dynamic Obstacle from simulation');
+    return this._post('/api/obstacle/remove', {});
+  }
+  getObstacleStatus() {
+    return this._get('/api/obstacle/status');
+  }
 
   async getMapImage(mapName = '')    { return this._get(`/api/map${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
   async getMapMetadata(mapName = '') { return this._get(`/api/map/metadata${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
