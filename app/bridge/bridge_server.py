@@ -816,6 +816,15 @@ class SystemLaunchManager:
                     self.stage = 4
                     self.stage_text = f'Running ({map_name})'
                     logger.info(f"[SystemLaunchManager] Navigation stack is fully RUNNING on {map_name}!")
+
+            # Auto-spawn dynamic obstacle into Gazebo if one was chosen
+            if 'node' in globals() and globals()['node'] is not None:
+                n = globals()['node']
+                if getattr(n, 'obstacle_pose', None) and n.obstacle_pose.get('active'):
+                    try:
+                        n.spawn_or_move_obstacle(n.obstacle_pose['x'], n.obstacle_pose['y'], n.obstacle_pose.get('yaw', 0.0))
+                    except Exception as err:
+                        logger.warning(f"[SystemLaunchManager] Auto-spawn obstacle error: {err}")
         except Exception as e:
             with self.lock:
                 self.state = 'ERROR'
@@ -992,6 +1001,9 @@ class AmrBridgeNode(Node):
         self._cached_graph: Optional[dict] = None
         self.active_place_nav: Optional[dict] = None
         self.obstacle_pose: Optional[dict] = None
+        self._obs_spawn_x: Optional[float] = None
+        self._obs_spawn_y: Optional[float] = None
+        self._obs_spawn_yaw: float = 0.0
 
         # --- Autonomous exploration state ---
         self.explore_raw_status: str = 'idle'
@@ -1029,6 +1041,9 @@ class AmrBridgeNode(Node):
         self.mission = {}
         self.active_place_nav = None
         self.obstacle_pose = None
+        self._obs_spawn_x = None
+        self._obs_spawn_y = None
+        self._obs_spawn_yaw = 0.0
         self._amcl_pose_received = False
         self._last_sim_time = 0.0
         if self._tf_buffer is not None:
@@ -1039,19 +1054,53 @@ class AmrBridgeNode(Node):
 
     # -------- Subscriber callbacks --------
 
+    def _get_active_gz_world(self) -> str:
+        """Dynamically detect running Gazebo world name."""
+        try:
+            res = subprocess.run(
+                ["gz", "service", "-s", "/gazebo/worlds", "--reqtype", "gz.msgs.Empty", "--reptype", "gz.msgs.StringMsg_V", "--timeout", "1000", "--req", ""],
+                capture_output=True, text=True, timeout=1.5
+            )
+            if res.returncode == 0 and "data:" in res.stdout:
+                for line in res.stdout.splitlines():
+                    if "data:" in line:
+                        w = line.split("data:")[-1].strip().strip('"').strip("'")
+                        if w:
+                            return w
+        except Exception:
+            pass
+        active = getattr(self, 'active_map_name', None)
+        return active if active else 'test1'
+
     def _obstacle_odom_cb(self, msg: Odometry):
         p = msg.pose.pose.position
         o = msg.pose.pose.orientation
         siny_cosp = 2.0 * (o.w * o.z + o.x * o.y)
         cosy_cosp = 1.0 - 2.0 * (o.y * o.y + o.z * o.z)
-        yaw = math.atan2(siny_cosp, cosy_cosp)
+        local_yaw = math.atan2(siny_cosp, cosy_cosp)
         vx = msg.twist.twist.linear.x
         vy = msg.twist.twist.linear.y
         speed = math.hypot(vx, vy)
+
+        # Map local DiffDrive odometry back to global world coordinates
+        spawn_x = getattr(self, '_obs_spawn_x', None)
+        spawn_y = getattr(self, '_obs_spawn_y', None)
+        spawn_yaw = getattr(self, '_obs_spawn_yaw', 0.0) or 0.0
+
+        if spawn_x is None or spawn_y is None:
+            # Obstacle has been removed or not yet spawned; do not revive pose
+            return
+
+        cos_sy = math.cos(spawn_yaw)
+        sin_sy = math.sin(spawn_yaw)
+        world_x = spawn_x + (p.x * cos_sy - p.y * sin_sy)
+        world_y = spawn_y + (p.x * sin_sy + p.y * cos_sy)
+        world_yaw = spawn_yaw + local_yaw
+
         self.obstacle_pose = {
-            'x': round(float(p.x), 3),
-            'y': round(float(p.y), 3),
-            'yaw': round(float(yaw), 3),
+            'x': round(float(world_x), 3),
+            'y': round(float(world_y), 3),
+            'yaw': round(float(world_yaw), 3),
             'speed': round(float(speed), 3),
             'active': True,
             'ts': time.time(),
@@ -1324,7 +1373,11 @@ class AmrBridgeNode(Node):
             self.obstacle_pose['ts'] = time.time()
 
     def spawn_or_move_obstacle(self, x: float, y: float, yaw: float = 0.0) -> dict:
-        """Spawn or relocate dynamic obstacle in Gazebo Harmonic simulation."""
+        """Spawn or relocate dynamic obstacle in Gazebo Harmonic simulation using native gz services."""
+        self._obs_spawn_x = float(x)
+        self._obs_spawn_y = float(y)
+        self._obs_spawn_yaw = float(yaw)
+
         self.obstacle_pose = {
             'x': round(float(x), 3),
             'y': round(float(y), 3),
@@ -1347,27 +1400,49 @@ class AmrBridgeNode(Node):
                     logger.info(f"[DynamicObstacle] Gazebo not running. Pose recorded at ({x:.2f}, {y:.2f}).")
                     return
 
-                # Delete entity first to completely reset momentum & velocities
-                del_cmd = "source /opt/ros/jazzy/setup.bash && ros2 run ros_gz_sim delete_entity --name dynamic_obstacle"
-                subprocess.run(del_cmd, shell=True, executable='/bin/bash', capture_output=True, timeout=5)
-                time.sleep(0.3)
+                world = self._get_active_gz_world()
+                qz = math.sin(yaw / 2.0)
+                qw = math.cos(yaw / 2.0)
 
-                # Spawn clean obstacle
-                create_cmd = (
-                    f"source /opt/ros/jazzy/setup.bash && source {_WORKSPACE_ROOT}/install/setup.bash && "
-                    f"ros2 run ros_gz_sim create -name dynamic_obstacle -file '{str(sdf_path)}' -x {x} -y {y} -z 0.5 -Y {yaw}"
+                # Remove existing obstacle entity first (takes ~0.05s) to reset odometry & physics momentum
+                rem_cmd = [
+                    "gz", "service", "-s", f"/world/{world}/remove",
+                    "--reqtype", "gz.msgs.Entity",
+                    "--reptype", "gz.msgs.Boolean",
+                    "--timeout", "1500",
+                    "--req", 'name: "dynamic_obstacle", type: MODEL'
+                ]
+                subprocess.run(rem_cmd, capture_output=True, text=True, timeout=2.0)
+                time.sleep(0.1)
+
+                # Spawn dynamic obstacle via native Gazebo service
+                create_req = (
+                    f'sdf_filename: "{str(sdf_path)}", name: "dynamic_obstacle", '
+                    f'pose: {{position: {{x: {x}, y: {y}, z: 0.5}}, orientation: {{z: {qz:.5f}, w: {qw:.5f}}}}}'
                 )
-                logger.info(f"[DynamicObstacle] Executing spawn: {create_cmd}")
-                res = subprocess.run(create_cmd, shell=True, executable='/bin/bash', capture_output=True, text=True, timeout=8)
-                if res.returncode == 0:
-                    logger.info(f"[DynamicObstacle] Successfully spawned obstacle at ({x:.2f}, {y:.2f})")
+                create_cmd = [
+                    "gz", "service", "-s", f"/world/{world}/create",
+                    "--reqtype", "gz.msgs.EntityFactory",
+                    "--reptype", "gz.msgs.Boolean",
+                    "--timeout", "3000",
+                    "--req", create_req
+                ]
+                logger.info(f"[DynamicObstacle] Spawning obstacle in world '{world}' at ({x:.2f}, {y:.2f})")
+                res = subprocess.run(create_cmd, capture_output=True, text=True, timeout=4.0)
+
+                if res.returncode == 0 and "data: true" in res.stdout:
+                    logger.info(f"[DynamicObstacle] Successfully spawned dynamic obstacle in world '{world}' at ({x:.2f}, {y:.2f})")
                 else:
-                    logger.warning(f"[DynamicObstacle] Spawn returned {res.returncode}: {res.stderr}. Attempting set_entity_pose fallback...")
-                    set_cmd = (
-                        f"source /opt/ros/jazzy/setup.bash && "
-                        f"ros2 run ros_gz_sim set_entity_pose --name dynamic_obstacle --pos {x} {y} 0.5 --euler 0 0 {yaw}"
-                    )
-                    subprocess.run(set_cmd, shell=True, executable='/bin/bash', capture_output=True, timeout=5)
+                    logger.warning(f"[DynamicObstacle] Create returned: {res.stdout.strip()} {res.stderr.strip()}. Attempting set_pose...")
+                    set_req = f'name: "dynamic_obstacle", position: {{x: {x}, y: {y}, z: 0.5}}, orientation: {{z: {qz:.5f}, w: {qw:.5f}}}'
+                    set_cmd = [
+                        "gz", "service", "-s", f"/world/{world}/set_pose",
+                        "--reqtype", "gz.msgs.Pose",
+                        "--reptype", "gz.msgs.Boolean",
+                        "--timeout", "1500",
+                        "--req", set_req
+                    ]
+                    subprocess.run(set_cmd, capture_output=True, text=True, timeout=2.5)
             except Exception as e:
                 logger.error(f"[DynamicObstacle] Spawn worker error: {e}")
 
@@ -1377,13 +1452,25 @@ class AmrBridgeNode(Node):
     def remove_obstacle(self) -> dict:
         """Remove dynamic obstacle from simulation."""
         self.obstacle_pose = None
+        self._obs_spawn_x = None
+        self._obs_spawn_y = None
+        self._obs_spawn_yaw = 0.0
+
         def _worker():
             try:
-                del_cmd = "source /opt/ros/jazzy/setup.bash && ros2 run ros_gz_sim delete_entity --name dynamic_obstacle"
-                subprocess.run(del_cmd, shell=True, executable='/bin/bash', capture_output=True, timeout=5)
-                logger.info("[DynamicObstacle] Removed dynamic obstacle entity from Gazebo.")
+                world = self._get_active_gz_world()
+                rem_cmd = [
+                    "gz", "service", "-s", f"/world/{world}/remove",
+                    "--reqtype", "gz.msgs.Entity",
+                    "--reptype", "gz.msgs.Boolean",
+                    "--timeout", "1500",
+                    "--req", 'name: "dynamic_obstacle", type: MODEL'
+                ]
+                res = subprocess.run(rem_cmd, capture_output=True, text=True, timeout=2.5)
+                logger.info(f"[DynamicObstacle] Removed dynamic obstacle entity from Gazebo world '{world}': {res.stdout.strip()}")
             except Exception as e:
                 logger.warning(f"[DynamicObstacle] Remove obstacle error: {e}")
+
         threading.Thread(target=_worker, daemon=True).start()
         return {'ok': True, 'msg': 'Dynamic obstacle removed from simulation'}
 
