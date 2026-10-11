@@ -573,33 +573,16 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
 
         ctx.save();
 
-        // 1. Proximity / Evasion connection vector between Robot and Obstacle
+        // 1. Proximity / Evasion connection vector between Robot and Obstacle (clean dashed line, no words)
         if (distToRobot < 3.0) {
           ctx.beginPath();
           ctx.setLineDash([3 / zoom, 3 / zoom]);
           ctx.moveTo(rx, ry);
           ctx.lineTo(ox, oy);
-          ctx.strokeStyle = isEvading ? 'rgba(239, 68, 68, 0.9)' : (isProximity ? 'rgba(249, 115, 22, 0.8)' : 'rgba(56, 189, 248, 0.5)');
-          ctx.lineWidth = (isEvading ? 2.2 : 1.2) / zoom;
+          ctx.strokeStyle = isEvading ? 'rgba(239, 68, 68, 0.7)' : (isProximity ? 'rgba(249, 115, 22, 0.6)' : 'rgba(56, 189, 248, 0.4)');
+          ctx.lineWidth = (isEvading ? 1.8 : 1.0) / zoom;
           ctx.stroke();
           ctx.setLineDash([]);
-
-          // Clearance pill at midpoint
-          const midX = (rx + ox) / 2;
-          const midY = (ry + oy) / 2;
-          const clearText = `Clearance: ${distToRobot.toFixed(2)}m`;
-          ctx.font = `bold ${Math.max(8, 9 / Math.sqrt(zoom))}px Inter, sans-serif`;
-          const ctW = ctx.measureText(clearText).width + 8 / zoom;
-          const ctH = 12 / zoom;
-          ctx.fillStyle = isEvading ? 'rgba(185, 28, 28, 0.95)' : 'rgba(15, 23, 42, 0.9)';
-          ctx.fillRect(midX - ctW / 2, midY - ctH / 2, ctW, ctH);
-          ctx.strokeStyle = isEvading ? '#ef4444' : '#f97316';
-          ctx.lineWidth = 1 / zoom;
-          ctx.strokeRect(midX - ctW / 2, midY - ctH / 2, ctW, ctH);
-          ctx.fillStyle = '#ffffff';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(clearText, midX, midY);
         }
 
         // 2. MPPI Tactical Evasion Buffer Halo (0.85m)
@@ -642,27 +625,6 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2 / zoom;
         ctx.stroke();
-
-        // 5. Overhead Label Pill
-        const obsLabel = isEvading
-          ? `⚠️ EVADING (${(dynObs.speed || 0).toFixed(1)} m/s)`
-          : `🚧 OBSTACLE (${(dynObs.speed || 0).toFixed(1)} m/s)`;
-        const labelSize = Math.max(8, Math.min(10, 9 / Math.sqrt(zoom)));
-        ctx.font = `bold ${labelSize}px Inter, sans-serif`;
-        const olW = ctx.measureText(obsLabel).width + 8 / zoom;
-        const olH = 13 / zoom;
-        const olX = ox - olW / 2;
-        const olY = oy - obsRadiusPx - 4 / zoom - olH;
-
-        ctx.fillStyle = isEvading ? 'rgba(185, 28, 28, 0.95)' : 'rgba(234, 88, 12, 0.92)';
-        ctx.fillRect(olX, olY, olW, olH);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1 / zoom;
-        ctx.strokeRect(olX, olY, olW, olH);
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(obsLabel, ox, olY + olH / 2);
 
         ctx.restore();
       }

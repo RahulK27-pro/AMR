@@ -828,36 +828,109 @@ export default function ControlPanel({
 
             {showObstacleControls && (
               <div className="obstacle-tester-body mt-sm" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {/* Real-time Avoidance Status & Clearance Metric */}
+                {/* ── Real-time Metrics: Both Values Prominently Displayed ── */}
                 <div
                   style={{
-                    background: 'rgba(15, 23, 42, 0.75)',
-                    padding: '8px 10px',
-                    borderRadius: 6,
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 6,
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 8,
                   }}
                 >
-                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="text-dim text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Clearance to AMR
+                  {/* Value 1: Avoidance Status & Obstacle Speed */}
+                  <div
+                    style={{
+                      background: isEvading
+                        ? 'rgba(239, 68, 68, 0.15)'
+                        : isProximity
+                          ? 'rgba(249, 115, 22, 0.15)'
+                          : 'rgba(15, 23, 42, 0.8)',
+                      border: isEvading
+                        ? '1px solid #ef4444'
+                        : isProximity
+                          ? '1px solid #ea580c'
+                          : '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      boxShadow: isEvading ? '0 0 14px rgba(239, 68, 68, 0.25)' : undefined,
+                    }}
+                  >
+                    <span className="text-dim text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      Avoidance Status
                     </span>
-                    <span
-                      className="text-mono"
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 1 }}>
+                      <span style={{ fontSize: 13 }}>
+                        {isEvading ? '⚠️' : isProximity ? '⚡' : dynObs?.active ? '🛡️' : '⚪'}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: isEvading ? '#f87171' : isProximity ? '#fb923c' : dynObs?.active ? '#34d399' : 'var(--text-dim)',
+                          letterSpacing: '0.03em',
+                        }}
+                      >
+                        {isEvading ? 'EVADING' : isProximity ? 'PROXIMITY' : dynObs?.active ? 'NOMINAL' : 'IDLE'}
+                      </span>
+                    </div>
+                    <div className="text-mono" style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                      Speed: <strong style={{ color: '#f1f5f9' }}>{(dynObs?.speed || 0).toFixed(1)} m/s</strong>
+                    </div>
+                  </div>
+
+                  {/* Value 2: Real-time Clearance Distance */}
+                  <div
+                    style={{
+                      background: isEvading
+                        ? 'rgba(239, 68, 68, 0.15)'
+                        : isProximity
+                          ? 'rgba(249, 115, 22, 0.15)'
+                          : 'rgba(15, 23, 42, 0.8)',
+                      border: isEvading
+                        ? '1px solid #ef4444'
+                        : isProximity
+                          ? '1px solid #ea580c'
+                          : '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      boxShadow: isEvading ? '0 0 14px rgba(239, 68, 68, 0.25)' : undefined,
+                    }}
+                  >
+                    <span className="text-dim text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      AMR Clearance
+                    </span>
+                    <div
+                      className="text-mono font-bold"
                       style={{
-                        fontSize: 12,
-                        fontWeight: 700,
+                        fontSize: 17,
                         color: isEvading ? '#ef4444' : isProximity ? '#ea580c' : dynObs?.active ? '#10b981' : 'var(--text-dim)',
+                        lineHeight: 1.2,
+                        marginTop: 1,
                       }}
                     >
                       {obsDist != null ? `${obsDist.toFixed(2)} m` : '—'}
+                    </div>
+                    <span className="text-dim text-xs">
+                      {dynObs?.x != null ? `Pos: (${dynObs.x.toFixed(2)}, ${dynObs.y.toFixed(2)})` : 'Not deployed'}
                     </span>
                   </div>
+                </div>
 
-                  {/* Proximity / Avoidance Bar */}
-                  <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                {/* Real-time Clearance Proximity Bar Track */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div className="flex-row" style={{ justifyContent: 'space-between', fontSize: 10, color: 'var(--text-dim)' }}>
+                    <span>0m</span>
+                    <span style={{ color: isEvading ? '#f87171' : isProximity ? '#fb923c' : '#34d399', fontWeight: 700 }}>
+                      {isEvading ? '⚠️ Evasion Active (<0.85m)' : isProximity ? '⚡ Slowdown Active (<1.5m)' : 'Clearance Safe'}
+                    </span>
+                    <span>3m+</span>
+                  </div>
+                  <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
                     <div
                       style={{
                         height: '100%',
@@ -870,18 +943,6 @@ export default function ControlPanel({
                         transition: 'width 0.2s ease, background 0.2s ease',
                       }}
                     />
-                  </div>
-
-                  {/* Status subtitle */}
-                  <div className="flex-row" style={{ justifyContent: 'space-between', fontSize: 11 }}>
-                    <span className="text-dim">
-                      {dynObs?.x != null
-                        ? `Pos: (${dynObs.x.toFixed(2)}, ${dynObs.y.toFixed(2)}) | ${(dynObs.speed || 0).toFixed(1)} m/s`
-                        : 'No obstacle deployed'}
-                    </span>
-                    <span style={{ color: isEvading ? '#f87171' : isProximity ? '#fb923c' : '#94a3b8', fontWeight: 600 }}>
-                      {isEvading ? 'MPPI Swerve Active' : isProximity ? 'Yield Deceleration' : 'Clearance Nominal'}
-                    </span>
                   </div>
                 </div>
 
