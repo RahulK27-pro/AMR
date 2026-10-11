@@ -160163,20 +160163,5 @@
       "cost": 0.4
     }
   ],
-  "places": [
-    {
-      "id": "place_1790842568431",
-      "name": "Z",
-      "node_id": "N20",
-      "type": "place",
-      "x": 3.024,
-      "y": 0.424,
-      "px": 200,
-      "py": 90,
-      "theta": 0.0,
-      "icon": "\ud83d\udccd",
-      "color": "#06b6d4",
-      "description": ""
-    }
-  ]
+  "places": []
 }

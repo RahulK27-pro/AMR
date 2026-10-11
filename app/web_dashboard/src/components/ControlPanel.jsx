@@ -14,9 +14,6 @@ export default function ControlPanel({
 
   // Dynamic Obstacle Simulation & Avoidance state
   const [showObstacleControls, setShowObstacleControls] = useState(true);
-  const [obsSpeed, setObsSpeed] = useState(0.45);
-  const [customObsX, setCustomObsX] = useState('2.0');
-  const [customObsY, setCustomObsY] = useState('0.0');
   const [isDroppingObs, setIsDroppingObs] = useState(false);
   const [obsFeedback, setObsFeedback] = useState(null);
 
@@ -253,11 +250,7 @@ export default function ControlPanel({
   };
 
 
-  // Obstacle teleop & drop handlers
-  const sendObstacle = (linear, angular) => {
-    bridge.sendObstacleCmdVel(linear, angular);
-  };
-
+  // Obstacle drop & remove handlers
   const handleTriggerMapDrop = () => {
     window.dispatchEvent(new CustomEvent('amr-trigger-drop-obstacle'));
     setObsFeedback('Click anywhere on the map to place obstacle');
@@ -279,30 +272,9 @@ export default function ControlPanel({
     setTimeout(() => setObsFeedback(null), 3500);
   };
 
-  const handleDropCustomCoords = async () => {
-    const x = parseFloat(customObsX);
-    const y = parseFloat(customObsY);
-    if (isNaN(x) || isNaN(y)) return;
-    setIsDroppingObs(true);
-    try {
-      await bridge.spawnObstacle(x, y);
-      setObsFeedback(`Dropped at (${x.toFixed(2)}, ${y.toFixed(2)})`);
-    } catch (err) {
-      setObsFeedback(`Failed to spawn: ${err.message}`);
-    }
-    setIsDroppingObs(false);
-    setTimeout(() => setObsFeedback(null), 3500);
-  };
-
   const handleRemoveObstacle = async () => {
     await bridge.removeObstacle();
     setObsFeedback('Obstacle removed from simulation');
-    setTimeout(() => setObsFeedback(null), 2500);
-  };
-
-  const handleFocusObstacleJoystick = () => {
-    window.dispatchEvent(new CustomEvent('amr-select-teleop-target', { detail: { target: 'obstacle' } }));
-    setObsFeedback('Bottom joystick linked to Obstacle steering');
     setTimeout(() => setObsFeedback(null), 2500);
   };
 
@@ -961,95 +933,12 @@ export default function ControlPanel({
                     📍 Drop 1.5m In Front of Robot
                   </button>
 
-                  {/* Manual Coordinates Input */}
-                  <div className="flex-row" style={{ gap: 4, alignItems: 'center' }}>
-                    <div className="flex-row" style={{ gap: 2, alignItems: 'center', flex: 1 }}>
-                      <span className="text-dim text-xs">X:</span>
-                      <input
-                        className="input-field"
-                        style={{ padding: '3px 6px', fontSize: 11 }}
-                        value={customObsX}
-                        onChange={(e) => setCustomObsX(e.target.value)}
-                        placeholder="2.0"
-                      />
-                    </div>
-                    <div className="flex-row" style={{ gap: 2, alignItems: 'center', flex: 1 }}>
-                      <span className="text-dim text-xs">Y:</span>
-                      <input
-                        className="input-field"
-                        style={{ padding: '3px 6px', fontSize: 11 }}
-                        value={customObsY}
-                        onChange={(e) => setCustomObsY(e.target.value)}
-                        placeholder="0.0"
-                      />
-                    </div>
-                    <button
-                      className="btn btn--secondary btn--sm"
-                      onClick={handleDropCustomCoords}
-                      disabled={isDroppingObs}
-                      style={{ fontSize: 10, padding: '4px 8px', fontWeight: 600 }}
-                    >
-                      Spawn
-                    </button>
-                  </div>
-                </div>
-
-                {/* ── 2. MANUAL STEERING CONTROLS ── */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 4 }}>
-                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="text-dim text-xs" style={{ letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                      Manual Steering
-                    </span>
-                    <button
-                      className="btn-link text-xs"
-                      onClick={handleFocusObstacleJoystick}
-                      style={{ color: '#ea580c', fontWeight: 600 }}
-                      title="Link the bottom joystick interlock to Obstacle steering"
-                    >
-                      Use Bottom Joystick →
-                    </button>
-                  </div>
-
-                  {/* Directional Pad */}
-                  <div className="obstacle-pad-grid">
-                    <button className="btn btn--ghost btn--sm" onClick={() => sendObstacle(obsSpeed, 0)}>↑ Fwd</button>
-                    <button className="btn btn--ghost btn--sm" onClick={() => sendObstacle(-obsSpeed, 0)}>↓ Back</button>
-                    <button className="btn btn--ghost btn--sm" onClick={() => sendObstacle(0, 0.8)}>↺ Turn L</button>
-                    <button className="btn btn--ghost btn--sm" onClick={() => sendObstacle(0, -0.8)}>↻ Turn R</button>
-                    <button
-                      className="btn btn--ghost btn--sm"
-                      style={{ gridColumn: 'span 4', color: '#ff3355', fontWeight: 700 }}
-                      onClick={() => sendObstacle(0, 0)}
-                    >
-                      Stop Obstacle
-                    </button>
-                  </div>
-
-                  {/* Obstacle Speed Throttle */}
-                  <div style={{ marginTop: 2 }}>
-                    <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span className="text-dim text-xs">Obstacle Speed</span>
-                      <span className="text-mono text-xs" style={{ color: '#f97316', fontWeight: 600 }}>
-                        {Math.round(obsSpeed * 100)}% ({obsSpeed.toFixed(2)} m/s)
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.1"
-                      max="1.0"
-                      step="0.05"
-                      value={obsSpeed}
-                      onChange={(e) => setObsSpeed(Number(e.target.value))}
-                      style={{ width: '100%', height: 4, accentColor: '#ea580c', cursor: 'pointer' }}
-                    />
-                  </div>
-
                   {/* Remove Obstacle Button */}
                   {dynObs?.active && (
                     <button
                       className="btn btn--ghost btn--sm mt-xs"
                       onClick={handleRemoveObstacle}
-                      style={{ color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.3)', fontSize: 10 }}
+                      style={{ color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.3)', fontSize: 11, padding: '6px' }}
                     >
                       ✕ Remove Obstacle from Simulation
                     </button>
