@@ -46,17 +46,13 @@ def launch_setup(context, *args, **kwargs):
         gz_cmd.append('-s')
     gz_cmd.extend(['-r', '-v', '2', world_file])
 
-    # WSL2 requires software rendering via llvmpipe since there is no /dev/dri
-    # OGRE2 in hardware mode causes [WARN:COPY MODE] and window crashes under WSL2
-    # On native Linux / Raspberry Pi, forcing llvmpipe & GL 4.5 causes OpenGL crash
-    gz_env = {}
-    is_wsl = 'microsoft' in os.uname().release.lower() or os.path.exists('/proc/sys/fs/binfmt_misc/WSL')
-    if is_wsl:
-        gz_env = {
-            'LIBGL_ALWAYS_SOFTWARE': '1',
-            'GALLIUM_DRIVER': 'llvmpipe',
-            'MESA_GL_VERSION_OVERRIDE': '4.5',
-        }
+    # For headless rendering & environments without desktop OpenGL 3.3 GPU (Raspberry Pi, WSL2):
+    # Ogre2 requires OpenGL 3.3. On Raspberry Pi (VideoCore GPU) or headless Linux,
+    # force Mesa software rasterization with OpenGL 3.3 override so Ogre2 doesn't crash with SIGSEGV.
+    gz_env = {
+        'LIBGL_ALWAYS_SOFTWARE': '1',
+        'MESA_GL_VERSION_OVERRIDE': '3.3',
+    }
 
     gazebo = ExecuteProcess(
         cmd=gz_cmd,
