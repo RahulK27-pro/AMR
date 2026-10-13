@@ -738,6 +738,8 @@ class SystemLaunchManager:
             headless_arg = f"headless:={'true' if headless else 'false'}"
             rviz_arg = f"use_rviz:={'true' if use_rviz else 'false'}"
             nav_cmd = (
+                f"export LIBGL_ALWAYS_SOFTWARE=1 && "
+                f"export MESA_GL_VERSION_OVERRIDE=3.3 && "
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
                 f"ros2 launch agv_description navigation_launch.py map:={map_name} {world_arg} {headless_arg} {rviz_arg}"
