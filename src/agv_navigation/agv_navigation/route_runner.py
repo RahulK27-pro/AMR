@@ -152,22 +152,36 @@ class RouteRunner(Node):
         self._obs_vel_map = {}         # Maps prev_cluster index -> smoothed velocity vector
 
         # Traffic & Re-routing parameters
-        self.yield_timeout = 4.5       # Seconds to wait for transient obstacles before re-routing
+        self.yield_timeout = 4.0       # Seconds to wait for transient dynamic obstacles before re-routing
+        self.yield_timeout_static = 1.0  # Fast reroute timeout (1.0s) for stationary unmapped blockages
+        self.yield_timeout_dynamic = 4.0 # Timeout (4.0s) for dynamic moving obstacles
         self.yield_start_time = None
         self.blocked_edges = {}        # {(u, v): (original_cost, restore_timestamp)}
 
-        # Fix 5 — Stuck detector + recovery maneuver
+        # Physical dimensions & Safe navigation clearances (22cm robot diameter)
+        self.robot_radius = 0.11       # Cylinder radius 0.11m (diameter 0.22m)
+        self.collision_radius = 0.15   # Hard safety clearance (0.11m + 0.04m physical margin)
+        self.min_passable_gap = 0.35   # Minimum passage width for 22cm robot (0.22m + 0.13m corridor margin)
+        self.critical_proximity = 0.28 # Distance threshold (m) triggering active reverse escape
+        self.safe_standoff = 0.75      # Target front standoff distance (m) to achieve during reverse escape
+
+        # Smooth Early Detour (Circumnavigation) state
+        self.active_detour = None      # Stores {rejoin_idx, created_time, side} when circumnavigating
+        self._detour_cooldown_time = 0.0
+        self._last_detour_log_time = 0.0
+
+        # Stuck detector & Active Reverse Recovery
         self._stuck_counter = 0
         self._last_stuck_check_pos = None
-        self._stuck_threshold_ticks = 25  # ~2.5s of zero translation / spin triggers recovery
+        self._stuck_threshold_ticks = 20  # ~2.0s of zero translation / spin triggers recovery
         self._recovery_phase = None        # None, 'BACKUP', or 'REROUTE'
         self._recovery_start_time = None
-        self._recovery_backup_dur = 1.5   # Seconds to reverse
+        self._recovery_backup_dur = 2.2   # Max seconds to reverse if standoff not yet achieved
         self._last_recovery_log_time = 0.0
 
         # MPPI Parameters
-        self.v_max = 0.8
-        self.v_min = 0.0               # Forward-only to avoid backward jitter
+        self.v_max = 0.75
+        self.v_min = 0.0               # Forward-only in normal MPPI rollouts; reverse handled deterministically
         self.w_max = 1.8               # High turning authority for obstacle evasion
         self.dt = 0.1                  # 10 Hz
         self.horizon = 15              # 1.5s preview
@@ -182,22 +196,21 @@ class RouteRunner(Node):
         self.w_dist = 4.0
         self.w_heading = 3.0
         self.w_collision = 5000.0
-        self.collision_radius = 0.18   # Safety hard clearance (m) — robot body radius 0.11 + 0.07 margin
         
-        # Repulsion fields
-        self.dynamic_repulsive_dist = 0.85  # Proactive evasion bubble for moving obstacles (m)
+        # Repulsion fields (tuned for 1.2m - 1.5m warehouse aisles and 22cm robot)
+        self.dynamic_repulsive_dist = 0.65  # Proactive evasion bubble for moving obstacles (m)
         self.dynamic_w_repulsive = 45.0     # Smooth proactive repulsion from dynamic obstacles
-        self.static_repulsive_dist = 0.30   # Wall repulsion activation distance (m) (tuned for narrow corridors)
+        self.static_repulsive_dist = 0.26   # Wall repulsion activation distance (m) (tuned for narrow corridors)
         self.static_w_repulsive = 50.0      # Quadratic wall repulsion (smooth gradient in narrow passages)
 
         self.w_cross_track_nominal = 6.0
         self.w_cross_track_evasion = 2.0   # Soften centerline tracking during evasion while preventing wandering
         self.w_cross_track = self.w_cross_track_nominal
 
-        # Fix 2 — Distance-gated evasion: only relax w_cross_track for obstacles within this range
-        self.evasion_range = 1.0       # metres; obstacles beyond this don't collapse path-following
+        # Distance-gated evasion: only relax w_cross_track for obstacles within this range
+        self.evasion_range = 1.2       # metres
 
-        # Fix 3 — Swerve side commitment: commit to one side briefly to avoid L/R oscillation
+        # Swerve side commitment: commit to one side briefly to avoid L/R oscillation
         self._swerve_bias = 0.0           # Current angular bias added to MPPI w_seq mean (rad/s)
         self._swerve_lock_ticks = 0       # Ticks remaining on current committed swerve direction
         self.swerve_lock_duration = 8     # Ticks (~0.8s at 10 Hz) to hold swerve commitment
@@ -205,7 +218,7 @@ class RouteRunner(Node):
 
         # Control timer
         self.control_timer = self.create_timer(self.dt, self.control_loop)
-        self.get_logger().info(f"Route Runner Active with KD-Tree ({len(self.node_ids)} nodes) & Dynamic Obstacle Avoidance.")
+        self.get_logger().info(f"Route Runner Active with KD-Tree ({len(self.node_ids)} nodes), Proactive Detour & Active Reverse Escape.")
 
     # ------------------------------------------------------------------
     # App Bridge helpers
@@ -609,41 +622,263 @@ class RouteRunner(Node):
 
         return self.path_plan[target_idx], target_idx
 
+    def check_proximity_and_clearance(self):
+        """Calculates minimum obstacle distance in front (120 deg) and rear (120 deg) body arcs."""
+        if len(self.obstacles) == 0:
+            return 99.0, 99.0
+
+        c_yaw = math.cos(self.current_yaw)
+        s_yaw = math.sin(self.current_yaw)
+
+        dx = self.obstacles[:, 0] - self.current_x
+        dy = self.obstacles[:, 1] - self.current_y
+
+        x_rel = dx * c_yaw + dy * s_yaw
+        y_rel = -dx * s_yaw + dy * c_yaw
+        dist = np.sqrt(x_rel**2 + y_rel**2)
+
+        # Front 120-degree cone (x_rel > 0.04m, |y_rel| < x_rel * 1.732)
+        front_mask = (x_rel > 0.04) & (np.abs(y_rel) < x_rel * 1.732) & (dist < 6.0)
+        d_front = float(np.min(dist[front_mask])) if np.any(front_mask) else 99.0
+
+        # Rear 120-degree cone (x_rel < -0.04m, |y_rel| < -x_rel * 1.732)
+        rear_mask = (x_rel < -0.04) & (np.abs(y_rel) < -x_rel * 1.732) & (dist < 6.0)
+        d_rear = float(np.min(dist[rear_mask])) if np.any(rear_mask) else 99.0
+
+        return d_front, d_rear
+
+    def get_corridor_obstacle_analysis(self, lookahead_horizon=2.8):
+        """Proactively scans up to lookahead_horizon meters ahead along the planned path.
+        Detects unmapped stationary and dynamic obstacles, computes aisle passability for
+        a 22cm robot, and identifies the best bypass direction (LEFT/RIGHT).
+        """
+        if len(self.obstacles) == 0 or len(self.path_plan) < 5:
+            return None
+
+        arc_dist = 0.0
+        start_idx = self.current_target_index
+        upcoming_indices = [start_idx]
+
+        for i in range(start_idx, len(self.path_plan) - 1):
+            p1 = self.path_plan[i]
+            p2 = self.path_plan[i + 1]
+            seg_len = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+            arc_dist += seg_len
+            upcoming_indices.append(i + 1)
+            if arc_dist >= lookahead_horizon:
+                break
+
+        if len(upcoming_indices) < 3:
+            return None
+
+        path_pts = np.array([[self.path_plan[i][0], self.path_plan[i][1]] for i in upcoming_indices])
+
+        # Distance from each obstacle point to upcoming path waypoints
+        dists_matrix = np.linalg.norm(self.obstacles[:, np.newaxis, :] - path_pts[np.newaxis, :, :], axis=-1)
+
+        # Swept corridor width for 22cm robot: points within 0.22m of path centerline
+        min_dists_to_path = np.min(dists_matrix, axis=0)
+        blocked_wpts = np.where(min_dists_to_path < 0.22)[0]
+        if len(blocked_wpts) == 0:
+            return None
+
+        earliest_local_idx = int(blocked_wpts[0])
+        block_idx = upcoming_indices[earliest_local_idx]
+        block_pt = self.path_plan[block_idx]
+
+        # Calculate distance along path from robot to the obstacle
+        d_along = 0.0
+        for i in range(start_idx, block_idx):
+            d_along += math.hypot(self.path_plan[i+1][0] - self.path_plan[i][0],
+                                  self.path_plan[i+1][1] - self.path_plan[i][1])
+
+        # Cluster points around the obstacle location
+        cluster_mask = np.linalg.norm(self.obstacles - np.array([block_pt[0], block_pt[1]]), axis=-1) < 0.60
+        cluster_pts = self.obstacles[cluster_mask]
+        if len(cluster_pts) == 0:
+            return None
+
+        ox = float(np.mean(cluster_pts[:, 0]))
+        oy = float(np.mean(cluster_pts[:, 1]))
+        min_dist_to_robot = math.hypot(ox - self.current_x, oy - self.current_y)
+
+        # Check if obstacle is dynamic (moving) or static unmapped
+        is_dynamic = False
+        obs_vel = (0.0, 0.0)
+        obs_speed = 0.0
+        for dob in self.dynamic_obstacles:
+            if math.hypot(dob['pos'][0] - ox, dob['pos'][1] - oy) < 0.70 and dob['speed'] >= 0.25:
+                is_dynamic = True
+                obs_vel = tuple(dob['vel'])
+                obs_speed = dob['speed']
+                break
+
+        # Analyze corridor passability on Left vs Right
+        theta_path = block_pt[2]
+        nx_left = -math.sin(theta_path)
+        ny_left = math.cos(theta_path)
+
+        near_surrounding = np.linalg.norm(self.obstacles - np.array([ox, oy]), axis=-1) < 1.8
+        surrounding_pts = self.obstacles[near_surrounding]
+
+        clearance_left = 1.2
+        clearance_right = 1.2
+
+        if len(surrounding_pts) > 0:
+            dx_obs = surrounding_pts[:, 0] - ox
+            dy_obs = surrounding_pts[:, 1] - oy
+            lat_disp = dx_obs * nx_left + dy_obs * ny_left
+
+            left_pts = lat_disp[lat_disp > 0.18]
+            right_pts = -lat_disp[lat_disp < -0.18]
+
+            if len(left_pts) > 0:
+                clearance_left = max(0.0, float(np.min(left_pts)) - 0.18)
+            if len(right_pts) > 0:
+                clearance_right = max(0.0, float(np.min(right_pts)) - 0.18)
+
+        # Minimum opening needed for 22cm robot (self.min_passable_gap = 0.35m)
+        passable_left = clearance_left >= self.min_passable_gap
+        passable_right = clearance_right >= self.min_passable_gap
+
+        best_side = None
+        passable = False
+        lateral_offset = 0.0
+
+        if passable_left and (not passable_right or clearance_left >= clearance_right):
+            best_side = 'LEFT'
+            passable = True
+            lateral_offset = +min(0.50, max(0.32, 0.18 + self.robot_radius + 0.09))
+        elif passable_right:
+            best_side = 'RIGHT'
+            passable = True
+            lateral_offset = -min(0.50, max(0.32, 0.18 + self.robot_radius + 0.09))
+
+        block_start_idx = max(start_idx, block_idx - 4)
+        block_rejoin_idx = min(len(self.path_plan) - 1, block_idx + 4)
+
+        return {
+            'obstacle_pos': (ox, oy),
+            'dist_along_path': d_along,
+            'min_dist_to_robot': min_dist_to_robot,
+            'is_dynamic': is_dynamic,
+            'vel': obs_vel,
+            'speed': obs_speed,
+            'passable': passable,
+            'best_side': best_side,
+            'clearance_left': clearance_left,
+            'clearance_right': clearance_right,
+            'lateral_offset': lateral_offset,
+            'block_start_idx': block_start_idx,
+            'block_rejoin_idx': block_rejoin_idx,
+        }
+
+    def generate_bezier_detour(self, start_idx, rejoin_idx, lateral_offset):
+        """Generates a smooth C1-continuous cubic Bezier detour around an obstacle."""
+        if rejoin_idx <= start_idx + 1:
+            return None
+
+        p_start = self.path_plan[start_idx]
+        p_end = self.path_plan[rejoin_idx]
+        mid_idx = (start_idx + rejoin_idx) // 2
+        p_mid = self.path_plan[mid_idx]
+
+        theta_mid = p_mid[2]
+        nx = -math.sin(theta_mid)
+        ny = math.cos(theta_mid)
+
+        crest_x = p_mid[0] + lateral_offset * nx
+        crest_y = p_mid[1] + lateral_offset * ny
+
+        t_start = (math.cos(p_start[2]), math.sin(p_start[2]))
+        t_mid = (math.cos(theta_mid), math.sin(theta_mid))
+        t_end = (math.cos(p_end[2]), math.sin(p_end[2]))
+
+        # Arc 1: start -> crest
+        d1 = math.hypot(crest_x - p_start[0], crest_y - p_start[1])
+        b0 = (p_start[0], p_start[1])
+        b1 = (p_start[0] + 0.35 * d1 * t_start[0], p_start[1] + 0.35 * d1 * t_start[1])
+        b2 = (crest_x - 0.35 * d1 * t_mid[0], crest_y - 0.35 * d1 * t_mid[1])
+        b3 = (crest_x, crest_y)
+
+        # Arc 2: crest -> end
+        d2 = math.hypot(p_end[0] - crest_x, p_end[1] - crest_y)
+        c0 = (crest_x, crest_y)
+        c1 = (crest_x + 0.35 * d2 * t_mid[0], crest_y + 0.35 * d2 * t_mid[1])
+        c2 = (p_end[0] - 0.35 * d2 * t_end[0], p_end[1] - 0.35 * d2 * t_end[1])
+        c3 = (p_end[0], p_end[1])
+
+        num_pts = max(6, (rejoin_idx - start_idx))
+        pts_arc1 = num_pts // 2
+        pts_arc2 = num_pts - pts_arc1
+
+        detour_pts = []
+        for i in range(pts_arc1):
+            u = i / float(pts_arc1)
+            x = (1-u)**3 * b0[0] + 3*(1-u)**2 * u * b1[0] + 3*(1-u) * u**2 * b2[0] + u**3 * b3[0]
+            y = (1-u)**3 * b0[1] + 3*(1-u)**2 * u * b1[1] + 3*(1-u) * u**2 * b2[1] + u**3 * b3[1]
+            detour_pts.append((x, y))
+
+        for i in range(pts_arc2 + 1):
+            u = i / float(pts_arc2)
+            x = (1-u)**3 * c0[0] + 3*(1-u)**2 * u * c1[0] + 3*(1-u) * u**2 * c2[0] + u**3 * c3[0]
+            y = (1-u)**3 * c0[1] + 3*(1-u)**2 * u * c1[1] + 3*(1-u) * u**2 * c2[1] + u**3 * c3[1]
+            detour_pts.append((x, y))
+
+        dense_detour = []
+        for i in range(len(detour_pts)):
+            if i < len(detour_pts) - 1:
+                th = math.atan2(detour_pts[i+1][1] - detour_pts[i][1], detour_pts[i+1][0] - detour_pts[i][0])
+            else:
+                th = p_end[2]
+            dense_detour.append((detour_pts[i][0], detour_pts[i][1], th))
+
+        return dense_detour
+
     def trigger_reroute(self):
         """Dynamically penalizes the blocked edge and computes an alternate path."""
         now = self._now_sec()
+        self.active_detour = None
+
+        # Robustly identify which edge in self.node_path is currently blocked
+        best_idx = 0
+        min_d = float('inf')
+        for i, nid in enumerate(self.node_path):
+            nx = self.map_data[nid]["x"]
+            ny = self.map_data[nid]["y"]
+            d = math.hypot(nx - self.current_x, ny - self.current_y)
+            if d < min_d:
+                min_d = d
+                best_idx = i
+
+        u, v = None, None
+        if best_idx + 1 < len(self.node_path):
+            u = self.node_path[best_idx]
+            v = self.node_path[best_idx + 1]
+        elif best_idx > 0:
+            u = self.node_path[best_idx - 1]
+            v = self.node_path[best_idx]
+
+        if u and v:
+            for edge in self.map_data[u]["edges"]:
+                if edge["to_node"] == v:
+                    orig_cost = edge["distance_m"]
+                    edge["distance_m"] = 999.0
+                    self.blocked_edges[(u, v)] = (orig_cost, now + 25.0)
+
+            for edge in self.map_data[v]["edges"]:
+                if edge["to_node"] == u:
+                    orig_cost = edge["distance_m"]
+                    edge["distance_m"] = 999.0
+                    self.blocked_edges[(v, u)] = (orig_cost, now + 25.0)
+
+            self.get_logger().warn(
+                f"[BRAIN: DIJKSTRA_ROUTER] Commanded ROUTE CHANGE to avoid blockage! "
+                f"Blocked edge ({u} <-> {v}) temporarily penalized (+999.0 for 25s). "
+                f"Recalculating global topological path to {self.target_node}..."
+            )
+
         start_node = self.find_closest_node(self.current_x, self.current_y)
-
-        # Identify upcoming edge in current plan
-        if len(self.node_path) >= 2:
-            try:
-                curr_idx = self.node_path.index(start_node)
-                if curr_idx + 1 < len(self.node_path):
-                    u = self.node_path[curr_idx]
-                    v = self.node_path[curr_idx + 1]
-
-                    # Penalize this blocked edge heavily
-                    for edge in self.map_data[u]["edges"]:
-                        if edge["to_node"] == v:
-                            orig_cost = edge["distance_m"]
-                            edge["distance_m"] = 999.0
-                            self.blocked_edges[(u, v)] = (orig_cost, now + 25.0)
-
-                    for edge in self.map_data[v]["edges"]:
-                        if edge["to_node"] == u:
-                            orig_cost = edge["distance_m"]
-                            edge["distance_m"] = 999.0
-                            self.blocked_edges[(v, u)] = (orig_cost, now + 25.0)
-
-                    self.get_logger().warn(
-                        f"[BRAIN: DIJKSTRA_ROUTER] Commanded ROUTE CHANGE to avoid collision! "
-                        f"Blocked edge ({u} <-> {v}) temporarily penalized (+999.0 for 25s). "
-                        f"Recalculating global topological path from {start_node} to {self.target_node}..."
-                    )
-            except ValueError:
-                pass
-
-        # Re-compute Dijkstra on updated graph
         new_path = self.calculate_dijkstra(start_node, self.target_node)
         if new_path and len(new_path) > 1:
             self.node_path = new_path
@@ -662,10 +897,6 @@ class RouteRunner(Node):
                 f"Robot remains YIELDING."
             )
             self.state = "YIELDING"
-            # Do NOT reset yield_start_time here — preserve the original blockage
-            # onset time so the 4.5s yield_timeout continues counting correctly.
-            # Overwriting it would cause an infinite retry loop where the timer
-            # never expires.
             if self.yield_start_time is None:
                 self.yield_start_time = now
 
@@ -686,45 +917,61 @@ class RouteRunner(Node):
             self.get_logger().info(f"Restored graph edges: {restored}")
 
     def _execute_recovery(self):
-        """Recovery maneuver: back up 0.3m then trigger Dijkstra reroute.
-
-        Called by the stuck detector when the robot has been spinning in place
-        without translating for _stuck_threshold_ticks consecutive control ticks.
-        """
+        """Active reverse escape: checks rear clearance from 360 LiDAR, reverses smoothly
+        until reaching safe standoff (0.75m) or timeout, then initiates Dijkstra reroute."""
         now = self._now_sec()
         self._swerve_bias = 0.0
         self._swerve_lock_ticks = 0
+
+        d_front, d_rear = self.check_proximity_and_clearance()
+
         if self._recovery_phase is None:
             self._recovery_phase = "BACKUP"
             self._recovery_start_time = now
             self._stuck_counter = 0
             self._last_stuck_check_pos = None
             self.get_logger().warn(
-                f"[BRAIN: RECOVERY] Phase 1/2 — BACKING UP at ({self.current_x:.2f}, {self.current_y:.2f}). "
-                f"Reversing for {self._recovery_backup_dur:.1f}s to escape stuck position."
+                f"[BRAIN: RECOVERY] Active Reverse Escape initiated at ({self.current_x:.2f}, {self.current_y:.2f}). "
+                f"Front proximity={d_front:.2f}m, Rear clearance={d_rear:.2f}m. "
+                f"Reversing to safe standoff distance ({self.safe_standoff:.2f}m)..."
             )
 
         if self._recovery_phase == "BACKUP":
             elapsed = now - self._recovery_start_time
-            if elapsed < self._recovery_backup_dur:
-                # Publish reverse command directly
+
+            # Safety check: if rear obstacle is too close (< 0.28m), abort reverse to prevent collision
+            if d_rear < 0.28:
+                self.get_logger().warn(
+                    f"[BRAIN: RECOVERY] Rear boundary detected ({d_rear:.2f}m < 0.28m)! "
+                    f"Halting reverse immediately for safety."
+                )
+                self.cmd_pub.publish(Twist())
+                self._recovery_phase = "REROUTE"
+            # Standoff check: if front distance is now >= safe_standoff (0.75m), or max duration reached
+            elif d_front >= self.safe_standoff or elapsed >= self._recovery_backup_dur:
+                self.get_logger().info(
+                    f"[BRAIN: RECOVERY] Standoff distance achieved (front={d_front:.2f}m, elapsed={elapsed:.1f}s). "
+                    f"Halting reverse."
+                )
+                self.cmd_pub.publish(Twist())
+                self._recovery_phase = "REROUTE"
+            else:
+                # Command smooth reverse
                 cmd = Twist()
                 cmd.linear.x = -0.15  # 0.15 m/s reverse
                 cmd.angular.z = 0.0
                 self.cmd_pub.publish(cmd)
                 return
-            else:
-                # Backup complete — move to reroute phase
-                self._recovery_phase = "REROUTE"
 
         if self._recovery_phase == "REROUTE":
             self.get_logger().warn(
-                f"[BRAIN: RECOVERY] Phase 2/2 — REROUTING via Dijkstra from "
-                f"({self.current_x:.2f}, {self.current_y:.2f}) to {self.target_node}."
+                f"[BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from "
+                f"({self.current_x:.2f}, {self.current_y:.2f}) with safe standoff {d_front:.2f}m."
             )
             self._recovery_phase = None
             self._stuck_counter = 0
             self._last_stuck_check_pos = None
+            self.active_detour = None
             self.trigger_reroute()
 
     def control_loop(self):
@@ -742,12 +989,23 @@ class RouteRunner(Node):
             self._execute_recovery()
             return
 
+        # Check critical proximity immediately (before path following)
+        d_front, d_rear = self.check_proximity_and_clearance()
+        if d_front < self.critical_proximity:
+            self.get_logger().warn(
+                f"[BRAIN: PROXIMITY_ESCAPE] Critical front proximity ({d_front:.2f}m < {self.critical_proximity:.2f}m)! "
+                f"Halting forward motion and engaging Active Reverse Escape..."
+            )
+            self._execute_recovery()
+            return
+
         # Check final destination
         final_x, final_y, _ = self.path_plan[-1]
         dist_to_final = math.sqrt((final_x - self.current_x)**2 + (final_y - self.current_y)**2)
         if dist_to_final < 0.30:
             self.cmd_pub.publish(Twist())
             self.state = "IDLE"
+            self.active_detour = None
             self._publish_agv_state("ARRIVED")
             if self.goal_queue:
                 # More goals remain — dequeue and navigate to next waypoint
@@ -770,6 +1028,39 @@ class RouteRunner(Node):
                 self.mission_current = 0
             return
 
+        # Detour status management
+        if self.active_detour is not None:
+            if self.current_target_index >= self.active_detour['rejoin_idx'] or (now - self.active_detour['created_time'] > 12.0):
+                self.get_logger().info("[BRAIN: DETOUR] Circumnavigation complete. Rejoined global roadmap.")
+                self.active_detour = None
+
+        # Proactive ahead-of-path corridor scan (up to 2.8m ahead on path)
+        corridor_obs = self.get_corridor_obstacle_analysis(lookahead_horizon=2.8)
+        if corridor_obs is not None and dist_to_final > 0.8:
+            # If passable and no active detour, generate smooth Bezier detour waypoints ahead of reaching the close zone
+            if corridor_obs['passable'] and self.active_detour is None and (now > self._detour_cooldown_time):
+                detour = self.generate_bezier_detour(
+                    corridor_obs['block_start_idx'],
+                    corridor_obs['block_rejoin_idx'],
+                    corridor_obs['lateral_offset']
+                )
+                if detour and len(detour) >= 4:
+                    s_idx = corridor_obs['block_start_idx']
+                    r_idx = corridor_obs['block_rejoin_idx']
+                    self.path_plan = self.path_plan[:s_idx] + detour + self.path_plan[r_idx+1:]
+                    self.active_detour = {
+                        'rejoin_idx': s_idx + len(detour),
+                        'created_time': now,
+                        'side': corridor_obs['best_side']
+                    }
+                    self._detour_cooldown_time = now + 2.5
+                    self.publish_active_path()
+                    self.get_logger().info(
+                        f"[BRAIN: DETOUR] Planned proactive smooth Bezier detour on {corridor_obs['best_side']} side "
+                        f"(offset={corridor_obs['lateral_offset']:+.2f}m) around obstacle at "
+                        f"({corridor_obs['obstacle_pos'][0]:.2f}, {corridor_obs['obstacle_pos'][1]:.2f}) "
+                        f"[dist_along={corridor_obs['dist_along_path']:.2f}m, dist_to_robot={corridor_obs['min_dist_to_robot']:.2f}m]."
+                    )
 
         # Get lookahead target
         (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=0.75)
@@ -1015,26 +1306,37 @@ class RouteRunner(Node):
         best_cost = np.min(costs)
         all_colliding = best_cost >= self.w_collision
 
+        # Determine dynamic vs stationary yield timeout
+        is_dynamic_block = False
+        if corridor_obs is not None:
+            is_dynamic_block = corridor_obs['is_dynamic']
+        elif len(close_dyn) > 0:
+            is_dynamic_block = True
+
+        current_yield_timeout = self.yield_timeout_dynamic if is_dynamic_block else self.yield_timeout_static
+
         if all_colliding and obstacle_blocking_path:
             # All sampled trajectories are blocked AND an obstacle is on the path
             if self.state == "NAVIGATING":
                 self.state = "YIELDING"
                 self.yield_start_time = now
                 ox, oy, dp, dr = _blocking_diag if _blocking_diag else (0.0, 0.0, 0.0, 0.0)
+                obs_type_str = "Dynamic obstacle" if is_dynamic_block else "Stationary unmapped obstacle"
                 self.get_logger().warn(
                     f"[BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). "
-                    f"Cause: Narrow passage blocked by obstacle at map({ox:.3f}, {oy:.3f}), "
+                    f"Cause: {obs_type_str} at map({ox:.3f}, {oy:.3f}), "
                     f"dist_to_path={dp:.3f}m, dist_to_robot={dr:.3f}m, MPPI_best_cost={best_cost:.1f}. "
-                    f"Holding position up to {self.yield_timeout:.1f}s before re-routing..."
+                    f"Holding position up to {current_yield_timeout:.1f}s before re-routing..."
                 )
                 self._last_block_log_time = now
                 self.cmd_pub.publish(Twist())
                 return
             elif self.state == "YIELDING":
                 elapsed = now - self.yield_start_time
-                if elapsed >= self.yield_timeout:
+                if elapsed >= current_yield_timeout:
+                    obs_type_str = "dynamic" if is_dynamic_block else "stationary unmapped"
                     self.get_logger().warn(
-                        f"[BRAIN: STATE_MACHINE] Yield timeout ({elapsed:.1f}s >= {self.yield_timeout:.1f}s) exceeded! "
+                        f"[BRAIN: STATE_MACHINE] Yield timeout ({elapsed:.1f}s >= {current_yield_timeout:.1f}s) exceeded for {obs_type_str} blockage! "
                         f"Delegating to Dijkstra Brain for dynamic re-route."
                     )
                     self.trigger_reroute()
@@ -1044,7 +1346,7 @@ class RouteRunner(Node):
                     if (now - self._last_block_log_time) > 1.0:
                         ox, oy, dp, dr = _blocking_diag if _blocking_diag else (0.0, 0.0, 0.0, 0.0)
                         self.get_logger().warn(
-                            f"[BRAIN: STATE_MACHINE] Holding YIELD ({elapsed:.1f}s/{self.yield_timeout:.1f}s): "
+                            f"[BRAIN: STATE_MACHINE] Holding YIELD ({elapsed:.1f}s/{current_yield_timeout:.1f}s): "
                             f"Obstacle at map({ox:.3f}, {oy:.3f}), dist_path={dp:.3f}m, dist_robot={dr:.3f}m."
                         )
                         self._last_block_log_time = now

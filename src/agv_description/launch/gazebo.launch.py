@@ -19,10 +19,17 @@ def launch_setup(context, *args, **kwargs):
     else:
         cand = os.path.join(pkg_path, 'worlds', world_val)
         if not os.path.exists(cand):
-            src_cand = os.path.join(
-                os.path.expanduser('~'), 'AMR', 'AMR-main', 'src', 'agv_description', 'worlds', world_val
-            )
-            world_file = src_cand if os.path.exists(src_cand) else cand
+            candidates_ws = [os.environ.get('AMR_WS')] if os.environ.get('AMR_WS') else []
+            candidates_ws.extend([
+                os.path.join(os.path.expanduser('~'), 'AMR', 'AMR-main'),
+                os.path.join(os.path.expanduser('~'), 'AMR'),
+            ])
+            world_file = cand
+            for ws in candidates_ws:
+                src_cand = os.path.join(ws, 'src', 'agv_description', 'worlds', world_val)
+                if os.path.exists(src_cand):
+                    world_file = src_cand
+                    break
         else:
             world_file = cand
 

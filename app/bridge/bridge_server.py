@@ -663,9 +663,24 @@ class SystemLaunchManager:
         self.runner_proc: Optional[subprocess.Popen] = None
         self.bt_proc: Optional[subprocess.Popen] = None
         self.graph_proc: Optional[subprocess.Popen] = None
+        self.nav_log = None
+        self.runner_log = None
+        self.bt_log = None
+        self.graph_log = None
         self.error_msg: Optional[str] = None
         self.lock = threading.Lock()
         self._worker_thread: Optional[threading.Thread] = None
+
+    @staticmethod
+    def _tail_log(filepath: str, max_lines: int = 5) -> str:
+        try:
+            if not os.path.exists(filepath):
+                return "(no log file found)"
+            with open(filepath, 'r', errors='replace') as f:
+                lines = [l.strip() for l in f.readlines() if l.strip()]
+                return " | ".join(lines[-max_lines:]) if lines else "(empty log)"
+        except Exception as e:
+            return f"(error reading log: {e})"
 
     def start(self, map_name: str = 'warehouse_01', world: Optional[str] = None, headless: bool = True, use_rviz: bool = False) -> dict:
         with self.lock:
@@ -728,14 +743,15 @@ class SystemLaunchManager:
                 f"ros2 launch agv_description navigation_launch.py map:={map_name} {world_arg} {headless_arg} {rviz_arg}"
             )
             logger.info(f"[SystemLaunchManager] Starting navigation_launch: {nav_cmd}")
+            self.nav_log = open('/tmp/amr_navigation.log', 'w')
             self.nav_proc = subprocess.Popen(
                 nav_cmd,
                 shell=True,
                 executable='/bin/bash',
                 cwd=str(self.ws_root),
                 preexec_fn=os.setsid,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stdout=self.nav_log,
+                stderr=subprocess.STDOUT
             )
 
             # Wait ~6.0s for Gazebo and map_server to start
@@ -744,7 +760,8 @@ class SystemLaunchManager:
                 if self.state == 'STOPPING':
                     return
                 if self.nav_proc.poll() is not None:
-                    raise RuntimeError("navigation_launch.py terminated unexpectedly")
+                    tail = self._tail_log('/tmp/amr_navigation.log')
+                    raise RuntimeError(f"navigation_launch.py terminated unexpectedly: {tail}")
 
             # 2. Launch route_runner
             with self.lock:
@@ -757,19 +774,23 @@ class SystemLaunchManager:
                 f"ros2 run agv_navigation route_runner --ros-args -p map_name:={map_name}"
             )
             logger.info("[SystemLaunchManager] Starting route_runner...")
+            self.runner_log = open('/tmp/amr_route_runner.log', 'w')
             self.runner_proc = subprocess.Popen(
                 runner_cmd,
                 shell=True,
                 executable='/bin/bash',
                 cwd=str(self.ws_root),
                 preexec_fn=os.setsid,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stdout=self.runner_log,
+                stderr=subprocess.STDOUT
             )
 
             time.sleep(2.0)
             if self.state == 'STOPPING':
                 return
+            if self.runner_proc.poll() is not None:
+                tail = self._tail_log('/tmp/amr_route_runner.log')
+                raise RuntimeError(f"route_runner terminated unexpectedly: {tail}")
 
             # 3. Launch bt_manager
             with self.lock:
@@ -782,14 +803,15 @@ class SystemLaunchManager:
                 f"ros2 run agv_navigation bt_manager --ros-args -p map_name:={map_name}"
             )
             logger.info("[SystemLaunchManager] Starting bt_manager...")
+            self.bt_log = open('/tmp/amr_bt_manager.log', 'w')
             self.bt_proc = subprocess.Popen(
                 bt_cmd,
                 shell=True,
                 executable='/bin/bash',
                 cwd=str(self.ws_root),
                 preexec_fn=os.setsid,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stdout=self.bt_log,
+                stderr=subprocess.STDOUT
             )
 
             # 4. Launch graph_visualizer
@@ -799,14 +821,15 @@ class SystemLaunchManager:
                 f"ros2 run agv_navigation graph_visualizer --ros-args -p map_name:={map_name}"
             )
             logger.info("[SystemLaunchManager] Starting graph_visualizer...")
+            self.graph_log = open('/tmp/amr_graph_visualizer.log', 'w')
             self.graph_proc = subprocess.Popen(
                 graph_cmd,
                 shell=True,
                 executable='/bin/bash',
                 cwd=str(self.ws_root),
                 preexec_fn=os.setsid,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stdout=self.graph_log,
+                stderr=subprocess.STDOUT
             )
 
             time.sleep(1.0)
@@ -867,6 +890,17 @@ class SystemLaunchManager:
                 except Exception as e:
                     logger.warning(f"[SystemLaunchManager] Error terminating {name}: {e}")
 
+        for log_f in [self.nav_log, self.runner_log, self.bt_log, self.graph_log]:
+            if log_f:
+                try:
+                    log_f.close()
+                except Exception:
+                    pass
+        self.nav_log = None
+        self.runner_log = None
+        self.bt_log = None
+        self.graph_log = None
+
         self.graph_proc = None
         self.bt_proc = None
         self.runner_proc = None
@@ -887,13 +921,19 @@ class SystemLaunchManager:
             if self.state == 'RUNNING':
                 if self.nav_proc and self.nav_proc.poll() is not None:
                     self.state = 'ERROR'
-                    self.error_msg = 'navigation_launch process terminated unexpectedly'
+                    tail = self._tail_log('/tmp/amr_navigation.log')
+                    self.error_msg = f'navigation_launch terminated: {tail}'
+                    logger.error(f"[SystemLaunchManager] {self.error_msg}")
                 elif self.runner_proc and self.runner_proc.poll() is not None:
                     self.state = 'ERROR'
-                    self.error_msg = 'route_runner process terminated unexpectedly'
+                    tail = self._tail_log('/tmp/amr_route_runner.log')
+                    self.error_msg = f'route_runner terminated: {tail}'
+                    logger.error(f"[SystemLaunchManager] {self.error_msg}")
                 elif self.bt_proc and self.bt_proc.poll() is not None:
                     self.state = 'ERROR'
-                    self.error_msg = 'bt_manager process terminated unexpectedly'
+                    tail = self._tail_log('/tmp/amr_bt_manager.log')
+                    self.error_msg = f'bt_manager terminated: {tail}'
+                    logger.error(f"[SystemLaunchManager] {self.error_msg}")
 
             uptime = round(time.time() - self.start_time, 1) if (self.start_time and self.state == 'RUNNING') else 0.0
 

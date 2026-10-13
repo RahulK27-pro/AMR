@@ -38,8 +38,20 @@ from ament_index_python.packages import get_package_share_directory
 
 def launch_setup(context, *args, **kwargs):
     pkg_agv = get_package_share_directory('agv_description')
-    ws_maps_dir = os.path.join(os.path.expanduser('~'), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps')
-    ws_worlds_dir = os.path.join(os.path.expanduser('~'), 'AMR', 'AMR-main', 'src', 'agv_description', 'worlds')
+    amr_ws = os.environ.get('AMR_WS')
+    candidates_ws = [amr_ws] if amr_ws else []
+    candidates_ws.extend([
+        os.path.join(os.path.expanduser('~'), 'AMR', 'AMR-main'),
+        os.path.join(os.path.expanduser('~'), 'AMR'),
+    ])
+    ws_dir = candidates_ws[0] if candidates_ws else os.path.join(os.path.expanduser('~'), 'AMR', 'AMR-main')
+    for c in candidates_ws:
+        if c and os.path.exists(os.path.join(c, 'src', 'agv_description', 'maps')):
+            ws_dir = c
+            break
+
+    ws_maps_dir = os.path.join(ws_dir, 'src', 'agv_description', 'maps')
+    ws_worlds_dir = os.path.join(ws_dir, 'src', 'agv_description', 'worlds')
 
     # Read user arguments
     map_input = LaunchConfiguration('map').perform(context).strip()
