@@ -48,13 +48,19 @@ def launch_setup(context, *args, **kwargs):
 
     # WSL2 requires software rendering via llvmpipe since there is no /dev/dri
     # OGRE2 in hardware mode causes [WARN:COPY MODE] and window crashes under WSL2
-    gazebo = ExecuteProcess(
-        cmd=gz_cmd,
-        additional_env={
+    # On native Linux / Raspberry Pi, forcing llvmpipe & GL 4.5 causes OpenGL crash
+    gz_env = {}
+    is_wsl = 'microsoft' in os.uname().release.lower() or os.path.exists('/proc/sys/fs/binfmt_misc/WSL')
+    if is_wsl:
+        gz_env = {
             'LIBGL_ALWAYS_SOFTWARE': '1',
             'GALLIUM_DRIVER': 'llvmpipe',
             'MESA_GL_VERSION_OVERRIDE': '4.5',
-        },
+        }
+
+    gazebo = ExecuteProcess(
+        cmd=gz_cmd,
+        additional_env=gz_env if gz_env else None,
         output='screen'
     )
 

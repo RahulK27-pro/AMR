@@ -771,7 +771,7 @@ class SystemLaunchManager:
             runner_cmd = (
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 run agv_navigation route_runner --ros-args -p map_name:={map_name}"
+                f"ros2 run agv_navigation route_runner --ros-args -p map_name:={map_name} -p use_sim_time:=true"
             )
             logger.info("[SystemLaunchManager] Starting route_runner...")
             self.runner_log = open('/tmp/amr_route_runner.log', 'w')
@@ -800,7 +800,7 @@ class SystemLaunchManager:
             bt_cmd = (
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 run agv_navigation bt_manager --ros-args -p map_name:={map_name}"
+                f"ros2 run agv_navigation bt_manager --ros-args -p map_name:={map_name} -p use_sim_time:=true"
             )
             logger.info("[SystemLaunchManager] Starting bt_manager...")
             self.bt_log = open('/tmp/amr_bt_manager.log', 'w')
@@ -818,7 +818,7 @@ class SystemLaunchManager:
             graph_cmd = (
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 run agv_navigation graph_visualizer --ros-args -p map_name:={map_name}"
+                f"ros2 run agv_navigation graph_visualizer --ros-args -p map_name:={map_name} -p use_sim_time:=true"
             )
             logger.info("[SystemLaunchManager] Starting graph_visualizer...")
             self.graph_log = open('/tmp/amr_graph_visualizer.log', 'w')
