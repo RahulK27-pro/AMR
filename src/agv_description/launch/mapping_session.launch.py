@@ -58,14 +58,13 @@ def launch_setup(context, *args, **kwargs):
 
     gz_cmd = ['gz', 'sim', '-r', '-v', '2', world_file]
     if headless_val:
-        gz_cmd.insert(2, '-s')
+        gz_cmd[2:2] = ['-s', '--headless-rendering']
 
     gazebo = ExecuteProcess(
         cmd=gz_cmd,
         additional_env={
             'LIBGL_ALWAYS_SOFTWARE': '1',
-            'GALLIUM_DRIVER': 'llvmpipe',
-            'MESA_GL_VERSION_OVERRIDE': '4.5',
+            'MESA_GL_VERSION_OVERRIDE': '3.3',
         },
         condition=IfCondition(LaunchConfiguration('run_sim')),
         output='screen'

@@ -114,7 +114,7 @@ def run_diagnostics():
     # 2. Process / Process List
     print("\n[2] PROCESSES RUNNING ON SYSTEM")
     processes = [
-        ("Gazebo Sim", ["gz sim", "ruby"]),
+        ("Gazebo Sim", ["gz sim", "gz-sim", "ruby"]),
         ("ros_gz_bridge", ["parameter_bridge"]),
         ("Robot State Pub", ["robot_state_publisher"]),
         ("EKF Node", ["ekf_node"]),

@@ -43,7 +43,7 @@ def launch_setup(context, *args, **kwargs):
 
     gz_cmd = ['gz', 'sim']
     if headless.lower() in ('true', '1'):
-        gz_cmd.append('-s')
+        gz_cmd.extend(['-s', '--headless-rendering'])
     gz_cmd.extend(['-r', '-v', '2', world_file])
 
     # For headless rendering & environments without desktop OpenGL 3.3 GPU (Raspberry Pi, WSL2):
