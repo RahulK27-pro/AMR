@@ -37,6 +37,7 @@ if os.environ.get('RMW_IMPLEMENTATION') != 'rmw_cyclonedds_cpp':
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, qos_profile_sensor_data
 from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import Odometry, OccupancyGrid
 from sensor_msgs.msg import LaserScan
@@ -68,13 +69,15 @@ class AMRDiagnostics(Node):
         self.last_state = "UNKNOWN"
         self.last_cmd_vel = None
 
+        latched_qos = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL, reliability=QoSReliabilityPolicy.RELIABLE)
+
         # Subscribers
         self.create_subscription(Clock, '/clock', lambda m: self._count('/clock'), 10)
         self.create_subscription(Odometry, '/odom', lambda m: self._count('/odom'), 10)
-        self.create_subscription(LaserScan, '/scan', lambda m: self._count('/scan'), 10)
+        self.create_subscription(LaserScan, '/scan', lambda m: self._count('/scan'), qos_profile_sensor_data)
         self.create_subscription(Odometry, '/odometry/filtered', lambda m: self._count('/odometry/filtered'), 10)
-        self.create_subscription(OccupancyGrid, '/map', lambda m: self._count('/map'), 10)
-        self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', lambda m: self._count('/amcl_pose'), 10)
+        self.create_subscription(OccupancyGrid, '/map', lambda m: self._count('/map'), latched_qos)
+        self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', lambda m: self._count('/amcl_pose'), latched_qos)
         self.create_subscription(Twist, '/cmd_vel', self._cmd_cb, 10)
         self.create_subscription(String, '/agv_state', self._state_cb, 10)
 

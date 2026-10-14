@@ -53,6 +53,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, qos_profile_sensor_data
 from geometry_msgs.msg import Twist, PoseStamped, PoseWithCovarianceStamped, Quaternion
 from nav_msgs.msg import Odometry, Path as NavPath, OccupancyGrid
 from sensor_msgs.msg import LaserScan, Imu
@@ -344,6 +345,8 @@ class MappingManager:
             rviz_flag = 'true' if use_rviz else 'false'
 
             cmd = (
+                f"export LIBGL_ALWAYS_SOFTWARE=1 && "
+                f"export MESA_GL_VERSION_OVERRIDE=3.3 && "
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
                 f"ros2 launch agv_description mapping_session.launch.py "
@@ -352,14 +355,15 @@ class MappingManager:
             )
             logger.info(f"[MappingManager] Starting mapping_session: {cmd}")
             try:
+                self.mapping_log = open('/tmp/amr_mapping.log', 'w')
                 self.proc = subprocess.Popen(
                     cmd,
                     shell=True,
                     executable='/bin/bash',
                     cwd=str(self.ws_root),
                     preexec_fn=os.setsid,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stdout=self.mapping_log,
+                    stderr=subprocess.STDOUT
                 )
             except Exception as e:
                 logger.error(f"[MappingManager] Failed to launch mapping_session: {e}")
@@ -984,21 +988,23 @@ class AmrBridgeNode(Node):
         self.obstacle_cmd_pub = self.create_publisher(Twist,                      '/dynamic_obstacle/cmd_vel', 10)
         self.explore_resume_pub = self.create_publisher(Bool,                     '/explore/resume', 10)
 
+        latched_map_qos = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL, reliability=QoSReliabilityPolicy.RELIABLE)
+
         # --- Subscribers ---
         self.create_subscription(Odometry,      '/dynamic_obstacle/odom', self._obstacle_odom_cb, 10)
         self.create_subscription(Odometry,      '/odometry/filtered', self._odom_cb,    10)
-        self.create_subscription(LaserScan,     '/scan',              self._scan_cb,    10)
+        self.create_subscription(LaserScan,     '/scan',              self._scan_cb,    qos_profile_sensor_data)
         self.create_subscription(String,        '/agv_state',         self._state_cb,   10)
         self.create_subscription(NavPath,       '/agv_dense_path',    self._path_cb,    10)
         self.create_subscription(String,        '/obstacle_alert',    self._alert_cb,   10)
-        self.create_subscription(Imu,           '/imu/data',          self._imu_cb,     10)
+        self.create_subscription(Imu,           '/imu/data',          self._imu_cb,     qos_profile_sensor_data)
         self.create_subscription(String,        '/mission_progress',  self._mission_cb, 10)
         # AMCL pose — authoritative map-frame localization (replaces raw odom for pose display)
         self.create_subscription(
-            PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 10
+            PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, latched_map_qos
         )
         # Live /map subscription from SLAM Toolbox
-        self.create_subscription(OccupancyGrid, '/map', self._map_cb, 10)
+        self.create_subscription(OccupancyGrid, '/map', self._map_cb, latched_map_qos)
 
         # Exploration status & frontiers subscriptions
         if _EXPLORE_MSGS_AVAILABLE:
@@ -1112,6 +1118,10 @@ class AmrBridgeNode(Node):
         except Exception:
             pass
         active = getattr(self, 'active_map_name', None)
+        if active == 'warehouse_01':
+            return 'test1'
+        if active == 'warehouse_map':
+            return 'warehouse'
         return active if active else 'test1'
 
     def _obstacle_odom_cb(self, msg: Odometry):

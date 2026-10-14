@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from ament_index_python.packages import get_package_share_directory
 from nav_msgs.msg import Odometry, Path
 from geometry_msgs.msg import Twist, PoseStamped
@@ -31,7 +32,7 @@ class RouteRunner(Node):
         self.goal_sub = self.create_subscription(PoseStamped, '/goal_pose', self.goal_callback, 10)
         self.goal_sub_alt = self.create_subscription(PoseStamped, '/goal', self.goal_callback, 10)
         self.goal_sub_mb = self.create_subscription(PoseStamped, '/move_base_simple/goal', self.goal_callback, 10)
-        self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
+        self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, qos_profile_sensor_data)
         # Multi-goal sequence subscriber: expects JSON array of node IDs e.g. '["N5","N12","N40"]'
         self.seq_sub = self.create_subscription(String, '/goal_sequence', self.sequence_callback, 10)
         # App bridge: emergency-stop command from Flutter / web dashboard
