@@ -16,6 +16,7 @@ Usage:
 """
 
 import os
+import platform
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -44,6 +45,15 @@ def launch_setup(context, *args, **kwargs):
     with open(urdf_file, 'r') as f:
         robot_desc = f.read()
 
+    # Read multi-platform & rendering parameters
+    lidar_type_val = context.perform_substitution(LaunchConfiguration('lidar_type')).strip().lower()
+    software_rendering_val = context.perform_substitution(LaunchConfiguration('software_rendering')).strip().lower()
+
+    # Dynamic LiDAR type substitution for multi-platform / Pi support
+    if lidar_type_val != 'auto' and lidar_type_val in ('gpu_lidar', 'lidar'):
+        robot_desc = robot_desc.replace('type="gpu_lidar"', f'type="{lidar_type_val}"')
+        robot_desc = robot_desc.replace('type="lidar"', f'type="{lidar_type_val}"')
+
     # World file resolution
     world_val = context.perform_substitution(LaunchConfiguration('world')).strip()
     if not world_val.endswith('.world'):
@@ -60,12 +70,22 @@ def launch_setup(context, *args, **kwargs):
     if headless_val:
         gz_cmd[2:2] = ['-s', '--headless-rendering']
 
+    # Platform Auto-Detection for Software vs Hardware Rendering:
+    if software_rendering_val == 'auto':
+        is_wsl = 'microsoft' in platform.release().lower()
+        is_arm = platform.machine() in ('aarch64', 'armv7l', 'arm64')
+        use_software = is_wsl or is_arm or headless_val
+    else:
+        use_software = software_rendering_val in ('true', '1')
+
+    gz_env = {}
+    if use_software:
+        gz_env['LIBGL_ALWAYS_SOFTWARE'] = '1'
+        gz_env['MESA_GL_VERSION_OVERRIDE'] = '3.3'
+
     gazebo = ExecuteProcess(
         cmd=gz_cmd,
-        additional_env={
-            'LIBGL_ALWAYS_SOFTWARE': '1',
-            'MESA_GL_VERSION_OVERRIDE': '3.3',
-        },
+        additional_env=gz_env if gz_env else None,
         condition=IfCondition(LaunchConfiguration('run_sim')),
         output='screen'
     )
@@ -265,6 +285,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'run_sim', default_value='true',
             description='Whether to start a new Gazebo simulation instance'
+        ),
+        DeclareLaunchArgument(
+            'lidar_type', default_value='auto',
+            description='LiDAR sensor type in URDF: "auto", "gpu_lidar", or "lidar"'
+        ),
+        DeclareLaunchArgument(
+            'software_rendering', default_value='auto',
+            description='Force Mesa software rendering for Gazebo: "auto" (detects WSL2/Pi), "true", or "false"'
         ),
         DeclareLaunchArgument(
             'run_explore', default_value='false',

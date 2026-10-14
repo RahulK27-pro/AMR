@@ -420,3 +420,59 @@ grep -E "\[BRAIN: GOAL_ARRIVAL\]|\[BRAIN: MISSION_EXEC\]" logs/route_runner_*.lo
 grep "\[DEVIATION ALERT\]" logs/route_runner_*.log
 ```
 
+---
+
+## Multi-Platform & Real Hardware Deployment Guide
+
+The navigation stack is fully automated to run seamlessly across:
+1. **Laptop / Desktop Linux (x86_64)** with hardware GPU acceleration.
+2. **WSL2 / Virtual Machines** with automated Mesa 3.3 software rendering.
+3. **Raspberry Pi (aarch64)** simulation or physical hardware.
+4. **Physical Robot Hardware** with real motor controllers and physical LiDAR.
+
+### 1. Simulation Across Any Platform (Laptop vs Raspberry Pi)
+
+You do **not** need to manually edit the URDF or change `gpu_lidar` to `lidar`. The launch files automatically handle platform detection and render configuration:
+
+```bash
+# Standard Launch (Auto-detects platform, GPU vs software Mesa, and sets LiDAR):
+ros2 launch agv_description navigation_launch.py
+
+# Explicit headless simulation:
+ros2 launch agv_description navigation_launch.py headless:=true use_rviz:=false
+
+# Manual overrides (if ever needed):
+# Force CPU LiDAR in Gazebo:
+ros2 launch agv_description navigation_launch.py lidar_type:=lidar
+
+# Force Mesa software rendering:
+ros2 launch agv_description navigation_launch.py software_rendering:=true
+```
+
+### 2. Physical Robot Deployment (Real Hardware Mode)
+
+When deploying to the real physical robot on a Raspberry Pi or onboard PC:
+- **No Gazebo or bridge is started.**
+- **`use_sim_time` is set to `false` automatically.**
+- Real motor encoders (`/odom`) and real IMU (`/imu/data`) are fused by EKF.
+- The physical LiDAR connects directly to `/scan` (with automatic `lidar_link` <-> `laser` TF alias).
+
+#### Step 1: Launch Navigation in Real Hardware Mode
+```bash
+ros2 launch agv_description navigation_launch.py sim:=false map:=warehouse_01 use_rviz:=false
+```
+
+#### Step 2: Launch Real LiDAR and Motor Drivers
+Launch your physical robot's motor driver (publishing `/odom` and subscribing to `/cmd_vel`) and physical LiDAR driver (e.g. `sllidar_ros2`, `rplidar_ros`, or `ldlidar_stl_ros2` publishing to `/scan`).
+
+#### Step 3: Run Route Runner on Real Robot
+```bash
+ros2 run agv_navigation route_runner --ros-args -p use_sim_time:=false
+```
+
+#### Step 4: Run Real-Robot System Diagnostics
+```bash
+python3 diagnose_system.py --real
+```
+
+
