@@ -37,11 +37,6 @@ cat <<EOF > "$CFG_FILE"
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
-    <General>
-      <Interfaces>
-        <NetworkInterface name="auto" multicast="default" />
-      </Interfaces>
-    </General>
     <Discovery>
       <Peers>
         <Peer Address="$PI_IP"/>
