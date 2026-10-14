@@ -68,7 +68,9 @@ def launch_setup(context, *args, **kwargs):
 
     gz_cmd = ['gz', 'sim', '-r', '-v', '2', world_file]
     if headless_val:
-        gz_cmd[2:2] = ['-s', '--headless-rendering']
+        gz_cmd.insert(2, '-s')
+        if not (platform.machine() in ('aarch64', 'armv7l', 'arm64')):
+            gz_cmd.insert(3, '--headless-rendering')
 
     # Platform Auto-Detection for Software vs Hardware Rendering:
     if software_rendering_val == 'auto':

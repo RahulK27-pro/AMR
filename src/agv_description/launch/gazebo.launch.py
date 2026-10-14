@@ -52,7 +52,10 @@ def launch_setup(context, *args, **kwargs):
 
     gz_cmd = ['gz', 'sim']
     if headless.lower() in ('true', '1'):
-        gz_cmd.extend(['-s', '--headless-rendering'])
+        gz_cmd.append('-s')
+        # Do not use --headless-rendering on ARM/Raspberry Pi (causes Ogre2 EGL SIGSEGV exit code -11)
+        if not (platform.machine() in ('aarch64', 'armv7l', 'arm64')):
+            gz_cmd.append('--headless-rendering')
     gz_cmd.extend(['-r', '-v', '2', world_file])
 
     # Platform Auto-Detection for Software vs Hardware Rendering:

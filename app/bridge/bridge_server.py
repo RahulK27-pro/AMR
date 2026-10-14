@@ -686,7 +686,7 @@ class SystemLaunchManager:
         except Exception as e:
             return f"(error reading log: {e})"
 
-    def start(self, map_name: str = 'warehouse_01', world: Optional[str] = None, headless: bool = True, use_rviz: bool = False) -> dict:
+    def start(self, map_name: str = 'warehouse_01', world: Optional[str] = None, headless: bool = True, use_rviz: bool = False, sim: Optional[bool] = None) -> dict:
         with self.lock:
             if self.state in ('STARTING', 'RUNNING'):
                 return {'ok': False, 'error': f'System is already {self.state.lower()}'}
@@ -695,7 +695,14 @@ class SystemLaunchManager:
             self.active_map = target_map
             self.state = 'STARTING'
             self.stage = 1
-            self.stage_text = f'1/3 Initializing simulation and map ({target_map})...'
+
+            if sim is None:
+                # Check environment variable AMR_SIM (default: true, set AMR_SIM=0 for real robot)
+                sim_env = os.environ.get('AMR_SIM', '').strip().lower()
+                sim = (sim_env not in ('0', 'false', 'no'))
+
+            mode_label = "simulation" if sim else "physical robot"
+            self.stage_text = f'1/3 Initializing {mode_label} and map ({target_map})...'
             self.start_time = time.time()
             self.error_msg = None
 
@@ -711,14 +718,14 @@ class SystemLaunchManager:
 
             self._worker_thread = threading.Thread(
                 target=self._start_sequence,
-                args=(target_map, world, headless, use_rviz),
+                args=(target_map, world, headless, use_rviz, sim),
                 daemon=True
             )
             self._worker_thread.start()
 
-            return {'ok': True, 'state': self.state, 'map_name': target_map}
+            return {'ok': True, 'state': self.state, 'map_name': target_map, 'sim': sim}
 
-    def _start_sequence(self, map_name: str, world: Optional[str], headless: bool = True, use_rviz: bool = False):
+    def _start_sequence(self, map_name: str, world: Optional[str], headless: bool = True, use_rviz: bool = False, sim: bool = True):
         try:
             # Stop any active mapping session first
             if 'mapping_mgr' in globals() and globals()['mapping_mgr'] is not None:
@@ -741,14 +748,17 @@ class SystemLaunchManager:
             world_arg = f"world:={world}" if world else ""
             headless_arg = f"headless:={'true' if headless else 'false'}"
             rviz_arg = f"use_rviz:={'true' if use_rviz else 'false'}"
+            sim_arg = f"sim:={'true' if sim else 'false'}"
+            sim_time_val = "true" if sim else "false"
+
             nav_cmd = (
                 f"export LIBGL_ALWAYS_SOFTWARE=1 && "
                 f"export MESA_GL_VERSION_OVERRIDE=3.3 && "
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 launch agv_description navigation_launch.py map:={map_name} {world_arg} {headless_arg} {rviz_arg}"
+                f"ros2 launch agv_description navigation_launch.py map:={map_name} {world_arg} {headless_arg} {rviz_arg} {sim_arg}"
             )
-            logger.info(f"[SystemLaunchManager] Starting navigation_launch: {nav_cmd}")
+            logger.info(f"[SystemLaunchManager] Starting navigation_launch (sim={sim}): {nav_cmd}")
             self.nav_log = open('/tmp/amr_navigation.log', 'w')
             self.nav_proc = subprocess.Popen(
                 nav_cmd,
@@ -777,9 +787,9 @@ class SystemLaunchManager:
             runner_cmd = (
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 run agv_navigation route_runner --ros-args -p map_name:={map_name} -p use_sim_time:=true"
+                f"ros2 run agv_navigation route_runner --ros-args -p map_name:={map_name} -p use_sim_time:={sim_time_val}"
             )
-            logger.info("[SystemLaunchManager] Starting route_runner...")
+            logger.info(f"[SystemLaunchManager] Starting route_runner (use_sim_time={sim_time_val})...")
             self.runner_log = open('/tmp/amr_route_runner.log', 'w')
             self.runner_proc = subprocess.Popen(
                 runner_cmd,
@@ -806,9 +816,9 @@ class SystemLaunchManager:
             bt_cmd = (
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 run agv_navigation bt_manager --ros-args -p map_name:={map_name} -p use_sim_time:=true"
+                f"ros2 run agv_navigation bt_manager --ros-args -p map_name:={map_name} -p use_sim_time:={sim_time_val}"
             )
-            logger.info("[SystemLaunchManager] Starting bt_manager...")
+            logger.info(f"[SystemLaunchManager] Starting bt_manager (use_sim_time={sim_time_val})...")
             self.bt_log = open('/tmp/amr_bt_manager.log', 'w')
             self.bt_proc = subprocess.Popen(
                 bt_cmd,
@@ -824,7 +834,7 @@ class SystemLaunchManager:
             graph_cmd = (
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 run agv_navigation graph_visualizer --ros-args -p map_name:={map_name} -p use_sim_time:=true"
+                f"ros2 run agv_navigation graph_visualizer --ros-args -p map_name:={map_name} -p use_sim_time:={sim_time_val}"
             )
             logger.info("[SystemLaunchManager] Starting graph_visualizer...")
             self.graph_log = open('/tmp/amr_graph_visualizer.log', 'w')
@@ -968,10 +978,11 @@ system_mgr = SystemLaunchManager(_WORKSPACE_ROOT)
 
 class AmrBridgeNode(Node):
     def __init__(self):
+        use_sim = os.environ.get('AMR_SIM', '1').strip().lower() not in ('0', 'false', 'no')
         super().__init__(
             'amr_web_bridge',
             parameter_overrides=[
-                rclpy.parameter.Parameter('use_sim_time', rclpy.parameter.Parameter.Type.BOOL, True)
+                rclpy.parameter.Parameter('use_sim_time', rclpy.parameter.Parameter.Type.BOOL, use_sim)
             ]
         )
         try:
@@ -1830,6 +1841,7 @@ class SystemStartRequest(BaseModel):
     world: Optional[str] = None
     headless: bool = True
     use_rviz: bool = False
+    sim: Optional[bool] = None
 
 class StartMappingRequest(BaseModel):
     map_name: str = 'warehouse_01'
@@ -2910,7 +2922,7 @@ async def post_system_start(req: SystemStartRequest):
     curr_map = (req.map_name or (node.active_map_name if node else None) or 'warehouse_01').strip()
     if node:
         node.set_active_map(curr_map)
-    return system_mgr.start(map_name=curr_map, world=req.world, headless=req.headless, use_rviz=req.use_rviz)
+    return system_mgr.start(map_name=curr_map, world=req.world, headless=req.headless, use_rviz=req.use_rviz, sim=req.sim)
 
 
 @app.post('/api/system/stop')
