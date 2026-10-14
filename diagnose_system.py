@@ -52,9 +52,9 @@ except ImportError:
     _TF2 = False
 
 class AMRDiagnostics(Node):
-    def __init__(self, use_sim_time: bool = True):
+    def __init__(self):
         super().__init__('amr_diagnostics', parameter_overrides=[
-            rclpy.parameter.Parameter('use_sim_time', rclpy.parameter.Parameter.Type.BOOL, use_sim_time)
+            rclpy.parameter.Parameter('use_sim_time', rclpy.parameter.Parameter.Type.BOOL, True)
         ])
         self.counts = {
             '/clock': 0,
@@ -100,23 +100,17 @@ class AMRDiagnostics(Node):
         self.last_state = msg.data
 
 def run_diagnostics():
-    is_real = '--real' in sys.argv or '--hardware' in sys.argv or '--no-sim' in sys.argv
-    use_sim = not is_real
-
     rclpy.init()
-    diag = AMRDiagnostics(use_sim_time=use_sim)
+    diag = AMRDiagnostics()
 
-    mode_str = "PHYSICAL ROBOT HARDWARE" if is_real else "GAZEBO SIMULATION"
     print("=" * 68)
-    print(f"       AMR COMPLETE SYSTEM DIAGNOSTIC REPORT ({mode_str})")
+    print("       AMR COMPLETE SYSTEM DIAGNOSTIC REPORT")
     print("=" * 68)
 
     # 1. Environment Check
     print("\n[1] ROS 2 ENVIRONMENT")
     domain = os.environ.get('ROS_DOMAIN_ID', 'unset')
     rmw = os.environ.get('RMW_IMPLEMENTATION', 'unset')
-    print(f"  • Mode:              {mode_str}")
-    print(f"  • use_sim_time:      {use_sim}")
     print(f"  • ROS_DOMAIN_ID:     {domain} " + ("✅ (Matches stack: 7)" if domain == '7' else "❌ (MISMATCH: expected 7)"))
     print(f"  • RMW_IMPLEMENTATION: {rmw}")
 

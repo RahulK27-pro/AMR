@@ -54,16 +54,6 @@ def launch_setup(context, *args, **kwargs):
     ws_worlds_dir = os.path.join(ws_dir, 'src', 'agv_description', 'worlds')
 
     # Read user arguments
-    sim_val = LaunchConfiguration('sim').perform(context).strip().lower() in ('true', '1')
-    use_sim_time_input = LaunchConfiguration('use_sim_time').perform(context).strip().lower()
-    if use_sim_time_input == 'auto':
-        use_sim_time_val = sim_val
-    else:
-        use_sim_time_val = use_sim_time_input in ('true', '1')
-
-    lidar_type_val = LaunchConfiguration('lidar_type').perform(context).strip().lower()
-    software_rendering_val = LaunchConfiguration('software_rendering').perform(context).strip().lower()
-
     map_input = LaunchConfiguration('map').perform(context).strip()
     world_input = LaunchConfiguration('world').perform(context).strip()
     headless_val = LaunchConfiguration('headless').perform(context).strip()
@@ -93,44 +83,43 @@ def launch_setup(context, *args, **kwargs):
 
     map_stem = os.path.splitext(os.path.basename(map_yaml_file))[0]
 
-    # ── 2. Resolve Gazebo World (Only used in simulation) ─────────────
-    world_file = ""
-    if sim_val:
-        if world_input and world_input != 'auto':
-            w_clean = world_input if (world_input.endswith('.world') or world_input.endswith('.sdf')) else f'{world_input}.world'
-            if os.path.isabs(w_clean):
-                world_file = w_clean
-            else:
-                w_candidates = [
-                    os.path.join(pkg_agv, 'worlds', w_clean),
-                    os.path.join(ws_worlds_dir, w_clean),
-                ]
-                world_file = w_candidates[0]
-                for wc in w_candidates:
-                    if os.path.exists(wc):
-                        world_file = wc
-                        break
+    # ── 2. Resolve Gazebo World ───────────────────────────────────────
+    if world_input and world_input != 'auto':
+        w_clean = world_input if (world_input.endswith('.world') or world_input.endswith('.sdf')) else f'{world_input}.world'
+        if os.path.isabs(w_clean):
+            world_file = w_clean
         else:
-            # Automatic Pairing:
-            # warehouse_01 -> test1.world
-            # warehouse_map -> warehouse.world
-            if map_stem == 'warehouse_01':
-                target_world_name = 'test1.world'
-            elif map_stem == 'warehouse_map':
-                target_world_name = 'warehouse.world'
-            else:
-                matching = os.path.join(pkg_agv, 'worlds', f'{map_stem}.world')
-                target_world_name = f'{map_stem}.world' if os.path.exists(matching) else 'warehouse.world'
-
             w_candidates = [
-                os.path.join(pkg_agv, 'worlds', target_world_name),
-                os.path.join(ws_worlds_dir, target_world_name),
+                os.path.join(pkg_agv, 'worlds', w_clean),
+                os.path.join(ws_worlds_dir, w_clean),
             ]
             world_file = w_candidates[0]
             for wc in w_candidates:
                 if os.path.exists(wc):
                     world_file = wc
                     break
+    else:
+        # Automatic Pairing:
+        # warehouse_01 -> test1.world
+        # warehouse_map -> warehouse.world
+        if map_stem == 'warehouse_01':
+            target_world_name = 'test1.world'
+        elif map_stem == 'warehouse_map':
+            target_world_name = 'warehouse.world'
+        else:
+            # Check if matching world exists
+            matching = os.path.join(pkg_agv, 'worlds', f'{map_stem}.world')
+            target_world_name = f'{map_stem}.world' if os.path.exists(matching) else 'warehouse.world'
+
+        w_candidates = [
+            os.path.join(pkg_agv, 'worlds', target_world_name),
+            os.path.join(ws_worlds_dir, target_world_name),
+        ]
+        world_file = w_candidates[0]
+        for wc in w_candidates:
+            if os.path.exists(wc):
+                world_file = wc
+                break
 
     # ── 3. Synchronize Active Graph Roadmap for route_runner/bt_manager ─
     src_graph = os.path.join(ws_maps_dir, f'{map_stem}_graph.json')
@@ -147,74 +136,31 @@ def launch_setup(context, *args, **kwargs):
                 print(f"[navigation_launch] Notice: Could not sync graph to {dest_graph}: {e}")
 
     # ── Log Configuration ─────────────────────────────────────────────
-    mode_str = "GAZEBO SIMULATION" if sim_val else "PHYSICAL ROBOT HARDWARE"
     print("=" * 65)
-    print(f"  [AMR Navigation Launch — Mode: {mode_str}]")
-    print(f"  Active Map:        {map_stem} ({map_yaml_file})")
-    if sim_val:
-        print(f"  Gazebo World:      {os.path.basename(world_file)} ({world_file})")
-        print(f"  LiDAR Type:        {lidar_type_val}")
-        print(f"  Software Render:   {software_rendering_val}")
-    print(f"  use_sim_time:      {use_sim_time_val}")
-    print(f"  RViz2 Enabled:     {use_rviz_val}")
+    print("  [AMR Navigation Launch]")
+    print(f"  Active Map:    {map_stem} ({map_yaml_file})")
+    print(f"  Gazebo World:  {os.path.basename(world_file)} ({world_file})")
+    print(f"  RViz2 Enabled: {use_rviz_val}")
     print("=" * 65)
 
     # ── Config files ──────────────────────────────────────────────────
     nav2_params_file = os.path.join(pkg_agv, 'config', 'nav2_params.yaml')
     rviz_config_file = os.path.join(pkg_agv, 'config', 'agv_nav.rviz')
-    ekf_file = os.path.join(pkg_agv, 'config', 'ekf.yaml')
-    urdf_file = os.path.join(pkg_agv, 'urdf', 'warehouse_agv.urdf')
 
-    launch_actions = []
+    # ── 4. Gazebo + Bridge + RSP + EKF ────────────────────────────────
+    gazebo_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_agv, 'launch', 'gazebo.launch.py')
+        ),
+        launch_arguments={
+            'world': world_file,
+            'headless': headless_val,
+        }.items(),
+    )
 
-    # ── 4. Simulation vs Physical Hardware Bringup ─────────────────────
-    if sim_val:
-        gazebo_launch = IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(pkg_agv, 'launch', 'gazebo.launch.py')
-            ),
-            launch_arguments={
-                'world': world_file,
-                'headless': headless_val,
-                'lidar_type': lidar_type_val,
-                'software_rendering': software_rendering_val,
-            }.items(),
-        )
-        launch_actions.append(gazebo_launch)
-    else:
-        # Physical Robot Mode: Load URDF description, start RSP, EKF, and LiDAR frame alias
-        with open(urdf_file, 'r') as infp:
-            robot_desc = infp.read()
-
-        rsp_node = Node(
-            package='robot_state_publisher',
-            executable='robot_state_publisher',
-            name='robot_state_publisher',
-            parameters=[{'robot_description': robot_desc, 'use_sim_time': use_sim_time_val}],
-            output='screen',
-        )
-        ekf_node = Node(
-            package='robot_localization',
-            executable='ekf_node',
-            name='ekf_filter_node',
-            parameters=[ekf_file, {'use_sim_time': use_sim_time_val}],
-            output='screen',
-        )
-        # Static TF alias: connects 'laser' frame to 'lidar_link' so real hardware
-        # drivers publishing in either frame work out-of-the-box
-        laser_alias_tf = Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='lidar_link_to_laser_alias',
-            arguments=['--x', '0', '--y', '0', '--z', '0', '--yaw', '0', '--pitch', '0', '--roll', '0',
-                       '--frame-id', 'lidar_link', '--child-frame-id', 'laser'],
-        )
-        launch_actions.extend([rsp_node, ekf_node, laser_alias_tf])
-
-    # ── 5. Localization: map_server + AMCL + lifecycle_manager ────────
-    localization_period = 5.0 if sim_val else 1.0
+    # ── 5. Localization only: map_server + AMCL + lifecycle_manager ────
     localization_launch = TimerAction(
-        period=localization_period,
+        period=5.0,
         actions=[
             Node(
                 package='nav2_map_server',
@@ -224,7 +170,7 @@ def launch_setup(context, *args, **kwargs):
                     nav2_params_file,
                     {
                         'yaml_filename': map_yaml_file,
-                        'use_sim_time': use_sim_time_val,
+                        'use_sim_time': True,
                     },
                 ],
                 output='screen',
@@ -233,7 +179,7 @@ def launch_setup(context, *args, **kwargs):
                 package='nav2_amcl',
                 executable='amcl',
                 name='amcl',
-                parameters=[nav2_params_file, {'use_sim_time': use_sim_time_val}],
+                parameters=[nav2_params_file, {'use_sim_time': True}],
                 remappings=[('/initialpose', '/initialpose')],
                 output='screen',
             ),
@@ -242,7 +188,7 @@ def launch_setup(context, *args, **kwargs):
                 executable='lifecycle_manager',
                 name='lifecycle_manager_localization',
                 parameters=[{
-                    'use_sim_time': use_sim_time_val,
+                    'use_sim_time': True,
                     'autostart': True,
                     'node_names': ['map_server', 'amcl'],
                     'bond_timeout': 0.0,
@@ -251,54 +197,31 @@ def launch_setup(context, *args, **kwargs):
             ),
         ]
     )
-    launch_actions.append(localization_launch)
 
     # ── 6. RViz2 with Nav2 panels ─────────────────────────────────────
-    rviz_period = 7.0 if sim_val else 2.0
     rviz_node = TimerAction(
-        period=rviz_period,
+        period=7.0,
         actions=[
             Node(
                 package='rviz2',
                 executable='rviz2',
                 name='rviz2',
                 arguments=['-d', rviz_config_file],
-                parameters=[{'use_sim_time': use_sim_time_val}],
+                parameters=[{'use_sim_time': True}],
                 condition=IfCondition(LaunchConfiguration('use_rviz')),
                 output='screen',
             )
         ]
     )
-    launch_actions.append(rviz_node)
 
-    return launch_actions
+    return [
+        gazebo_launch,
+        localization_launch,
+        rviz_node,
+    ]
 
 
 def generate_launch_description():
-    sim_arg = DeclareLaunchArgument(
-        'sim',
-        default_value='true',
-        description='Launch Gazebo simulation (true) or physical robot hardware (false)'
-    )
-
-    use_sim_time_arg = DeclareLaunchArgument(
-        'use_sim_time',
-        default_value='auto',
-        description='Use simulation clock: "auto" (true if sim else false), "true", or "false"'
-    )
-
-    lidar_type_arg = DeclareLaunchArgument(
-        'lidar_type',
-        default_value='auto',
-        description='LiDAR sensor type in URDF: "auto", "gpu_lidar", or "lidar"'
-    )
-
-    software_rendering_arg = DeclareLaunchArgument(
-        'software_rendering',
-        default_value='auto',
-        description='Force software Mesa rendering for Gazebo: "auto" (detects WSL2/Pi), "true", or "false"'
-    )
-
     map_arg = DeclareLaunchArgument(
         'map',
         default_value='warehouse_01',
@@ -324,10 +247,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        sim_arg,
-        use_sim_time_arg,
-        lidar_type_arg,
-        software_rendering_arg,
         map_arg,
         world_arg,
         headless_arg,
