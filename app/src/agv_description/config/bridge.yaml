@@ -13,12 +13,6 @@
   direction: GZ_TO_ROS
   throttle_hz: 30
 
-- ros_topic_name: /tf
-  gz_topic_name: /tf
-  ros_type_name: tf2_msgs/msg/TFMessage
-  gz_type_name: gz.msgs.Pose_V
-  direction: GZ_TO_ROS
-
 - ros_topic_name: /cmd_vel
   gz_topic_name: /cmd_vel
   ros_type_name: geometry_msgs/msg/Twist
@@ -32,8 +26,43 @@
   direction: GZ_TO_ROS
   throttle_hz: 10
 
+- ros_topic_name: /scan
+  gz_topic_name: /world/test1/model/warehouse_agv/link/base_link/sensor/laser/scan
+  ros_type_name: sensor_msgs/msg/LaserScan
+  gz_type_name: gz.msgs.LaserScan
+  direction: GZ_TO_ROS
+  throttle_hz: 10
+
+- ros_topic_name: /scan
+  gz_topic_name: /world/warehouse/model/warehouse_agv/link/base_link/sensor/laser/scan
+  ros_type_name: sensor_msgs/msg/LaserScan
+  gz_type_name: gz.msgs.LaserScan
+  direction: GZ_TO_ROS
+  throttle_hz: 10
+
+- ros_topic_name: /scan
+  gz_topic_name: /world/test1/model/warehouse_agv/link/lidar_link/sensor/laser/scan
+  ros_type_name: sensor_msgs/msg/LaserScan
+  gz_type_name: gz.msgs.LaserScan
+  direction: GZ_TO_ROS
+  throttle_hz: 10
+
+- ros_topic_name: /scan
+  gz_topic_name: /world/warehouse/model/warehouse_agv/link/lidar_link/sensor/laser/scan
+  ros_type_name: sensor_msgs/msg/LaserScan
+  gz_type_name: gz.msgs.LaserScan
+  direction: GZ_TO_ROS
+  throttle_hz: 10
+
 - ros_topic_name: /joint_states
   gz_topic_name: /world/warehouse/model/warehouse_agv/joint_state
+  ros_type_name: sensor_msgs/msg/JointState
+  gz_type_name: gz.msgs.Model
+  direction: GZ_TO_ROS
+  throttle_hz: 30
+
+- ros_topic_name: /joint_states
+  gz_topic_name: /world/test1/model/warehouse_agv/joint_state
   ros_type_name: sensor_msgs/msg/JointState
   gz_type_name: gz.msgs.Model
   direction: GZ_TO_ROS
@@ -46,14 +75,15 @@
   direction: GZ_TO_ROS
   throttle_hz: 50
 
-- ros_topic_name: /camera/image_raw
-  gz_topic_name: /camera/image_raw
-  ros_type_name: sensor_msgs/msg/Image
-  gz_type_name: gz.msgs.Image
-  direction: GZ_TO_ROS
-  
-- ros_topic_name: /camera/camera_info
-  gz_topic_name: /camera/camera_info
-  ros_type_name: sensor_msgs/msg/CameraInfo
-  gz_type_name: gz.msgs.CameraInfo
+
+- ros_topic_name: /dynamic_obstacle/cmd_vel
+  gz_topic_name: /dynamic_obstacle/cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: gz.msgs.Twist
+  direction: BIDIRECTIONAL
+
+- ros_topic_name: /dynamic_obstacle/odom
+  gz_topic_name: /dynamic_obstacle/odom
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
   direction: GZ_TO_ROS
