@@ -38,6 +38,7 @@ def generate_launch_description():
     pattern_arg = DeclareLaunchArgument('pattern', default_value='aisle_crossing', description='Patrol pattern')
     speed_arg = DeclareLaunchArgument('speed', default_value='0.35', description='Speed in m/s')
     run_controller_arg = DeclareLaunchArgument('run_controller', default_value='true', description='Run automated controller')
+    world_arg = DeclareLaunchArgument('world', default_value='test1', description='Gazebo world name')
 
     # Spawn obstacle into Gazebo Harmonic
     spawn_obstacle = Node(
@@ -47,6 +48,7 @@ def generate_launch_description():
         arguments=[
             '-name', LaunchConfiguration('name'),
             '-file', obstacle_sdf,
+            '-world', LaunchConfiguration('world'),
             '-x', LaunchConfiguration('x'),
             '-y', LaunchConfiguration('y'),
             '-z', LaunchConfiguration('z'),
@@ -74,6 +76,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        world_arg,
         x_arg,
         y_arg,
         z_arg,

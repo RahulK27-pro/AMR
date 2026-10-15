@@ -146,7 +146,7 @@ def run_diagnostics():
     print("\n[3] TOPIC MESSAGE SAMPLING (Measuring over 2.0s)...")
     start_t = time.time()
     while time.time() - start_t < 2.0:
-        rclpy.spin_once(diag, timeout_sec=0.1)
+        rclpy.spin_once(diag, timeout_sec=0.005)
 
     topics_info = [
         ("/clock", "Sim Clock (Gazebo)", 10.0),

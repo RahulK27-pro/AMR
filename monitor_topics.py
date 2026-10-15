@@ -280,8 +280,10 @@ def main():
 
     try:
         while rclpy.ok():
-            # Spin for 0.1s to pump callbacks
-            rclpy.spin_once(node, timeout_sec=0.1)
+            # Pump available callbacks rapidly so high-rate topics do not starve others
+            spin_start = time.time()
+            while time.time() - spin_start < 0.08:
+                rclpy.spin_once(node, timeout_sec=0.002)
 
             now = time.time()
             dt = now - last_hz_calc

@@ -46,12 +46,26 @@ def launch_setup(context, *args, **kwargs):
 
     # World file resolution
     world_val = context.perform_substitution(LaunchConfiguration('world')).strip()
-    if not world_val.endswith('.world'):
+    if not world_val.endswith('.world') and not world_val.endswith('.sdf'):
         world_val += '.world'
     if os.path.isabs(world_val):
         world_file = world_val
     else:
-        world_file = os.path.join(pkg_agv, 'worlds', world_val)
+        cand = os.path.join(pkg_agv, 'worlds', world_val)
+        if not os.path.exists(cand):
+            candidates_ws = [os.environ.get('AMR_WS')] if os.environ.get('AMR_WS') else []
+            candidates_ws.extend([
+                os.path.join(os.path.expanduser('~'), 'AMR', 'AMR-main'),
+                os.path.join(os.path.expanduser('~'), 'AMR'),
+            ])
+            world_file = cand
+            for ws in candidates_ws:
+                src_cand = os.path.join(ws, 'src', 'agv_description', 'worlds', world_val)
+                if os.path.exists(src_cand):
+                    world_file = src_cand
+                    break
+        else:
+            world_file = cand
 
     world_stem = os.path.splitext(os.path.basename(world_file))[0]
     headless_val = context.perform_substitution(LaunchConfiguration('headless')).lower() in ['true', '1']
