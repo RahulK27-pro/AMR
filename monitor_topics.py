@@ -278,10 +278,13 @@ def main():
 
     last_hz_calc = time.time()
 
+    executor = rclpy.executors.SingleThreadedExecutor()
+    executor.add_node(node)
+    spin_thread = threading.Thread(target=executor.spin, daemon=True)
+    spin_thread.start()
+
     try:
         while rclpy.ok():
-            # Spin for 0.1s to pump callbacks
-            rclpy.spin_once(node, timeout_sec=0.1)
 
             now = time.time()
             dt = now - last_hz_calc
@@ -360,6 +363,10 @@ def main():
     except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
         print("\n[Topic Monitor] Exiting cleanly...")
     finally:
+        try:
+            executor.shutdown()
+        except Exception:
+            pass
         node.destroy_node()
         if rclpy.ok():
             try:
