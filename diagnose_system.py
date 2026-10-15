@@ -21,7 +21,6 @@ import sys
 import time
 import subprocess
 import json
-import threading
 
 # Ensure ROS 2 environment
 if not os.environ.get('ROS_DISTRO'):
@@ -145,12 +144,9 @@ def run_diagnostics():
 
     # 3. Topic Rates Sampling (Sample for 2.0 seconds)
     print("\n[3] TOPIC MESSAGE SAMPLING (Measuring over 2.0s)...")
-    executor = rclpy.executors.SingleThreadedExecutor()
-    executor.add_node(diag)
-    spin_thread = threading.Thread(target=executor.spin, daemon=True)
-    spin_thread.start()
-    time.sleep(2.0)
-    executor.shutdown()
+    start_t = time.time()
+    while time.time() - start_t < 2.0:
+        rclpy.spin_once(diag, timeout_sec=0.1)
 
     topics_info = [
         ("/clock", "Sim Clock (Gazebo)", 10.0),

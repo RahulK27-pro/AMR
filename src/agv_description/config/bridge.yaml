@@ -27,19 +27,18 @@
   throttle_hz: 10
 
 - ros_topic_name: /scan
-  gz_topic_name: /world/test1/model/warehouse_agv/link/base_link/sensor/laser/scan
+  gz_topic_name: /world/test1/model/warehouse_agv/link/lidar_link/sensor/laser/scan
   ros_type_name: sensor_msgs/msg/LaserScan
   gz_type_name: gz.msgs.LaserScan
   direction: GZ_TO_ROS
   throttle_hz: 10
 
 - ros_topic_name: /scan
-  gz_topic_name: /world/warehouse/model/warehouse_agv/link/base_link/sensor/laser/scan
+  gz_topic_name: /world/warehouse/model/warehouse_agv/link/lidar_link/sensor/laser/scan
   ros_type_name: sensor_msgs/msg/LaserScan
   gz_type_name: gz.msgs.LaserScan
   direction: GZ_TO_ROS
   throttle_hz: 10
-
 
 - ros_topic_name: /joint_states
   gz_topic_name: /world/warehouse/model/warehouse_agv/joint_state
