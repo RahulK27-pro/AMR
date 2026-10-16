@@ -57,7 +57,16 @@ echo ""
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
 export RCUTILS_LOGGING_SEVERITY_THRESHOLD=ERROR
-export LIBGL_ALWAYS_SOFTWARE=1
-export MESA_GL_VERSION_OVERRIDE=3.3
+
+if [[ "$*" == *"--remote-sim"* ]] || [ "$AMR_REMOTE_SIM" = "1" ]; then
+    echo "=========================================================="
+    echo "  [MODE] Distributed Simulation Architecture (Option C)"
+    echo "  Gazebo Simulator runs on Laptop; Autonomy runs on Pi."
+    echo "=========================================================="
+    export AMR_REMOTE_SIM=1
+else
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export MESA_GL_VERSION_OVERRIDE=3.3
+fi
 
 python3 "$SCRIPT_DIR/bridge_server.py"

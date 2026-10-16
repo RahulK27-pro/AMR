@@ -114,36 +114,8 @@ def run_diagnostics():
     print(f"  • ROS_DOMAIN_ID:     {domain} " + ("✅ (Matches stack: 7)" if domain == '7' else "❌ (MISMATCH: expected 7)"))
     print(f"  • RMW_IMPLEMENTATION: {rmw}")
 
-    # 2. Process / Process List
-    print("\n[2] PROCESSES RUNNING ON SYSTEM")
-    processes = [
-        ("Gazebo Sim", ["gz sim", "gz-sim", "ruby"]),
-        ("ros_gz_bridge", ["parameter_bridge"]),
-        ("Robot State Pub", ["robot_state_publisher"]),
-        ("EKF Node", ["ekf_node"]),
-        ("Map Server", ["map_server"]),
-        ("AMCL", ["amcl"]),
-        ("Route Runner", ["route_runner"]),
-        ("BT Manager", ["bt_manager"]),
-        ("AMR Bridge Server", ["bridge_server.py"]),
-    ]
-    for name, patterns in processes:
-        running = False
-        pids = []
-        for pat in patterns:
-            try:
-                out = subprocess.check_output(['pgrep', '-f', pat]).decode().strip()
-                if out:
-                    pids.extend(out.split('\n'))
-                    running = True
-            except subprocess.CalledProcessError:
-                pass
-        pid_str = f"(PID {', '.join(set(pids))})" if running else ""
-        status = "✅ RUNNING" if running else "❌ NOT RUNNING"
-        print(f"  • {name:<20}: {status} {pid_str}")
-
-    # 3. Topic Rates Sampling (Sample for 2.0 seconds)
-    print("\n[3] TOPIC MESSAGE SAMPLING (Measuring over 2.0s)...")
+    # 2. Topic Rates Sampling (Sample for 2.0 seconds)
+    print("\n[2] TOPIC MESSAGE SAMPLING (Measuring over 2.0s)...")
     start_t = time.time()
     while time.time() - start_t < 2.0:
         rclpy.spin_once(diag, timeout_sec=0.005)
@@ -167,6 +139,41 @@ def run_diagnostics():
         else:
             status = "⚠️  IDLE / NO DATA" if min_expected == 0.0 else "❌ DEAD (0 Hz)"
         print(f"  • {topic:<22} ({desc:<26}): {status}")
+
+    # 3. Process / Process List
+    print("\n[3] PROCESSES RUNNING ON SYSTEM")
+    processes = [
+        ("Gazebo Sim", ["gz sim", "gz-sim", "ruby"]),
+        ("ros_gz_bridge", ["parameter_bridge"]),
+        ("Robot State Pub", ["robot_state_publisher"]),
+        ("EKF Node", ["ekf_node"]),
+        ("Map Server", ["map_server"]),
+        ("AMCL", ["amcl"]),
+        ("Route Runner", ["route_runner"]),
+        ("BT Manager", ["bt_manager"]),
+        ("AMR Bridge Server", ["bridge_server.py"]),
+    ]
+    for name, patterns in processes:
+        running = False
+        pids = []
+        for pat in patterns:
+            try:
+                out = subprocess.check_output(['pgrep', '-f', pat]).decode().strip()
+                if out:
+                    pids.extend(out.split('\n'))
+                    running = True
+            except subprocess.CalledProcessError:
+                pass
+        pid_str = f"(PID {', '.join(set(pids))})" if running else ""
+        if running:
+            status = f"✅ RUNNING {pid_str}"
+        elif name == "Gazebo Sim" and diag.counts.get('/clock', 0) > 0:
+            status = "✅ CONNECTED (Remote on Laptop over DDS)"
+        elif name == "ros_gz_bridge" and (diag.counts.get('/odom', 0) > 0 or diag.counts.get('/scan', 0) > 0):
+            status = "✅ CONNECTED (Remote on Laptop over DDS)"
+        else:
+            status = "❌ NOT RUNNING"
+        print(f"  • {name:<20}: {status}")
 
     # 4. TF Tree Verification
     print("\n[4] TF TRANSFORM TREE (Checking frames)")
@@ -226,8 +233,10 @@ def run_diagnostics():
             tf_ok = False
 
     if not clock_ok:
-        print("❌ CRITICAL: Gazebo /clock is NOT publishing!")
-        print("   Action: Gazebo crashed or failed to start. Check /tmp/amr_navigation.log above.")
+        print("❌ CRITICAL: Gazebo /clock is NOT streaming!")
+        print("   Action (Distributed Mode - Option C): Start simulation on Laptop:")
+        print("           ./launch_sim_laptop.sh 10.87.204.118")
+        print("   Action (Local Mode): Gazebo crashed or failed to start. Check /tmp/amr_navigation.log.")
     elif not scan_ok:
         print("❌ CRITICAL: LiDAR /scan is NOT publishing!")
         print("   Action: Gazebo sensor plugin failed or ros_gz_bridge is not bridging /scan.")
