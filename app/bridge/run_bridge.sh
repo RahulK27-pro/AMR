@@ -54,19 +54,45 @@ echo ""
 echo "Open web dashboard at:  http://localhost:5173"
 echo ""
 
-export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
-export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
-export RCUTILS_LOGGING_SEVERITY_THRESHOLD=ERROR
+# Parse optional Laptop IP argument
+LAPTOP_IP="10.87.204.140"
+for arg in "$@"; do
+    if [[ "$arg" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        LAPTOP_IP="$arg"
+    fi
+done
 
 if [[ "$*" == *"--remote-sim"* ]] || [ "$AMR_REMOTE_SIM" = "1" ]; then
     echo "=========================================================="
     echo "  [MODE] Distributed Simulation Architecture (Option C)"
-    echo "  Gazebo Simulator runs on Laptop; Autonomy runs on Pi."
+    echo "  Gazebo Simulator runs on Laptop ($LAPTOP_IP)"
+    echo "  Autonomy runs on Pi (Domain 7, CycloneDDS Unicast)"
     echo "=========================================================="
     export AMR_REMOTE_SIM=1
+
+    # 1. Generate CycloneDDS peer configuration
+    CFG_FILE="/tmp/cyclonedds_pi.xml"
+    cat <<EOF > "$CFG_FILE"
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="7">
+    <Discovery>
+      <Peers>
+        <Peer Address="$LAPTOP_IP"/>
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
+EOF
+
+    export ROS_DOMAIN_ID=7
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    export CYCLONEDDS_URI="file://$CFG_FILE"
+    echo "[bridge] CycloneDDS Unicast Peer configured -> $LAPTOP_IP"
 else
     export LIBGL_ALWAYS_SOFTWARE=1
     export MESA_GL_VERSION_OVERRIDE=3.3
 fi
 
 python3 "$SCRIPT_DIR/bridge_server.py"
+

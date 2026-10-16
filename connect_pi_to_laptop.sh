@@ -51,18 +51,38 @@ export CYCLONEDDS_URI="file://$CFG_FILE"
 export AMR_REMOTE_SIM=1
 
 echo "[OK] Configured CycloneDDS (Domain 7) with Unicast Peer -> $LAPTOP_IP"
-echo "[OK] Testing topic connection to Laptop..."
-sleep 1.0
+echo "[OK] Testing live message stream from Laptop @ $LAPTOP_IP..."
 
-TOPICS=$(ros2 topic list 2>/dev/null || true)
-if echo "$TOPICS" | grep -q "/clock"; then
+# Actually probe for live incoming /clock message from laptop
+CLOCK_RECEIVED=$(python3 -c "
+import rclpy, sys, time
+from rosgraph_msgs.msg import Clock
+
+rclpy.init()
+node = rclpy.create_node('clock_probe')
+got_msg = [False]
+def cb(msg): got_msg[0] = True
+sub = node.create_subscription(Clock, '/clock', cb, 10)
+
+t0 = time.time()
+while time.time() - t0 < 3.0 and not got_msg[0]:
+    rclpy.spin_once(node, timeout_sec=0.1)
+
+node.destroy_node()
+rclpy.shutdown()
+sys.exit(0 if got_msg[0] else 1)
+" 2>/dev/null && echo "YES" || echo "NO")
+
+if [ "$CLOCK_RECEIVED" = "YES" ]; then
     echo "✅ Successfully connected to Gazebo simulation on Laptop!"
-    echo "   Topics detected: /clock, /odom, /scan"
+    echo "   /clock is actively streaming from $LAPTOP_IP"
 else
-    echo "⚠️  Waiting for Laptop simulation..."
-    echo "   Ensure './launch_sim_laptop.sh' is STILL RUNNING on your laptop!"
+    echo "⚠️  Gazebo /clock is NOT streaming from $LAPTOP_IP yet."
+    echo "   Check: Did you start the simulation on your laptop?"
+    echo "          Run on Laptop: ./start_sim_background.sh $(hostname -I | awk '{print \$1}')"
 fi
 
 echo ""
 echo "Starting System Diagnostics..."
 python3 "$WS_DIR/diagnose_system.py"
+
