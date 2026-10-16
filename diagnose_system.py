@@ -114,34 +114,8 @@ def run_diagnostics():
     print(f"  • ROS_DOMAIN_ID:     {domain} " + ("✅ (Matches stack: 7)" if domain == '7' else "❌ (MISMATCH: expected 7)"))
     print(f"  • RMW_IMPLEMENTATION: {rmw}")
 
-    # 2. Topic Rates Sampling (Sample for 2.0 seconds)
-    print("\n[2] TOPIC MESSAGE SAMPLING (Measuring over 2.0s)...")
-    start_t = time.time()
-    while time.time() - start_t < 2.0:
-        rclpy.spin_once(diag, timeout_sec=0.005)
-
-    topics_info = [
-        ("/clock", "Sim Clock (Gazebo)", 10.0),
-        ("/odom", "Raw Odometry (Gazebo)", 5.0),
-        ("/scan", "LiDAR Scan (Gazebo)", 5.0),
-        ("/odometry/filtered", "Fused EKF Odometry", 5.0),
-        ("/map", "Occupancy Grid (Map Server)", 0.5),
-        ("/amcl_pose", "AMCL Pose Estimate", 0.0),
-        ("/cmd_vel", "Motor Velocities (Route Runner)", 0.0),
-        ("/agv_state", "Route Runner Nav State", 0.0),
-    ]
-
-    for topic, desc, min_expected in topics_info:
-        cnt = diag.counts.get(topic, 0)
-        hz = cnt / 2.0
-        if cnt > 0:
-            status = f"✅ ACTIVE ({hz:.1f} Hz)"
-        else:
-            status = "⚠️  IDLE / NO DATA" if min_expected == 0.0 else "❌ DEAD (0 Hz)"
-        print(f"  • {topic:<22} ({desc:<26}): {status}")
-
-    # 3. Process / Process List
-    print("\n[3] PROCESSES RUNNING ON SYSTEM")
+    # 2. Process / Process List
+    print("\n[2] PROCESSES RUNNING ON SYSTEM")
     processes = [
         ("Gazebo Sim", ["gz sim", "gz-sim", "ruby"]),
         ("ros_gz_bridge", ["parameter_bridge"]),
@@ -165,15 +139,34 @@ def run_diagnostics():
             except subprocess.CalledProcessError:
                 pass
         pid_str = f"(PID {', '.join(set(pids))})" if running else ""
-        if running:
-            status = f"✅ RUNNING {pid_str}"
-        elif name == "Gazebo Sim" and diag.counts.get('/clock', 0) > 0:
-            status = "✅ CONNECTED (Remote on Laptop over DDS)"
-        elif name == "ros_gz_bridge" and (diag.counts.get('/odom', 0) > 0 or diag.counts.get('/scan', 0) > 0):
-            status = "✅ CONNECTED (Remote on Laptop over DDS)"
+        status = "✅ RUNNING" if running else "❌ NOT RUNNING"
+        print(f"  • {name:<20}: {status} {pid_str}")
+
+    # 3. Topic Rates Sampling (Sample for 2.0 seconds)
+    print("\n[3] TOPIC MESSAGE SAMPLING (Measuring over 2.0s)...")
+    start_t = time.time()
+    while time.time() - start_t < 2.0:
+        rclpy.spin_once(diag, timeout_sec=0.005)
+
+    topics_info = [
+        ("/clock", "Sim Clock (Gazebo)", 10.0),
+        ("/odom", "Raw Odometry (Gazebo)", 5.0),
+        ("/scan", "LiDAR Scan (Gazebo)", 5.0),
+        ("/odometry/filtered", "Fused EKF Odometry", 5.0),
+        ("/map", "Occupancy Grid (Map Server)", 0.5),
+        ("/amcl_pose", "AMCL Pose Estimate", 0.0),
+        ("/cmd_vel", "Motor Velocities (Route Runner)", 0.0),
+        ("/agv_state", "Route Runner Nav State", 0.0),
+    ]
+
+    for topic, desc, min_expected in topics_info:
+        cnt = diag.counts.get(topic, 0)
+        hz = cnt / 2.0
+        if cnt > 0:
+            status = f"✅ ACTIVE ({hz:.1f} Hz)"
         else:
-            status = "❌ NOT RUNNING"
-        print(f"  • {name:<20}: {status}")
+            status = "⚠️  IDLE / NO DATA" if min_expected == 0.0 else "❌ DEAD (0 Hz)"
+        print(f"  • {topic:<22} ({desc:<26}): {status}")
 
     # 4. TF Tree Verification
     print("\n[4] TF TRANSFORM TREE (Checking frames)")
@@ -233,10 +226,8 @@ def run_diagnostics():
             tf_ok = False
 
     if not clock_ok:
-        print("❌ CRITICAL: Gazebo /clock is NOT streaming!")
-        print("   Action (Distributed Mode - Option C): Start simulation on Laptop:")
-        print("           ./launch_sim_laptop.sh 10.87.204.118")
-        print("   Action (Local Mode): Gazebo crashed or failed to start. Check /tmp/amr_navigation.log.")
+        print("❌ CRITICAL: Gazebo /clock is NOT publishing!")
+        print("   Action: Gazebo crashed or failed to start. Check /tmp/amr_navigation.log above.")
     elif not scan_ok:
         print("❌ CRITICAL: LiDAR /scan is NOT publishing!")
         print("   Action: Gazebo sensor plugin failed or ros_gz_bridge is not bridging /scan.")

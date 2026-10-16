@@ -147,49 +147,20 @@ def launch_setup(context, *args, **kwargs):
     nav2_params_file = os.path.join(pkg_agv, 'config', 'nav2_params.yaml')
     rviz_config_file = os.path.join(pkg_agv, 'config', 'agv_nav.rviz')
 
-    run_sim_val = LaunchConfiguration('run_sim').perform(context).strip().lower() in ('true', '1')
-
-    # ── 4. Simulation vs Edge Mode ────────────────────────────────────
-    sim_nodes = []
-    if run_sim_val:
-        gazebo_launch = IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(pkg_agv, 'launch', 'gazebo.launch.py')
-            ),
-            launch_arguments={
-                'world': world_file,
-                'headless': headless_val,
-            }.items(),
-        )
-        sim_nodes.append(gazebo_launch)
-    else:
-        # Edge Mode (Raspberry Pi): Gazebo runs remotely on Laptop.
-        # Run Robot State Publisher and EKF locally on the Pi.
-        urdf_file = os.path.join(pkg_agv, 'urdf', 'warehouse_agv.urdf')
-        with open(urdf_file, 'r') as infp:
-            robot_desc = infp.read()
-        ekf_file = os.path.join(pkg_agv, 'config', 'ekf.yaml')
-
-        rsp = Node(
-            package='robot_state_publisher',
-            executable='robot_state_publisher',
-            name='robot_state_publisher',
-            parameters=[{'robot_description': robot_desc, 'use_sim_time': True}],
-            output='screen'
-        )
-
-        ekf_node = Node(
-            package='robot_localization',
-            executable='ekf_node',
-            name='ekf_filter_node',
-            output='screen',
-            parameters=[ekf_file, {'use_sim_time': True}]
-        )
-        sim_nodes.extend([rsp, ekf_node])
+    # ── 4. Gazebo + Bridge + RSP + EKF ────────────────────────────────
+    gazebo_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_agv, 'launch', 'gazebo.launch.py')
+        ),
+        launch_arguments={
+            'world': world_file,
+            'headless': headless_val,
+        }.items(),
+    )
 
     # ── 5. Localization only: map_server + AMCL + lifecycle_manager ────
     localization_launch = TimerAction(
-        period=3.0 if not run_sim_val else 5.0,
+        period=5.0,
         actions=[
             Node(
                 package='nav2_map_server',
@@ -243,19 +214,14 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
 
-    return sim_nodes + [
+    return [
+        gazebo_launch,
         localization_launch,
         rviz_node,
     ]
 
 
 def generate_launch_description():
-    run_sim_arg = DeclareLaunchArgument(
-        'run_sim',
-        default_value='true',
-        description='Launch Gazebo simulation locally (set false if Gazebo runs remotely on Laptop)'
-    )
-
     map_arg = DeclareLaunchArgument(
         'map',
         default_value='warehouse_01',
@@ -281,7 +247,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        run_sim_arg,
         map_arg,
         world_arg,
         headless_arg,

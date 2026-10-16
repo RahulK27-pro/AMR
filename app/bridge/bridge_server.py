@@ -741,17 +741,12 @@ class SystemLaunchManager:
             world_arg = f"world:={world}" if world else ""
             headless_arg = f"headless:={'true' if headless else 'false'}"
             rviz_arg = f"use_rviz:={'true' if use_rviz else 'false'}"
-            remote_sim = os.environ.get('AMR_REMOTE_SIM', '0').lower() in ('1', 'true', 'yes')
-            run_sim_flag = 'false' if remote_sim else 'true'
-            run_sim_arg = f"run_sim:={run_sim_flag}"
-            env_prefixes = (
-                "" if remote_sim else "export LIBGL_ALWAYS_SOFTWARE=1 && export MESA_GL_VERSION_OVERRIDE=3.3 && "
-            )
             nav_cmd = (
-                f"{env_prefixes}"
+                f"export LIBGL_ALWAYS_SOFTWARE=1 && "
+                f"export MESA_GL_VERSION_OVERRIDE=3.3 && "
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
-                f"ros2 launch agv_description navigation_launch.py map:={map_name} {world_arg} {headless_arg} {rviz_arg} {run_sim_arg}"
+                f"ros2 launch agv_description navigation_launch.py map:={map_name} {world_arg} {headless_arg} {rviz_arg}"
             )
             logger.info(f"[SystemLaunchManager] Starting navigation_launch: {nav_cmd}")
             self.nav_log = open('/tmp/amr_navigation.log', 'w')
