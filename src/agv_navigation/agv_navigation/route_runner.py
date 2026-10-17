@@ -703,6 +703,14 @@ class RouteRunner(Node):
         oy = float(np.mean(cluster_pts[:, 1]))
         min_dist_to_robot = math.hypot(ox - self.current_x, oy - self.current_y)
 
+        # Estimate obstacle physical radius from cluster spread (clamped between 0.18m and 0.35m)
+        obs_radii = np.linalg.norm(cluster_pts - np.array([ox, oy]), axis=-1)
+        r_obs = float(np.percentile(obs_radii, 90)) if len(obs_radii) >= 3 else 0.25
+        r_obs = max(0.18, min(0.35, r_obs))
+
+        # Circular Safe Zone: obstacle radius + robot radius (0.11m) + clearance margin (0.10m)
+        r_safe = r_obs + self.robot_radius + 0.10
+
         # Check if obstacle is dynamic (moving) or static unmapped
         is_dynamic = False
         obs_vel = (0.0, 0.0)
@@ -714,52 +722,90 @@ class RouteRunner(Node):
                 obs_speed = dob['speed']
                 break
 
-        # Analyze corridor passability on Left vs Right
+        # Coordinate frame along the path at obstacle
         theta_path = block_pt[2]
         nx_left = -math.sin(theta_path)
         ny_left = math.cos(theta_path)
 
-        near_surrounding = np.linalg.norm(self.obstacles - np.array([ox, oy]), axis=-1) < 1.8
-        surrounding_pts = self.obstacles[near_surrounding]
+        # Obstacle center's lateral offset relative to path centerline
+        d_obs_lat = (ox - block_pt[0]) * nx_left + (oy - block_pt[1]) * ny_left
+
+        # Environmental clearance calculation:
+        # Exclude points belonging to the obstacle itself (points within r_obs + 0.05m of (ox, oy))
+        dists_to_obs = np.linalg.norm(self.obstacles - np.array([ox, oy]), axis=-1)
+        env_mask = (dists_to_obs >= (r_obs + 0.05)) & (dists_to_obs < 2.2)
+        env_pts = self.obstacles[env_mask]
 
         clearance_left = 1.2
         clearance_right = 1.2
 
-        if len(surrounding_pts) > 0:
-            dx_obs = surrounding_pts[:, 0] - ox
-            dy_obs = surrounding_pts[:, 1] - oy
-            lat_disp = dx_obs * nx_left + dy_obs * ny_left
+        if len(env_pts) > 0:
+            dx_env = env_pts[:, 0] - ox
+            dy_env = env_pts[:, 1] - oy
+            lat_disp = dx_env * nx_left + dy_env * ny_left
 
-            left_pts = lat_disp[lat_disp > 0.18]
-            right_pts = -lat_disp[lat_disp < -0.18]
+            # Left environment points (outside the obstacle circle on the left)
+            left_env = lat_disp[lat_disp > (r_obs + 0.05)]
+            # Right environment points (outside the obstacle circle on the right)
+            right_env = -lat_disp[lat_disp < -(r_obs + 0.05)]
 
-            if len(left_pts) > 0:
-                clearance_left = max(0.0, float(np.min(left_pts)) - 0.18)
-            if len(right_pts) > 0:
-                clearance_right = max(0.0, float(np.min(right_pts)) - 0.18)
+            # Clearance between the circular safe zone apex and any walls
+            if len(left_env) > 0:
+                dist_wall_left = float(np.min(left_env))
+                clearance_left = max(0.0, dist_wall_left - r_safe)
+            if len(right_env) > 0:
+                dist_wall_right = float(np.min(right_env))
+                clearance_right = max(0.0, dist_wall_right - r_safe)
 
-        # Minimum opening needed for 22cm robot (self.min_passable_gap = 0.35m)
-        passable_left = clearance_left >= self.min_passable_gap
-        passable_right = clearance_right >= self.min_passable_gap
+        # Minimum opening needed: robot radius (0.11m) + 0.05m wall margin = 0.16m
+        min_clearance_needed = self.robot_radius + 0.05
+        passable_left = clearance_left >= min_clearance_needed
+        passable_right = clearance_right >= min_clearance_needed
 
+        # Deterministic decision with hysteresis (prevent left/right oscillation)
         best_side = None
         passable = False
+
+        if self.active_detour is not None and self.active_detour.get('side') in ['LEFT', 'RIGHT']:
+            locked_side = self.active_detour['side']
+            if locked_side == 'LEFT' and passable_left:
+                best_side = 'LEFT'
+                passable = True
+            elif locked_side == 'RIGHT' and passable_right:
+                best_side = 'RIGHT'
+                passable = True
+
+        if best_side is None:
+            if passable_left and passable_right:
+                # Both open: prefer side opposite to obstacle center offset
+                if d_obs_lat < -0.04:
+                    best_side = 'LEFT'
+                elif d_obs_lat > 0.04:
+                    best_side = 'RIGHT'
+                else:
+                    best_side = 'LEFT' if clearance_left >= clearance_right else 'RIGHT'
+                passable = True
+            elif passable_left:
+                best_side = 'LEFT'
+                passable = True
+            elif passable_right:
+                best_side = 'RIGHT'
+                passable = True
+
+        # Calculate lateral offset from nominal path centerline to circular safe zone apex
         lateral_offset = 0.0
+        if best_side == 'LEFT':
+            lateral_offset = min(0.65, max(0.28, d_obs_lat + r_safe))
+        elif best_side == 'RIGHT':
+            lateral_offset = -min(0.65, max(0.28, -d_obs_lat + r_safe))
 
-        if passable_left and (not passable_right or clearance_left >= clearance_right):
-            best_side = 'LEFT'
-            passable = True
-            lateral_offset = +min(0.50, max(0.32, 0.18 + self.robot_radius + 0.09))
-        elif passable_right:
-            best_side = 'RIGHT'
-            passable = True
-            lateral_offset = -min(0.50, max(0.32, 0.18 + self.robot_radius + 0.09))
-
-        block_start_idx = max(start_idx, block_idx - 4)
-        block_rejoin_idx = min(len(self.path_plan) - 1, block_idx + 4)
+        block_start_idx = max(start_idx, block_idx - 5)
+        block_rejoin_idx = min(len(self.path_plan) - 1, block_idx + 5)
 
         return {
             'obstacle_pos': (ox, oy),
+            'obstacle_radius': r_obs,
+            'safe_radius': r_safe,
             'dist_along_path': d_along,
             'min_dist_to_robot': min_dist_to_robot,
             'is_dynamic': is_dynamic,
@@ -770,19 +816,22 @@ class RouteRunner(Node):
             'clearance_left': clearance_left,
             'clearance_right': clearance_right,
             'lateral_offset': lateral_offset,
+            'block_idx': block_idx,
             'block_start_idx': block_start_idx,
             'block_rejoin_idx': block_rejoin_idx,
         }
 
-    def generate_bezier_detour(self, start_idx, rejoin_idx, lateral_offset):
-        """Generates a smooth C1-continuous cubic Bezier detour around an obstacle."""
+    def generate_bezier_detour(self, start_idx, rejoin_idx, lateral_offset, block_idx=None):
+        """Generates a smooth C1-continuous cubic Bezier detour tangent to the circular safe zone."""
         if rejoin_idx <= start_idx + 1:
             return None
 
         p_start = self.path_plan[start_idx]
         p_end = self.path_plan[rejoin_idx]
-        mid_idx = (start_idx + rejoin_idx) // 2
-        p_mid = self.path_plan[mid_idx]
+        
+        # Position apex exactly at the obstacle's longitudinal index
+        apex_idx = block_idx if (block_idx is not None and start_idx < block_idx < rejoin_idx) else ((start_idx + rejoin_idx) // 2)
+        p_mid = self.path_plan[apex_idx]
 
         theta_mid = p_mid[2]
         nx = -math.sin(theta_mid)
@@ -809,7 +858,7 @@ class RouteRunner(Node):
         c2 = (p_end[0] - 0.35 * d2 * t_end[0], p_end[1] - 0.35 * d2 * t_end[1])
         c3 = (p_end[0], p_end[1])
 
-        num_pts = max(6, (rejoin_idx - start_idx))
+        num_pts = max(8, (rejoin_idx - start_idx) + 2)
         pts_arc1 = num_pts // 2
         pts_arc2 = num_pts - pts_arc1
 
@@ -992,11 +1041,15 @@ class RouteRunner(Node):
 
         # Check critical proximity immediately (before path following)
         d_front, d_rear = self.check_proximity_and_clearance()
-        if d_front < self.critical_proximity:
+        # When following an active detour around the obstacle, the robot intentionally skirts close to R_safe;
+        # only engage emergency reverse if distance is critically inside the physical chassis contact zone (< 0.18m).
+        proximity_limit = 0.18 if (self.active_detour is not None) else self.critical_proximity
+        if d_front < proximity_limit:
             self.get_logger().warn(
-                f"[BRAIN: PROXIMITY_ESCAPE] Critical front proximity ({d_front:.2f}m < {self.critical_proximity:.2f}m)! "
+                f"[BRAIN: PROXIMITY_ESCAPE] Critical front proximity ({d_front:.2f}m < {proximity_limit:.2f}m)! "
                 f"Halting forward motion and engaging Active Reverse Escape..."
             )
+            self.active_detour = None
             self._execute_recovery()
             return
 
@@ -1043,7 +1096,8 @@ class RouteRunner(Node):
                 detour = self.generate_bezier_detour(
                     corridor_obs['block_start_idx'],
                     corridor_obs['block_rejoin_idx'],
-                    corridor_obs['lateral_offset']
+                    corridor_obs['lateral_offset'],
+                    block_idx=corridor_obs.get('block_idx')
                 )
                 if detour and len(detour) >= 4:
                     s_idx = corridor_obs['block_start_idx']
@@ -1052,13 +1106,15 @@ class RouteRunner(Node):
                     self.active_detour = {
                         'rejoin_idx': s_idx + len(detour),
                         'created_time': now,
-                        'side': corridor_obs['best_side']
+                        'side': corridor_obs['best_side'],
+                        'obs_pos': corridor_obs['obstacle_pos'],
+                        'safe_radius': corridor_obs['safe_radius']
                     }
-                    self._detour_cooldown_time = now + 2.5
+                    self._detour_cooldown_time = now + 3.0
                     self.publish_active_path()
                     self.get_logger().info(
-                        f"[BRAIN: DETOUR] Planned proactive smooth Bezier detour on {corridor_obs['best_side']} side "
-                        f"(offset={corridor_obs['lateral_offset']:+.2f}m) around obstacle at "
+                        f"[BRAIN: DETOUR] Planned circular safe zone Bezier detour on {corridor_obs['best_side']} side "
+                        f"(lateral_offset={corridor_obs['lateral_offset']:+.2f}m, R_safe={corridor_obs['safe_radius']:.2f}m) around obstacle at "
                         f"({corridor_obs['obstacle_pos'][0]:.2f}, {corridor_obs['obstacle_pos'][1]:.2f}) "
                         f"[dist_along={corridor_obs['dist_along_path']:.2f}m, dist_to_robot={corridor_obs['min_dist_to_robot']:.2f}m]."
                     )
@@ -1167,52 +1223,46 @@ class RouteRunner(Node):
 
         v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
 
-        # Swerve side commitment: check corridor clearance and cancel if already off heading
-        if len(close_dyn) > 0 and is_evading:
+        # Swerve side commitment: guides MPPI sampling prior toward the clear bypass side
+        if self.active_detour is not None:
+            # Active detour is underway: bias angular velocity into the detour curve during lead-in phase
+            detour_side = self.active_detour.get('side', 'LEFT')
+            rejoin_idx = self.active_detour.get('rejoin_idx', len(self.path_plan))
+            if self.current_target_index < rejoin_idx - 2:
+                bias_sign = 1.0 if detour_side == 'LEFT' else -1.0
+                self._swerve_bias = bias_sign * 0.25
+            else:
+                self._swerve_bias = 0.0
+        elif (len(close_dyn) > 0 or (corridor_obs is not None and corridor_obs['passable'])) and is_evading:
             # If already deviating (> 45 deg) from target heading, cancel swerve bias to prioritize path realignment
             if abs_h_err > math.radians(45):
                 self._swerve_bias = 0.0
                 self._swerve_lock_ticks = 0
             elif self._swerve_lock_ticks <= 0:
-                nearest = min(close_dyn, key=lambda d: math.hypot(
-                    d['pos'][0] - self.current_x, d['pos'][1] - self.current_y))
-                dx_t = target_x - self.current_x
-                dy_t = target_y - self.current_y
-                dx_o = nearest['pos'][0] - self.current_x
-                dy_o = nearest['pos'][1] - self.current_y
-                cross = dx_t * dy_o - dy_t * dx_o  # >0 = obstacle on left -> swerve right
-                obs_dist = math.hypot(dx_o, dy_o)
-
-                # Check static clearance on the proposed swerve side
-                # Cross > 0 -> wants to steer right (negative w). Check right side static clearance.
-                proposed_bias_sign = -1.0 if cross > 0 else 1.0
-
-                # Verify we don't steer into a nearby wall
-                wall_clear = True
-                if len(self.obstacles) > 0:
-                    c_yaw = np.cos(self.current_yaw)
-                    s_yaw = np.sin(self.current_yaw)
-                    ox_rel = (self.obstacles[:, 0] - self.current_x) * c_yaw + (self.obstacles[:, 1] - self.current_y) * s_yaw
-                    oy_rel = -(self.obstacles[:, 0] - self.current_x) * s_yaw + (self.obstacles[:, 1] - self.current_y) * c_yaw
-                    side_mask = (oy_rel < 0) if proposed_bias_sign < 0 else (oy_rel > 0)
-                    close_side = np.sqrt(ox_rel[side_mask]**2 + oy_rel[side_mask]**2)
-                    if len(close_side) > 0 and np.min(close_side) < 0.40:
-                        wall_clear = False
-
-                if wall_clear:
-                    raw_bias = self.swerve_bias_strength * (self.evasion_range / max(0.20, obs_dist))
-                    bias_mag = min(0.60, max(0.20, raw_bias))
-                    self._swerve_bias = proposed_bias_sign * bias_mag
-                    self._swerve_lock_ticks = self.swerve_lock_duration
-                    side_str = "RIGHT (obs on LEFT)" if cross > 0 else "LEFT (obs on RIGHT)"
-                    self.get_logger().info(
-                        f"[BRAIN: SWERVE] Committed swerve {side_str} for {self.swerve_lock_duration} ticks | "
-                        f"bias={self._swerve_bias:+.2f} rad/s (dist={obs_dist:.2f}m) | "
-                        f"Nearest obs at ({nearest['pos'][0]:.2f}, {nearest['pos'][1]:.2f})"
-                    )
+                if corridor_obs is not None and corridor_obs['passable']:
+                    proposed_bias_sign = 1.0 if corridor_obs['best_side'] == 'LEFT' else -1.0
+                    obs_dist = corridor_obs['min_dist_to_robot']
+                    side_str = corridor_obs['best_side']
                 else:
-                    self._swerve_bias = 0.0
-                    self._swerve_lock_ticks = 0
+                    nearest = min(close_dyn, key=lambda d: math.hypot(
+                        d['pos'][0] - self.current_x, d['pos'][1] - self.current_y))
+                    dx_t = target_x - self.current_x
+                    dy_t = target_y - self.current_y
+                    dx_o = nearest['pos'][0] - self.current_x
+                    dy_o = nearest['pos'][1] - self.current_y
+                    cross = dx_t * dy_o - dy_t * dx_o  # >0 = obstacle on left -> swerve right
+                    obs_dist = math.hypot(dx_o, dy_o)
+                    proposed_bias_sign = -1.0 if cross > 0 else 1.0
+                    side_str = "RIGHT (obs on LEFT)" if cross > 0 else "LEFT (obs on RIGHT)"
+
+                raw_bias = self.swerve_bias_strength * (self.evasion_range / max(0.20, obs_dist))
+                bias_mag = min(0.50, max(0.20, raw_bias))
+                self._swerve_bias = proposed_bias_sign * bias_mag
+                self._swerve_lock_ticks = self.swerve_lock_duration
+                self.get_logger().info(
+                    f"[BRAIN: SWERVE] Committed swerve {side_str} for {self.swerve_lock_duration} ticks | "
+                    f"bias={self._swerve_bias:+.2f} rad/s (dist={obs_dist:.2f}m)"
+                )
             else:
                 self._swerve_lock_ticks -= 1
         else:
@@ -1317,8 +1367,10 @@ class RouteRunner(Node):
         current_yield_timeout = self.yield_timeout_dynamic if is_dynamic_block else self.yield_timeout_static
 
         if all_colliding and obstacle_blocking_path:
-            # All sampled trajectories are blocked AND an obstacle is on the path
-            if self.state == "NAVIGATING":
+            # If an active detour is underway, allow MPPI to continue tracking along the detour arc
+            if self.active_detour is not None and self.current_target_index < self.active_detour['rejoin_idx']:
+                pass
+            elif self.state == "NAVIGATING":
                 self.state = "YIELDING"
                 self.yield_start_time = now
                 ox, oy, dp, dr = _blocking_diag if _blocking_diag else (0.0, 0.0, 0.0, 0.0)
