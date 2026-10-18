@@ -52,6 +52,7 @@ def launch_setup(context, *args, **kwargs):
     gz_env = {
         'LIBGL_ALWAYS_SOFTWARE': '1',
         'MESA_GL_VERSION_OVERRIDE': '3.3',
+        'GZ_IP': '127.0.0.1',
     }
 
     gazebo = ExecuteProcess(

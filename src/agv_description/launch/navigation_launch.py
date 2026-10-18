@@ -106,6 +106,8 @@ def launch_setup(context, *args, **kwargs):
             target_world_name = 'test1.world'
         elif map_stem == 'warehouse_map':
             target_world_name = 'warehouse.world'
+        elif map_stem in ('hospital', 'hospital_map'):
+            target_world_name = 'hospital.world'
         else:
             # Check if matching world exists
             matching = os.path.join(pkg_agv, 'worlds', f'{map_stem}.world')
