@@ -15,8 +15,13 @@ fi
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+unset ROS_LOCALHOST_ONLY
+unset ROS_AUTOMATIC_DISCOVERY_RANGE
 
 # WSL2 stable rendering
+export DISPLAY="${DISPLAY:-:0}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 export MESA_GL_VERSION_OVERRIDE=4.5

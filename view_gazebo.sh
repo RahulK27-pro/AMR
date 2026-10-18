@@ -20,7 +20,11 @@ export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 export MESA_GL_VERSION_OVERRIDE=4.5
 export GZ_IP=127.0.0.1
-export ROS_LOCALHOST_ONLY=1
+unset ROS_LOCALHOST_ONLY
+unset ROS_AUTOMATIC_DISCOVERY_RANGE
+export DISPLAY="${DISPLAY:-:0}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/1000}"
 
 # Connect GUI client to running simulation server
 gz sim -g

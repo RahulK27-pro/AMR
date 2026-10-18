@@ -368,9 +368,6 @@ void Explore::makePlan()
   }
 
   bool same_goal = same_point(prev_goal_, target_position);
-  prev_goal_ = target_position;
-  last_progress_ = this->now();
-  prev_distance_ = current_dist_to_target;
 
   // ensure only first call of makePlan was set resuming to true
   if (resuming_) {
@@ -381,6 +378,10 @@ void Explore::makePlan()
   if (same_goal && goal_active_) {
     return;
   }
+
+  prev_goal_ = target_position;
+  last_progress_ = this->now();
+  prev_distance_ = current_dist_to_target;
 
   RCLCPP_INFO(logger_, "Dispatching navigation goal to (%.2f, %.2f) [dist=%.2fm]",
               target_position.x, target_position.y, current_dist_to_target);

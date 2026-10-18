@@ -33,6 +33,8 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def launch_setup(context, *args, **kwargs):
+    os.environ.pop('ROS_LOCALHOST_ONLY', None)
+    os.environ.pop('ROS_AUTOMATIC_DISCOVERY_RANGE', None)
     pkg_agv = get_package_share_directory('agv_description')
 
     urdf_file        = os.path.join(pkg_agv, 'urdf',   'warehouse_agv.urdf')
@@ -129,7 +131,7 @@ def launch_setup(context, *args, **kwargs):
                 name='robot_spawner',
                 arguments=[
                     '-name', 'warehouse_agv',
-                    '-topic', 'robot_description',
+                    '-file', urdf_file,
                     '-world', world_stem,
                     '-z', '0.05'
                 ],
@@ -159,9 +161,9 @@ def launch_setup(context, *args, **kwargs):
     )
 
     rviz_node = TimerAction(
-        period=4.0,
+        period=6.0,
         actions=[
-            LogInfo(msg='[MAPPING] t=4s: Starting RViz2...'),
+            LogInfo(msg='[MAPPING] t=6s: Starting RViz2...'),
             Node(
                 package='rviz2',
                 executable='rviz2',
@@ -169,6 +171,9 @@ def launch_setup(context, *args, **kwargs):
                 arguments=['-d', rviz_config_file],
                 parameters=[{'use_sim_time': True}],
                 additional_env={
+                    'DISPLAY': os.environ.get('DISPLAY', ':0'),
+                    'WAYLAND_DISPLAY': os.environ.get('WAYLAND_DISPLAY', 'wayland-0'),
+                    'XDG_RUNTIME_DIR': os.environ.get('XDG_RUNTIME_DIR', '/run/user/1000'),
                     'LIBGL_ALWAYS_SOFTWARE': '1',
                     'GALLIUM_DRIVER': 'llvmpipe',
                     'MESA_GL_VERSION_OVERRIDE': '4.5',

@@ -28,6 +28,10 @@ else
     echo "[WARN] Workspace overlay not found. Run 'colcon build' first."
 fi
 
+# Reset loopback/DDS discovery so CycloneDDS uses standard network discovery
+unset ROS_LOCALHOST_ONLY
+unset ROS_AUTOMATIC_DISCOVERY_RANGE
+
 # Export workspace root so bridge_server can find map PNG
 export AMR_WS="$WS_ROOT"
 

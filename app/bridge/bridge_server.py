@@ -30,7 +30,8 @@ import io
 import json
 import math
 import os
-os.environ['RCUTILS_LOGGING_SEVERITY_THRESHOLD'] = 'ERROR'
+os.environ.pop('ROS_LOCALHOST_ONLY', None)
+os.environ.pop('ROS_AUTOMATIC_DISCOVERY_RANGE', None)
 import signal
 import subprocess
 import sys
@@ -345,8 +346,12 @@ class MappingManager:
             rviz_flag = 'true' if use_rviz else 'false'
 
             cmd = (
+                f"unset ROS_LOCALHOST_ONLY && "
+                f"unset ROS_AUTOMATIC_DISCOVERY_RANGE && "
                 f"export LIBGL_ALWAYS_SOFTWARE=1 && "
-                f"export MESA_GL_VERSION_OVERRIDE=3.3 && "
+                f"export GALLIUM_DRIVER=llvmpipe && "
+                f"export MESA_GL_VERSION_OVERRIDE=4.5 && "
+                f"export DISPLAY=\"${{DISPLAY:-:0}}\" && "
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
                 f"ros2 launch agv_description mapping_session.launch.py "
@@ -388,6 +393,8 @@ class MappingManager:
 
             if self.state == 'MAPPING':
                 cmd = (
+                    f"unset ROS_LOCALHOST_ONLY && "
+                    f"unset ROS_AUTOMATIC_DISCOVERY_RANGE && "
                     f"source /opt/ros/jazzy/setup.bash && "
                     f"source {self.ws_root}/install/setup.bash && "
                     f"ros2 run explore_lite explore --ros-args -r __node:=explore_node "
@@ -395,14 +402,15 @@ class MappingManager:
                     f"-p use_sim_time:=true"
                 )
                 try:
+                    self.explore_log = open('/tmp/amr_explore.log', 'a')
                     self.explore_proc = subprocess.Popen(
                         cmd,
                         shell=True,
                         executable='/bin/bash',
                         cwd=str(self.ws_root),
                         preexec_fn=os.setsid,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stdout=self.explore_log,
+                        stderr=subprocess.STDOUT
                     )
                     logger.info("[MappingManager] Spawning explore_node dynamically...")
                 except Exception as e:
@@ -1938,6 +1946,9 @@ async def get_map(map_name: Optional[str] = None):
 @app.post('/api/cmd_vel')
 async def post_cmd_vel(req: CmdVelRequest):
     if node:
+        # Seamless manual takeover: If user drives manually with non-zero command, pause auto-explore so Nav2 does not fight the user
+        if (req.linear != 0.0 or req.angular != 0.0) and mapping_mgr.run_explore:
+            mapping_mgr.pause_auto_explore(ros_node=node)
         node.publish_cmd_vel(req.linear, req.angular)
     return {'ok': True}
 
@@ -2943,7 +2954,11 @@ async def post_gui_launch(req: GuiLaunchRequest):
     """Launch Gazebo GUI or RViz2 visualizer client in the current display."""
     target_app = req.app.lower().strip()
     env = os.environ.copy()
+    env.pop('ROS_LOCALHOST_ONLY', None)
+    env.pop('ROS_AUTOMATIC_DISCOVERY_RANGE', None)
     env['DISPLAY'] = os.environ.get('DISPLAY', ':0')
+    env['WAYLAND_DISPLAY'] = os.environ.get('WAYLAND_DISPLAY', 'wayland-0')
+    env['XDG_RUNTIME_DIR'] = os.environ.get('XDG_RUNTIME_DIR', '/run/user/1000')
     env['LIBGL_ALWAYS_SOFTWARE'] = '1'
     env['GALLIUM_DRIVER'] = 'llvmpipe'
     env['MESA_GL_VERSION_OVERRIDE'] = '4.5'

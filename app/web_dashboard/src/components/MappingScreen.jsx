@@ -32,7 +32,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const [liveMapImg, setLiveMapImg] = useState(null);
   const [liveMapMeta, setLiveMapMeta] = useState(null);
   const [teleopSpeed, setTeleopSpeed] = useState(0.4); // m/s safe mapping speed
-  const [enableGui, setEnableGui] = useState(true); // Complete GUI mode (Gazebo 3D + RViz2)
+  const [guiMode, setGuiMode] = useState('rviz'); // 'rviz' (Recommended - RViz2 with fast background sim) | 'all' | 'headless'
   const [guiFeedback, setGuiFeedback] = useState(null);
 
   // Virtual Joystick & Teleop refs
@@ -267,11 +267,46 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     bridge.sendCmdVel(linear, angular);
   }, []);
 
-  // NippleJS Virtual Joystick Setup (Identical to Live Dashboard ControlInterlock)
+  // Exploration control handlers (declared early to prevent any hoisting or TDZ issues)
+  const handlePauseExplore = useCallback(async () => {
+    setIsProcessing(true);
+    try {
+      await bridge.pauseAutoExplore();
+    } finally {
+      setIsProcessing(false);
+    }
+  }, []);
+
+  const handleResumeExplore = useCallback(async () => {
+    setIsProcessing(true);
+    try {
+      await bridge.resumeAutoExplore();
+    } finally {
+      setIsProcessing(false);
+    }
+  }, []);
+
+  const handleSwitchMode = useCallback(async (enableExplore) => {
+    setRunExplore(enableExplore);
+    if (status === 'MAPPING') {
+      setIsProcessing(true);
+      try {
+        if (enableExplore) {
+          await bridge.startAutoExplore();
+        } else {
+          await bridge.pauseAutoExplore();
+        }
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+  }, [status]);
+
+  // NippleJS Virtual Joystick Setup (Interactive in manual mode OR when auto-explore is paused)
   useEffect(() => {
     if (!joystickRef.current) return;
 
-    const isInteractive = status === 'MAPPING' && !runExplore;
+    const isInteractive = status === 'MAPPING';
 
     const manager = nipplejs.create({
       zone: joystickRef.current,
@@ -285,6 +320,10 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
 
     manager.on('move', (_, data) => {
       if (!isInteractive || !data.vector) return;
+      // If auto explore is active, seamlessly pause it on first joystick motion
+      if (runExplore && exploreIsActive && !exploreIsPaused) {
+        handlePauseExplore();
+      }
       const linearRaw = data.vector.y;
       const angularRaw = -data.vector.x;
       const f = data.force ? Math.min(data.force, 1) : 1;
@@ -313,18 +352,32 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       manager.destroy();
       clearInterval(cmdTimerRef.current);
     };
-  }, [status, runExplore, currentStep, sendDrive]);
+  }, [status, runExplore, exploreIsActive, exploreIsPaused, currentStep, sendDrive, handlePauseExplore]);
 
-  // Keyboard driving controls (W/A/S/D & Arrow keys) during mapping
+  // Keyboard driving controls (W/A/S/D & Arrow keys) during mapping (with seamless takeover & resume)
   useEffect(() => {
-    if (status !== 'MAPPING' || runExplore) return;
+    if (status !== 'MAPPING') return;
 
     const handleKeyDown = (e) => {
       if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
       if (e.repeat) return;
 
+      // Enter key resumes exploration if paused
+      if (e.key === 'Enter' && runExplore && exploreIsPaused) {
+        e.preventDefault();
+        handleResumeExplore();
+        return;
+      }
+
       const spd = speedRef.current;
       const ang = 1.0;
+
+      // If exploring, touching any movement key seamlessly pauses exploration to allow manual driving
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'].includes(e.key)) {
+        if (runExplore && exploreIsActive && !exploreIsPaused) {
+          handlePauseExplore();
+        }
+      }
 
       if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
         e.preventDefault();
@@ -363,48 +416,13 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [status, runExplore, sendDrive]);
+  }, [status, runExplore, exploreIsActive, exploreIsPaused, sendDrive, handlePauseExplore, handleResumeExplore]);
 
   // Format MM:SS
   const formatTime = (secs) => {
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  };
-
-  // Handle switching exploration mode dynamically
-  const handleSwitchMode = async (enableExplore) => {
-    setRunExplore(enableExplore);
-    if (status === 'MAPPING') {
-      setIsProcessing(true);
-      try {
-        if (enableExplore) {
-          await bridge.startAutoExplore();
-        } else {
-          await bridge.pauseAutoExplore();
-        }
-      } finally {
-        setIsProcessing(false);
-      }
-    }
-  };
-
-  const handlePauseExplore = async () => {
-    setIsProcessing(true);
-    try {
-      await bridge.pauseAutoExplore();
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleResumeExplore = async () => {
-    setIsProcessing(true);
-    try {
-      await bridge.resumeAutoExplore();
-    } finally {
-      setIsProcessing(false);
-    }
   };
 
   const handleLaunchGui = async (app) => {
@@ -428,8 +446,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     setSaveErrorMsg(null);
     setSaveSuccessMsg(null);
     try {
-      const headless = !enableGui;
-      const useRviz = enableGui;
+      const headless = (guiMode !== 'all');
+      const useRviz = (guiMode === 'rviz' || guiMode === 'all');
       const targetMapName = (mapName || 'hospital_map').trim();
       const ok = await bridge.startMapping(targetMapName, world, runExplore, headless, useRviz);
       if (ok) {
@@ -1356,26 +1374,35 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 <div className="mapping-field">
                   <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <label className="mapping-label">GUI Windows</label>
-                    <span className="text-dim text-mono" style={{ fontSize: 10 }}>Gazebo 3D + RViz2</span>
+                    <span className="text-dim text-mono" style={{ fontSize: 10 }}>Desktop Visualizers</span>
                   </div>
-                  <div className="mode-toggle-group">
+                  <div className="mode-toggle-group" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
                     <button
                       type="button"
-                      className={`btn-mode-toggle ${enableGui ? 'btn-mode-toggle--active' : ''}`}
-                      onClick={() => setEnableGui(true)}
+                      className={`btn-mode-toggle ${guiMode === 'rviz' ? 'btn-mode-toggle--active' : ''}`}
+                      onClick={() => setGuiMode('rviz')}
                       disabled={isProcessing || status === 'MAPPING'}
-                      title="Launch full desktop GUI with Gazebo 3D simulation and RViz2 SLAM windows"
+                      title="Launch RViz2 visualizer on desktop with Gazebo running fast and headless in background (Recommended)"
                     >
-                      🖥️ Complete GUI (Gazebo + RViz)
+                      🖥️ RViz2 (Recommended)
                     </button>
                     <button
                       type="button"
-                      className={`btn-mode-toggle ${!enableGui ? 'btn-mode-toggle--active' : ''}`}
-                      onClick={() => setEnableGui(false)}
+                      className={`btn-mode-toggle ${guiMode === 'all' ? 'btn-mode-toggle--active' : ''}`}
+                      onClick={() => setGuiMode('all')}
                       disabled={isProcessing || status === 'MAPPING'}
-                      title="Run headless in background for lower resource usage"
+                      title="Launch full desktop GUI with both Gazebo 3D simulation and RViz2 SLAM windows"
                     >
-                      ⚡ Headless (Background)
+                      🎮 Full 3D (Gazebo + RViz)
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-mode-toggle ${guiMode === 'headless' ? 'btn-mode-toggle--active' : ''}`}
+                      onClick={() => setGuiMode('headless')}
+                      disabled={isProcessing || status === 'MAPPING'}
+                      title="Run simulation and SLAM headless in background without desktop windows (Dashboard only)"
+                    >
+                      ⚡ Headless (Dashboard Only)
                     </button>
                   </div>
                 </div>
