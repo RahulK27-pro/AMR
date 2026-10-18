@@ -22,6 +22,14 @@
       <render_engine>ogre2</render_engine>
     </plugin>
 
+    <!-- Default User Camera View (Top-down angled view framing robot in corridor) -->
+    <gui fullscreen="0">
+      <camera name="user_camera">
+        <pose>0.0 -2.5 15.0 0 1.25 1.5708</pose>
+        <view_controller>orbit</view_controller>
+      </camera>
+    </gui>
+
     <!-- ============================================================ -->
     <!-- INDOOR HOSPITAL LIGHTING                                     -->
     <!-- Clean, sterile, evenly distributed soft illumination         -->

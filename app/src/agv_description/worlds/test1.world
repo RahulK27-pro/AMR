@@ -1,0 +1,306 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="test1">
+
+    <!-- ============================================================ -->
+    <!-- PHYSICS                                                       -->
+    <!-- ============================================================ -->
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <!-- Required world plugins for Gazebo Harmonic -->
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- ============================================================ -->
+    <!-- INDOOR LIGHTING                                              -->
+    <!-- ============================================================ -->
+    <light name="ambient_fill" type="directional">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 8 0 0 0</pose>
+      <diffuse>0.4 0.4 0.42 1</diffuse>
+      <specular>0.05 0.05 0.05 1</specular>
+      <direction>0 0 -1</direction>
+    </light>
+
+    <!-- Overhead light - West Room -->
+    <light name="light_west" type="point">
+      <cast_shadows>false</cast_shadows>
+      <pose>-3.5 0 4 0 0 0</pose>
+      <diffuse>0.9 0.92 0.95 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>15</range>
+        <constant>0.5</constant>
+        <linear>0.08</linear>
+        <quadratic>0.01</quadratic>
+      </attenuation>
+    </light>
+
+    <!-- Overhead light - East Room -->
+    <light name="light_east" type="point">
+      <cast_shadows>false</cast_shadows>
+      <pose>3.5 0 4 0 0 0</pose>
+      <diffuse>0.9 0.92 0.95 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>15</range>
+        <constant>0.5</constant>
+        <linear>0.08</linear>
+        <quadratic>0.01</quadratic>
+      </attenuation>
+    </light>
+
+    <!-- ============================================================ -->
+    <!-- GROUND PLANE                                                 -->
+    <!-- ============================================================ -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>30 30</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>30 30</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.45 0.45 0.48 1</ambient>
+            <diffuse>0.55 0.55 0.58 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================================ -->
+    <!-- PERIMETER WALLS (14m X x 10m Y: X from -7 to +7, Y from -5 to +5) -->
+    <!-- ============================================================ -->
+
+    <!-- South wall (y = -5) -->
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -5 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>14.2 0.2 2.5</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>14.2 0.2 2.5</size></box></geometry>
+          <material>
+            <ambient>0.72 0.72 0.75 1</ambient>
+            <diffuse>0.72 0.72 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- North wall (y = +5) -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 5 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>14.2 0.2 2.5</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>14.2 0.2 2.5</size></box></geometry>
+          <material>
+            <ambient>0.72 0.72 0.75 1</ambient>
+            <diffuse>0.72 0.72 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- West wall (x = -7) -->
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-7 0 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.2 10.2 2.5</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10.2 2.5</size></box></geometry>
+          <material>
+            <ambient>0.72 0.72 0.75 1</ambient>
+            <diffuse>0.72 0.72 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- East wall (x = +7) -->
+    <model name="wall_east">
+      <static>true</static>
+      <pose>7 0 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.2 10.2 2.5</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 10.2 2.5</size></box></geometry>
+          <material>
+            <ambient>0.72 0.72 0.75 1</ambient>
+            <diffuse>0.72 0.72 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================================ -->
+    <!-- INTERIOR DIVIDERS                                            -->
+    <!-- Central Divider along x=0 with wide 2.4m central doorway     -->
+    <!-- South segment: y = -5 to -1.2 (length 3.8m, center y=-3.1)   -->
+    <!-- North segment: y = +1.2 to +5 (length 3.8m, center y=+3.1)   -->
+    <!-- ============================================================ -->
+
+    <model name="divider_center_south">
+      <static>true</static>
+      <pose>0 -3.1 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.2 3.8 2.5</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 3.8 2.5</size></box></geometry>
+          <material>
+            <ambient>0.65 0.68 0.72 1</ambient>
+            <diffuse>0.65 0.68 0.72 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="divider_center_north">
+      <static>true</static>
+      <pose>0 3.1 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>0.2 3.8 2.5</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 3.8 2.5</size></box></geometry>
+          <material>
+            <ambient>0.65 0.68 0.72 1</ambient>
+            <diffuse>0.65 0.68 0.72 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================================ -->
+    <!-- STORAGE BAYS & OBSTACLES (Clear features for SLAM LiDAR)     -->
+    <!-- ============================================================ -->
+
+    <!-- Shelf 1 in West Room (North-West) -->
+    <model name="shelf_nw">
+      <static>true</static>
+      <pose>-3.5 2.5 0.9 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>3.0 0.8 1.8</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>3.0 0.8 1.8</size></box></geometry>
+          <material>
+            <ambient>0.3 0.45 0.65 1</ambient>
+            <diffuse>0.3 0.45 0.65 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Shelf 2 in West Room (South-West) -->
+    <model name="shelf_sw">
+      <static>true</static>
+      <pose>-3.5 -2.5 0.9 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>3.0 0.8 1.8</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>3.0 0.8 1.8</size></box></geometry>
+          <material>
+            <ambient>0.3 0.45 0.65 1</ambient>
+            <diffuse>0.3 0.45 0.65 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Pallet Stack in East Room (North-East) -->
+    <model name="pallet_ne">
+      <static>true</static>
+      <pose>3.5 2.5 0.7 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>2.4 1.2 1.4</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>2.4 1.2 1.4</size></box></geometry>
+          <material>
+            <ambient>0.6 0.45 0.25 1</ambient>
+            <diffuse>0.6 0.45 0.25 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Pallet Stack in East Room (South-East) -->
+    <model name="pallet_se">
+      <static>true</static>
+      <pose>3.5 -2.5 0.7 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><box><size>2.4 1.2 1.4</size></box></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><box><size>2.4 1.2 1.4</size></box></geometry>
+          <material>
+            <ambient>0.6 0.45 0.25 1</ambient>
+            <diffuse>0.6 0.45 0.25 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Pillar near West Entrance -->
+    <model name="pillar_w">
+      <static>true</static>
+      <pose>-1.8 0 1.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>0.25</radius><length>2.5</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.25</radius><length>2.5</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.5 0.1 1</ambient>
+            <diffuse>0.8 0.5 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

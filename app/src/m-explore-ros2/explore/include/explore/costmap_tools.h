@@ -131,5 +131,46 @@ bool nearestCell(unsigned int& result, unsigned int start, unsigned char val,
 
   return false;
 }
+
+/**
+ * @brief Find nearest traversable cell (cost < INSCRIBED_INFLATED_OBSTACLE and != NO_INFORMATION)
+ */
+bool nearestTraversableCell(unsigned int& result, unsigned int start,
+                            const nav2_costmap_2d::Costmap2D& costmap)
+{
+  const unsigned char* map = costmap.getCharMap();
+  const unsigned int size_x = costmap.getSizeInCellsX(),
+                     size_y = costmap.getSizeInCellsY();
+
+  if (start >= size_x * size_y) {
+    return false;
+  }
+
+  std::queue<unsigned int> bfs;
+  std::vector<bool> visited_flag(size_x * size_y, false);
+
+  bfs.push(start);
+  visited_flag[start] = true;
+
+  while (!bfs.empty()) {
+    unsigned int idx = bfs.front();
+    bfs.pop();
+
+    if (map[idx] < nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE &&
+        map[idx] != nav2_costmap_2d::NO_INFORMATION) {
+      result = idx;
+      return true;
+    }
+
+    for (unsigned nbr : nhood8(idx, costmap)) {
+      if (!visited_flag[nbr]) {
+        bfs.push(nbr);
+        visited_flag[nbr] = true;
+      }
+    }
+  }
+
+  return false;
+}
 }  // namespace frontier_exploration
 #endif

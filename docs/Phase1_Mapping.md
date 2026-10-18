@@ -24,17 +24,21 @@ Autonomous exploration relies on the tight integration of MPPI local planning an
 
 ### MPPI Local Planner
 - **Velocity Limits:** 
-  - Max forward velocity: `0.5 m/s`
-  - Max reverse velocity: `-0.1 m/s` (Allows slow reversing to escape tight corners).
-- **Behavior Critics:** Heavily penalizes "twirling" (spinning in place) and favors forward path alignment.
+  - Max forward velocity: `0.65 m/s` (rapid cruising in open corridors).
+  - Max reverse velocity: `-0.15 m/s` (allows safe reversing to escape tight corners).
+  - Max angular velocity: `1.4 rad/s` (smooth, agile heading alignment).
+- **Behavior Critics:** Calibrated `TwirlingCritic` (weight 1.0) and `PathAlignCritic` (weight 5.0) to eliminate twirling hesitation and allow swift pivot turns.
 
 ### Global Planner
-- Uses **NavfnPlanner** (Dijkstra algorithm) rather than A* to guarantee strict, forward-facing orientations across the path array. This prevents the MPPI critic from accidentally telling the robot to drive the path backward.
+- Uses **SmacPlanner2D** (A* 2D grid planner with Euclidean heuristic) rather than NavfnPlanner. This provides high robustness on unknown space borders, handles narrow doorways ($0.9\text{ m}$) reliably, and eliminates legacy potential gradient failures.
 
 ## 3. Autonomous Exploration (`explore_lite`)
-The frontier explorer is tuned for a 30cm robot navigating a dense environment:
+The frontier explorer is configured for progressive room-by-room coverage:
+- **`local_radius`:** Set to `3.5m`. Enforces strict local section prioritization: all frontiers in the active room/section receive a major priority bonus ($-100.0$) and are $100\%$ resolved before the robot transitions to adjacent sections or distant corridors.
+- **Safe Free-Space Goal Projection:** Goals are automatically projected $0.25\text{ m}$ into confirmed `FREE_SPACE` rather than targeting unknown frontier boundaries or wall centroids, guaranteeing legal planning paths.
+- **Metric Homogeneous Cost Scaling:** Distance penalty is evaluated in physical meters ($d^{1.25}$) against frontier physical length, preventing distant boundaries from overpowering nearby areas.
 - **`min_frontier_size`:** Set to `0.30m`.
-- **`planner_frequency`:** Set to `0.05 Hz` (every 20 seconds). This forces the robot to fully commit to its generated path rather than constantly "changing its mind" when the map updates mid-drive.
+- **`planner_frequency`:** Set to `0.33 Hz` (every 3 seconds), eliminating the previous 20-second idle lock while maintaining trajectory stability.
 - **`track_unknown_space`:** Enabled in the global costmap obstacle layer. This ensures the LiDAR raytracing does not maliciously erase unknown boundaries (frontiers) as the robot approaches them.
 
 ## 4. Saving the Map

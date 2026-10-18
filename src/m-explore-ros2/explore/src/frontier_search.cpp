@@ -16,6 +16,7 @@ FrontierSearch::FrontierSearch(nav2_costmap_2d::Costmap2D* costmap,
                                double potential_scale, double gain_scale,
                                double min_frontier_size,
                                double wall_bonus_scale, double momentum_scale,
+                               double local_radius,
                                rclcpp::Logger logger)
   : costmap_(costmap)
   , potential_scale_(potential_scale)
@@ -23,6 +24,7 @@ FrontierSearch::FrontierSearch(nav2_costmap_2d::Costmap2D* costmap,
   , min_frontier_size_(min_frontier_size)
   , wall_bonus_scale_(wall_bonus_scale)
   , momentum_scale_(momentum_scale)
+  , local_radius_(local_radius)
   , robot_heading_x_(1.0)
   , robot_heading_y_(0.0)
   , robot_pos_x_(0.0)
@@ -63,7 +65,8 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
 
   // find closest clear cell to start search
   unsigned int clear, pos = costmap_->getIndex(mx, my);
-  if (nearestCell(clear, pos, FREE_SPACE, *costmap_)) {
+  if (nearestCell(clear, pos, FREE_SPACE, *costmap_) ||
+      nearestTraversableCell(clear, pos, *costmap_)) {
     bfs.push(clear);
   } else {
     bfs.push(pos);
@@ -77,13 +80,12 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
 
     // iterate over 4-connected neighbourhood
     for (unsigned nbr : nhood4(idx, *costmap_)) {
-      // add to queue all free, unvisited cells, use descending search in case
-      // initialized on non-free cell
-      if (map_[nbr] <= map_[idx] && !visited_flag[nbr]) {
+      // add to queue all traversable, unvisited cells (cost < INSCRIBED_INFLATED_OBSTACLE)
+      if (map_[nbr] < nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE &&
+          map_[nbr] != NO_INFORMATION && !visited_flag[nbr]) {
         visited_flag[nbr] = true;
         bfs.push(nbr);
-        // check if cell is new frontier cell (unvisited, NO_INFORMATION, free
-        // neighbour)
+        // check if cell is new frontier cell (unvisited, NO_INFORMATION, traversable neighbour)
       } else if (isNewFrontierCell(nbr, frontier_flag)) {
         frontier_flag[nbr] = true;
         Frontier new_frontier = buildNewFrontier(nbr, pos, frontier_flag);
@@ -178,6 +180,43 @@ Frontier FrontierSearch::buildNewFrontier(unsigned int initial_cell,
   // average out frontier centroid
   output.centroid.x /= output.size;
   output.centroid.y /= output.size;
+
+  // Compute safe_target in confirmed FREE_SPACE with obstacle clearance
+  output.safe_target = output.middle;
+  unsigned int mx, my;
+  if (costmap_->worldToMap(output.middle.x, output.middle.y, mx, my)) {
+    unsigned int middle_idx = costmap_->getIndex(mx, my);
+    unsigned int clear_idx;
+    if (nearestCell(clear_idx, middle_idx, FREE_SPACE, *costmap_) ||
+        nearestTraversableCell(clear_idx, middle_idx, *costmap_)) {
+      unsigned int cx, cy;
+      costmap_->indexToCells(clear_idx, cx, cy);
+      double wx, wy;
+      costmap_->mapToWorld(cx, cy, wx, wy);
+      output.safe_target.x = wx;
+      output.safe_target.y = wy;
+
+      // Inset only if robot is comfortably far away (d > 0.80m)
+      // to avoid shrinking the goal inside the robot's goal tolerance footprint
+      double dx = reference_x - wx;
+      double dy = reference_y - wy;
+      double d = std::sqrt(dx * dx + dy * dy);
+      if (d > 0.80) {
+        double step = 0.20;
+        double cand_x = wx + (dx / d) * step;
+        double cand_y = wy + (dy / d) * step;
+        unsigned int cand_mx, cand_my;
+        if (costmap_->worldToMap(cand_x, cand_y, cand_mx, cand_my)) {
+          unsigned char cost = costmap_->getCost(cand_mx, cand_my);
+          if (cost < nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE && cost != NO_INFORMATION) {
+            output.safe_target.x = cand_x;
+            output.safe_target.y = cand_y;
+          }
+        }
+      }
+    }
+  }
+
   return output;
 }
 
@@ -190,9 +229,9 @@ bool FrontierSearch::isNewFrontierCell(unsigned int idx,
   }
 
   // frontier cells should have at least one cell in 4-connected neighbourhood
-  // that is free
+  // that is traversable floor (cost < INSCRIBED_INFLATED_OBSTACLE)
   for (unsigned int nbr : nhood4(idx, *costmap_)) {
-    if (map_[nbr] == FREE_SPACE) {
+    if (map_[nbr] < nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
       return true;
     }
   }
@@ -202,14 +241,34 @@ bool FrontierSearch::isNewFrontierCell(unsigned int idx,
 
 double FrontierSearch::frontierCost(const Frontier& frontier)
 {
-  double base_cost =
-      (potential_scale_ * frontier.min_distance * costmap_->getResolution()) -
-      (gain_scale_ * frontier.size * costmap_->getResolution());
+  // 1. Distance in meters from robot to frontier
+  double distance_m = frontier.min_distance;
 
-  // Subtract wall proximity bonus: frontier hugging a wall scores lower cost
+  // 2. Physical length of frontier in meters
+  double size_m = frontier.size * costmap_->getResolution();
+
+  // 3. True metric cost:
+  // Steep distance penalty ensures nearby room frontiers strictly beat distant ones.
+  double dist_penalty = potential_scale_ * (distance_m * 2.0 + std::pow(distance_m, 1.4));
+
+  // Cap size reward to a maximum (1.2m) so a huge doorway or hall opening in another room
+  // cannot overpower a small 0.3-0.5m corner in the current room.
+  double capped_size = std::min(size_m, 1.2);
+  double gain_reward = gain_scale_ * capped_size;
+  double base_cost = dist_penalty - gain_reward;
+
+  // 4. Section/Room-First Local Priority:
+  // If the frontier is within the local room radius (default 3.5m),
+  // give a substantial negative bonus (-100.0) so it decisively beats ANY distant frontier!
+  // This guarantees that the robot completes the current section/room before moving on.
+  if (distance_m <= local_radius_) {
+    base_cost -= 100.0;
+  }
+
+  // 5. Wall proximity bonus: frontier hugging a wall scores lower cost
   double wall_b = (wall_bonus_scale_ > 0.0) ? wallProximityBonus(frontier) * wall_bonus_scale_ : 0.0;
 
-  // Subtract momentum bonus: frontier ahead of robot scores lower cost
+  // 6. Momentum bonus: frontier ahead of robot scores lower cost
   double mom_b = (momentum_scale_ > 0.0) ? momentumBonus(frontier) * momentum_scale_ : 0.0;
 
   return base_cost - wall_b - mom_b;
@@ -249,6 +308,11 @@ double FrontierSearch::wallProximityBonus(const Frontier& frontier)
 
 double FrontierSearch::momentumBonus(const Frontier& frontier)
 {
+  // Do not penalize heading turns for local room frontiers
+  if (frontier.min_distance <= local_radius_) {
+    return 0.0;
+  }
+
   // Direction vector from robot to frontier centroid
   double dx = frontier.centroid.x - robot_pos_x_;
   double dy = frontier.centroid.y - robot_pos_y_;
@@ -262,10 +326,10 @@ double FrontierSearch::momentumBonus(const Frontier& frontier)
   // Dot product with robot heading (cosine similarity: 1.0 = same direction)
   double dot = dx * robot_heading_x_ + dy * robot_heading_y_;
 
-  // STRICT ANTI-U-TURN POLICY:
-  // If the frontier is behind the robot (>90 degrees), apply a massive penalty
+  // Mild penalty for 180-degree reversal between distant global corridors,
+  // without locking out any direction:
   if (dot < 0.0) {
-    return -1000.0; // Multiplied by momentum_scale (1.5), adds +1500 to cost!
+    return -2.0;
   }
 
   // Otherwise, scale [0, 1] for positive dot product

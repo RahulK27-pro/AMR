@@ -558,6 +558,7 @@ class MappingManager:
 
             self.is_saved = True
             self.saved_map_name = clean_name
+            self.map_name = clean_name
             self.saved_paths = {
                 'yaml': str(yaml_path.relative_to(self.ws_root)),
                 'pgm': str(pgm_path.relative_to(self.ws_root)),
@@ -1339,16 +1340,21 @@ class AmrBridgeNode(Node):
                         fx, fy = f_px
                         draw.rectangle([fx - 2, fy - 2, fx + 2, fy + 2], fill=(255, 215, 0), outline=(255, 255, 255))
 
-                # Draw robot pose (green dot with heading pointer)
+                # Draw robot pose (prominent glowing cyan/emerald beacon with heading pointer)
                 r_px = self._world_to_map_px(self.pose['x'], self.pose['y'])
                 if r_px:
                     rx, ry = r_px
-                    rad = max(3, int(0.18 / self._live_map_resolution))
-                    draw.ellipse([rx - rad, ry - rad, rx + rad, ry + rad], fill=(0, 255, 157), outline=(255, 255, 255))
+                    rad = max(8, int(0.35 / max(0.01, self._live_map_resolution)))
+                    # Outer cyan halo
+                    draw.ellipse([rx - (rad + 4), ry - (rad + 4), rx + (rad + 4), ry + (rad + 4)], outline=(0, 212, 255), width=2)
+                    # Core emerald robot body
+                    draw.ellipse([rx - rad, ry - rad, rx + rad, ry + rad], fill=(0, 255, 157), outline=(255, 255, 255), width=2)
+                    # Forward heading pointer
                     yaw = self.pose.get('yaw', 0.0)
-                    hx = rx + int((rad + 4) * math.cos(yaw))
-                    hy = ry - int((rad + 4) * math.sin(yaw))
-                    draw.line([rx, ry, hx, hy], fill=(255, 255, 255), width=2)
+                    hx = rx + int((rad + 8) * math.cos(yaw))
+                    hy = ry - int((rad + 8) * math.sin(yaw))
+                    draw.line([rx, ry, hx, hy], fill=(0, 212, 255), width=3)
+                    draw.ellipse([hx - 2, hy - 2, hx + 2, hy + 2], fill=(255, 255, 255))
 
                 buf = io.BytesIO()
                 overlay_img.save(buf, format='PNG')
@@ -2026,8 +2032,12 @@ async def get_mapping_status():
 
 @app.post('/api/mapping/start')
 async def post_mapping_start(req: StartMappingRequest = StartMappingRequest()):
+    target_name = (req.map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    mapping_mgr.map_name = target_name
+    if node:
+        node.active_map_name = target_name
     mapping_mgr.start(
-        map_name=req.map_name,
+        map_name=target_name,
         world=req.world,
         run_explore=req.run_explore,
         headless=req.headless,
@@ -2104,8 +2114,11 @@ async def get_mapping_verify():
 async def post_mapping_save(req: SaveMapRequest = SaveMapRequest()):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
-    target_name = req.map_name or mapping_mgr.map_name or 'warehouse_01'
+    target_name = (req.map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    mapping_mgr.map_name = target_name
     res = mapping_mgr.save_map(target_name, ros_node=node)
+    if res.get('ok') and node:
+        node.active_map_name = target_name
     return res
 
 @app.get('/api/mapping/saved_maps')

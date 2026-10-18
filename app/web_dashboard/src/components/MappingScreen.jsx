@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import nipplejs from 'nipplejs';
 import bridge from '../services/amrBridge';
 
@@ -22,13 +22,15 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const navState = telemetry?.nav_state ?? 'IDLE';
   const minObs = telemetry?.min_obstacle_dist;
 
-  const [mapName, setMapName] = useState(mappingData.map_name || 'warehouse_01');
-  const [world, setWorld] = useState('test1.world');
+  const [mapName, setMapName] = useState(mappingData.map_name || 'hospital_map');
+  const isMapNameDirtyRef = useRef(false);
+  const [world, setWorld] = useState('hospital.world');
   const [runExplore, setRunExplore] = useState(Boolean(mappingData.run_explore));
   const [status, setStatus] = useState(mappingData.state || 'READY'); // 'READY' | 'MAPPING' | 'STOPPED' | 'SAVED'
   const [elapsedSec, setElapsedSec] = useState(mappingData.elapsed_sec || 0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [liveMapImg, setLiveMapImg] = useState(null);
+  const [liveMapMeta, setLiveMapMeta] = useState(null);
   const [teleopSpeed, setTeleopSpeed] = useState(0.4); // m/s safe mapping speed
   const [enableGui, setEnableGui] = useState(true); // Complete GUI mode (Gazebo 3D + RViz2)
   const [guiFeedback, setGuiFeedback] = useState(null);
@@ -146,8 +148,12 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       if (m.elapsed_sec != null) {
         setElapsedSec(m.elapsed_sec);
       }
-      if (m.map_name && !isSaved) {
+      // Only sync map_name from telemetry if user hasn't explicitly edited it
+      if (m.map_name && !isSaved && !isMapNameDirtyRef.current) {
         setMapName(m.map_name);
+      }
+      if (m.map_info) {
+        setLiveMapMeta(m.map_info);
       }
       if (m.run_explore != null) {
         setRunExplore(Boolean(m.run_explore));
@@ -180,6 +186,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       const res = await bridge.getMapVerification();
       if (res?.verification?.has_map) {
         setVerificationData(res.verification);
+        setLiveMapMeta(res.verification);
         if (mapViewMode === 'clean' && res.verification.clean_image_b64) {
           setLiveMapImg(`data:image/png;base64,${res.verification.clean_image_b64}`);
         } else if (mapViewMode === 'overlay' && res.verification.overlay_image_b64) {
@@ -211,6 +218,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
         const res = await bridge.getLiveMap(isClean);
         if (res?.has_data && res.image) {
           setLiveMapImg(`data:image/png;base64,${res.image}`);
+          if (res.info) {
+            setLiveMapMeta(res.info);
+          }
         }
       } catch (_) {}
     };
@@ -223,6 +233,34 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       if (mapTimer) clearInterval(mapTimer);
     };
   }, [status, mapViewMode]);
+
+  // Coordinate transform for live SLAM map SVG overlay
+  const activeMapMeta = liveMapMeta || verificationData || mappingData?.map_info;
+  const worldToCanvasPx = useCallback((wx, wy) => {
+    if (!activeMapMeta || !activeMapMeta.resolution || !activeMapMeta.width || !activeMapMeta.height) {
+      return null;
+    }
+    const res = Number(activeMapMeta.resolution) || 0.05;
+    const ox = Number(activeMapMeta.origin_x) || 0;
+    const oy = Number(activeMapMeta.origin_y) || 0;
+    const h = Number(activeMapMeta.height);
+    const w = Number(activeMapMeta.width);
+
+    const cx = (wx - ox) / res;
+    const cy = (wy - oy) / res;
+    const px = cx;
+    const py = (h - 1) - cy;
+
+    const scaleX = imgDimensions.width > 0 && w > 0 ? (imgDimensions.width / w) : 1;
+    const scaleY = imgDimensions.height > 0 && h > 0 ? (imgDimensions.height / h) : 1;
+
+    return { x: px * scaleX, y: py * scaleY };
+  }, [activeMapMeta, imgDimensions]);
+
+  const robotCanvasPx = useMemo(() => {
+    if (!pose || typeof pose.x !== 'number' || typeof pose.y !== 'number') return null;
+    return worldToCanvasPx(pose.x, pose.y);
+  }, [pose, worldToCanvasPx]);
 
   // Teleop command helper
   const sendDrive = useCallback((linear, angular) => {
@@ -392,13 +430,17 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     try {
       const headless = !enableGui;
       const useRviz = enableGui;
-      const ok = await bridge.startMapping(mapName, world, runExplore, headless, useRviz);
+      const targetMapName = (mapName || 'hospital_map').trim();
+      const ok = await bridge.startMapping(targetMapName, world, runExplore, headless, useRviz);
       if (ok) {
         setStatus('MAPPING');
         setCurrentStep(1);
         setElapsedSec(0);
         setIsSaved(false);
         setSavedReport(null);
+        setVerificationData(null);
+        setLiveMapImg(null);
+        setLiveMapMeta(null);
       }
     } finally {
       setIsProcessing(false);
@@ -430,6 +472,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
         setCurrentStep(1);
         setElapsedSec(0);
         setLiveMapImg(null);
+        setLiveMapMeta(null);
         setIsSaved(false);
         setSavedReport(null);
         setVerificationData(null);
@@ -443,7 +486,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
 
   // Phase 2: Save Map Action
   const handleSaveMap = async () => {
-    const targetName = (mapName || 'warehouse_01').trim();
+    const targetName = (mapName || 'hospital_map').trim();
     if (!targetName) {
       setSaveErrorMsg('Please provide a valid map name.');
       return;
@@ -456,9 +499,13 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       if (res?.ok) {
         setIsSaved(true);
         setStatus('SAVED');
+        isMapNameDirtyRef.current = true;
+        setMapName(targetName);
+        setSelectedMapForGraph(targetName);
         setSavedReport(res.report);
         setSaveSuccessMsg(`Map "${targetName}" verified and saved to disk.`);
         fetchVerificationData();
+        fetchSavedMaps();
       } else {
         setSaveErrorMsg(res?.error || 'Failed to save map to disk.');
       }
@@ -1200,14 +1247,21 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
 
                 {/* Map Name input */}
                 <div className="mapping-field">
-                  <label className="mapping-label">Map Name</label>
+                  <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="mapping-label">Map Name</label>
+                    <span className="text-dim text-xs" style={{ fontFamily: 'var(--font-mono)' }}>
+                      src/agv_description/maps/{mapName || '...'}.yaml
+                    </span>
+                  </div>
                   <input
-                    className="input-field mapping-input"
+                    className="input-field mapping-input text-mono"
                     type="text"
                     value={mapName}
-                    onChange={(e) => setMapName(e.target.value)}
-                    placeholder="e.g. test1_map or warehouse_01"
-                    disabled={status === 'MAPPING'}
+                    onChange={(e) => {
+                      isMapNameDirtyRef.current = true;
+                      setMapName(e.target.value);
+                    }}
+                    placeholder="e.g. hospital_map or test1_map"
                   />
                 </div>
 
@@ -1220,10 +1274,56 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                       type="text"
                       value={world}
                       onChange={(e) => setWorld(e.target.value)}
-                      placeholder="test1.world"
+                      placeholder="hospital.world"
                       disabled={status === 'MAPPING'}
                     />
                     <span className="world-tag-badge">SDF World</span>
+                  </div>
+
+                  {/* Quick World Presets */}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className={`btn-view-pill ${world === 'hospital.world' ? 'btn-view-pill--active' : ''}`}
+                      onClick={() => {
+                        setWorld('hospital.world');
+                        if (!isMapNameDirtyRef.current) {
+                          setMapName('hospital_map');
+                        }
+                      }}
+                      disabled={status === 'MAPPING'}
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                    >
+                      🏥 Hospital
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-view-pill ${world === 'test1.world' ? 'btn-view-pill--active' : ''}`}
+                      onClick={() => {
+                        setWorld('test1.world');
+                        if (!isMapNameDirtyRef.current) {
+                          setMapName('test1_map');
+                        }
+                      }}
+                      disabled={status === 'MAPPING'}
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                    >
+                      🏢 Multi-Room
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-view-pill ${world === 'warehouse.world' ? 'btn-view-pill--active' : ''}`}
+                      onClick={() => {
+                        setWorld('warehouse.world');
+                        if (!isMapNameDirtyRef.current) {
+                          setMapName('warehouse_01');
+                        }
+                      }}
+                      disabled={status === 'MAPPING'}
+                      style={{ fontSize: 11, padding: '3px 8px' }}
+                    >
+                      🏭 Warehouse
+                    </button>
                   </div>
                 </div>
 
@@ -1707,8 +1807,11 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                         className="input-field mapping-input text-mono"
                         type="text"
                         value={mapName}
-                        onChange={(e) => setMapName(e.target.value)}
-                        placeholder="e.g. test1_map or warehouse_01"
+                        onChange={(e) => {
+                          isMapNameDirtyRef.current = true;
+                          setMapName(e.target.value);
+                        }}
+                        placeholder="e.g. hospital_map or test1_map"
                       />
                     </div>
 
@@ -3480,6 +3583,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 style={{
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   transformOrigin: 'center center',
+                  position: 'relative',
+                  display: 'inline-block',
                 }}
               >
                 <img
@@ -3496,6 +3601,121 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                     }
                   }}
                 />
+
+                {/* SVG Live Robot & Exploration Overlay */}
+                {imgDimensions.width > 0 && imgDimensions.height > 0 && (
+                  <svg
+                    className="mapping-live-svg-overlay"
+                    viewBox={`0 0 ${imgDimensions.width} ${imgDimensions.height}`}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      pointerEvents: 'none',
+                      zIndex: 4,
+                    }}
+                  >
+                    <defs>
+                      <filter id="robot-live-glow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+                        <feMerge>
+                          <feMergeNode in="blur" />
+                          <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                      </filter>
+                    </defs>
+
+                    {/* Active Exploration Frontiers */}
+                    {telemetry?.mapping?.exploration?.frontiers?.map((f, i) => {
+                      const fPx = worldToCanvasPx(f.x, f.y);
+                      if (!fPx) return null;
+                      return (
+                        <g key={`frontier-${i}`}>
+                          <polygon
+                            points={`${fPx.x},${fPx.y - 7} ${fPx.x + 6},${fPx.y} ${fPx.x},${fPx.y + 7} ${fPx.x - 6},${fPx.y}`}
+                            fill="#fbbf24"
+                            stroke="#ffffff"
+                            strokeWidth="1.5"
+                          />
+                        </g>
+                      );
+                    })}
+
+                    {/* Prominent Live Robot Beacon */}
+                    {robotCanvasPx && (
+                      <g
+                        transform={`translate(${robotCanvasPx.x}, ${robotCanvasPx.y})`}
+                        filter="url(#robot-live-glow)"
+                      >
+                        {/* Outer pulsing sonar / radar circle */}
+                        <circle
+                          r="22"
+                          fill="rgba(6, 182, 212, 0.22)"
+                          stroke="#00f3ff"
+                          strokeWidth="1.5"
+                          className="radar-pulse-anim"
+                        />
+                        {/* Outer glowing halo */}
+                        <circle
+                          r="14"
+                          fill="none"
+                          stroke="#00f3ff"
+                          strokeWidth="2"
+                          strokeDasharray="4 2"
+                        />
+                        {/* Robot body base */}
+                        <circle
+                          r="9"
+                          fill="#0f172a"
+                          stroke="#10b981"
+                          strokeWidth="2.5"
+                        />
+                        {/* Center core */}
+                        <circle
+                          r="4.5"
+                          fill="#00f3ff"
+                        />
+                        {/* Heading Arrow */}
+                        <g transform={`rotate(${(-pose.yaw * 180) / Math.PI})`}>
+                          <line x1="0" y1="0" x2="16" y2="0" stroke="#00f3ff" strokeWidth="2.5" />
+                          <polygon
+                            points="18,0 11,-4.5 13,0 11,4.5"
+                            fill="#00f3ff"
+                            stroke="#ffffff"
+                            strokeWidth="1"
+                          />
+                        </g>
+                        {/* AMR Label Pill */}
+                        <g transform="translate(0, -20)">
+                          <rect
+                            x="-26"
+                            y="-9"
+                            width="52"
+                            height="16"
+                            rx="4"
+                            fill="rgba(15, 23, 42, 0.9)"
+                            stroke="#00f3ff"
+                            strokeWidth="1.2"
+                          />
+                          <text
+                            x="0"
+                            y="-1"
+                            fill="#00f3ff"
+                            fontSize="9"
+                            fontWeight="bold"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            style={{ userSelect: 'none' }}
+                          >
+                            AMR ROBOT
+                          </text>
+                        </g>
+                      </g>
+                    )}
+                  </svg>
+                )}
               </div>
             ) : (
               <div className="mapping-empty-state">

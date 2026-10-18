@@ -2380,6 +2380,32 @@ html, body, #root {
   box-shadow: 0 0 8px rgba(6, 182, 212, 0.35);
 }
 
+/* Radar pulse animation for Live SLAM Robot Marker */
+@keyframes radarPulse {
+  0% {
+    r: 10px;
+    opacity: 0.95;
+    stroke-width: 2px;
+  }
+  60% {
+    opacity: 0.5;
+  }
+  100% {
+    r: 28px;
+    opacity: 0;
+    stroke-width: 0.5px;
+  }
+}
+
+.radar-pulse-anim {
+  animation: radarPulse 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+  transform-origin: center;
+}
+
+.mapping-live-svg-overlay {
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.8));
+}
+
 
 
 

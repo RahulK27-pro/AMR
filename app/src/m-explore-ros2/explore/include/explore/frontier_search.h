@@ -16,6 +16,7 @@ struct Frontier {
   geometry_msgs::msg::Point initial;
   geometry_msgs::msg::Point centroid;
   geometry_msgs::msg::Point middle;
+  geometry_msgs::msg::Point safe_target;
   std::vector<geometry_msgs::msg::Point> points;
 };
 
@@ -35,6 +36,7 @@ public:
   FrontierSearch(nav2_costmap_2d::Costmap2D* costmap, double potential_scale,
                  double gain_scale, double min_frontier_size,
                  double wall_bonus_scale, double momentum_scale,
+                 double local_radius,
                  rclcpp::Logger logger);
 
   /**
@@ -110,6 +112,7 @@ private:
   double min_frontier_size_;
   double wall_bonus_scale_;
   double momentum_scale_;
+  double local_radius_;
   double robot_heading_x_;
   double robot_heading_y_;
   double robot_pos_x_;

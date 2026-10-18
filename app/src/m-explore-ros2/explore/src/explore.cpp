@@ -63,7 +63,7 @@ Explore::Explore()
   double timeout;
   double min_frontier_size;
   this->declare_parameter<float>("planner_frequency", 1.0);
-  this->declare_parameter<float>("progress_timeout", 30.0);
+  this->declare_parameter<float>("progress_timeout", 8.0);
   this->declare_parameter<bool>("visualize", false);
   this->declare_parameter<float>("potential_scale", 1e-3);
   this->declare_parameter<float>("orientation_scale", 0.0);
@@ -72,8 +72,10 @@ Explore::Explore()
   this->declare_parameter<bool>("return_to_init", false);
   this->declare_parameter<float>("wall_bonus_scale", 2.0);   // Step 2: wall bias
   this->declare_parameter<float>("momentum_scale", 1.5);     // Step 2: heading momentum
+  this->declare_parameter<float>("local_radius", 3.5);       // Local room/section radius
+  this->declare_parameter<float>("min_target_distance", 0.35); // Minimum target distance from robot
 
-  double wall_bonus_scale, momentum_scale;
+  double wall_bonus_scale, momentum_scale, local_radius;
   this->get_parameter("planner_frequency", planner_frequency_);
   this->get_parameter("progress_timeout", timeout);
   this->get_parameter("visualize", visualize_);
@@ -85,6 +87,8 @@ Explore::Explore()
   this->get_parameter("robot_base_frame", robot_base_frame_);
   this->get_parameter("wall_bonus_scale", wall_bonus_scale);
   this->get_parameter("momentum_scale", momentum_scale);
+  this->get_parameter("local_radius", local_radius);
+  this->get_parameter("min_target_distance", min_target_distance_);
 
   progress_timeout_ = timeout;
   move_base_client_ =
@@ -96,6 +100,7 @@ Explore::Explore()
                                                  min_frontier_size,
                                                  wall_bonus_scale,
                                                  momentum_scale,
+                                                 local_radius,
                                                  logger_);
 
   if (visualize_) {
@@ -239,6 +244,29 @@ void Explore::makePlan()
   // find frontiers
   auto pose = costmap_client_.getRobotPose();
 
+  // 1. HARD STALL CONSTRAINT:
+  // If an active goal is being pursued, verify that the robot is physically progressing towards it.
+  if (goal_active_ && !resuming_) {
+    double current_dist_to_active = std::hypot(prev_goal_.x - pose.position.x,
+                                               prev_goal_.y - pose.position.y);
+    if (prev_distance_ - current_dist_to_active > 0.08) {
+      // Robot physically advanced towards the active goal
+      last_progress_ = this->now();
+      prev_distance_ = current_dist_to_active;
+    } else if (this->now() - last_progress_ > tf2::durationFromSec(progress_timeout_)) {
+      // Robot made NO progress for > progress_timeout_ (8.0s) — hard constraint triggered!
+      RCLCPP_WARN(logger_,
+                  "STALL CONSTRAINT TRIGGERED: Robot motionless for %.1f s towards (%.2f, %.2f). "
+                  "Cancelling active Nav2 goal, blacklisting stuck target, and forcing immediate re-plan.",
+                  progress_timeout_, prev_goal_.x, prev_goal_.y);
+      frontier_blacklist_.push_back(prev_goal_);
+      move_base_client_->async_cancel_all_goals();
+      goal_active_ = false;
+      last_progress_ = this->now();
+      prev_distance_ = 0.0;
+    }
+  }
+
   // Update robot heading in the frontier search scorer using current TF
   try {
     auto tf_stamped = tf_buffer_.lookupTransform(
@@ -274,12 +302,44 @@ void Explore::makePlan()
     visualizeFrontiers(frontiers);
   }
 
-  // find non blacklisted frontier
-  auto frontier =
-      std::find_if_not(frontiers.begin(), frontiers.end(),
-                       [this](const frontier_exploration::Frontier& f) {
-                         return goalOnBlacklist(f.centroid);
-                       });
+  // Find the first frontier that is neither blacklisted nor inside the robot's immediate body reach (< min_target_distance_)
+  auto frontier = frontiers.end();
+  for (auto it = frontiers.begin(); it != frontiers.end(); ++it) {
+    if (goalOnBlacklist(it->safe_target)) {
+      continue;
+    }
+    double dist_to_robot = std::hypot(it->safe_target.x - pose.position.x,
+                                      it->safe_target.y - pose.position.y);
+    if (dist_to_robot < min_target_distance_) {
+      // Robot is already within physical reach of this frontier target.
+      // Retire it to blacklist so it doesn't trigger 0-motion Nav2 instant-completion loops.
+      RCLCPP_DEBUG(logger_,
+                   "Frontier at (%.2f, %.2f) is within robot reach (%.2fm < %.2fm). Retiring to blacklist.",
+                   it->safe_target.x, it->safe_target.y, dist_to_robot, min_target_distance_);
+      frontier_blacklist_.push_back(it->safe_target);
+      continue;
+    }
+    frontier = it;
+    break;
+  }
+
+  if (frontier == frontiers.end()) {
+    // If all frontiers are blacklisted or inside reach, reset blacklist once so the robot
+    // re-evaluates previously obstructed areas with the latest expanded map
+    if (!frontier_blacklist_.empty()) {
+      RCLCPP_INFO(logger_, "All active frontiers were blacklisted or reached. Resetting blacklist to re-evaluate with current map.");
+      frontier_blacklist_.clear();
+      for (auto it = frontiers.begin(); it != frontiers.end(); ++it) {
+        double dist_to_robot = std::hypot(it->safe_target.x - pose.position.x,
+                                          it->safe_target.y - pose.position.y);
+        if (dist_to_robot >= min_target_distance_) {
+          frontier = it;
+          break;
+        }
+      }
+    }
+  }
+
   if (frontier == frontiers.end()) {
     RCLCPP_WARN(logger_, "All frontiers traversed/tried out, stopping.");
     auto status_msg = explore_lite_msgs::msg::ExploreStatus();
@@ -288,27 +348,29 @@ void Explore::makePlan()
     stop(true);
     return;
   }
-  geometry_msgs::msg::Point target_position = frontier->centroid;
+  geometry_msgs::msg::Point target_position = frontier->safe_target;
+  double current_dist_to_target = std::hypot(target_position.x - pose.position.x,
+                                             target_position.y - pose.position.y);
 
-  // time out if we are not making any progress
+  // Goal Commitment (Preventing ping-pong preemption across rooms):
+  // If we already have an active goal that the robot is pursuing and making progress towards:
+  // Do NOT interrupt or preempt the robot unless the candidate frontier is significantly closer
+  // to the robot than the active goal (e.g. less than half distance).
+  if (goal_active_) {
+    double dist_to_active = std::hypot(prev_goal_.x - pose.position.x,
+                                       prev_goal_.y - pose.position.y);
+    bool same_goal = same_point(prev_goal_, target_position);
+    bool candidate_much_closer = (current_dist_to_target < 1.2 && dist_to_active > 2.5);
+    if (!same_goal && !candidate_much_closer) {
+      // Maintain commitment to current room/target without ping-ponging
+      return;
+    }
+  }
+
   bool same_goal = same_point(prev_goal_, target_position);
-
   prev_goal_ = target_position;
-  if (!same_goal || prev_distance_ > frontier->min_distance) {
-    // we have different goal or we made some progress
-    last_progress_ = this->now();
-    prev_distance_ = frontier->min_distance;
-  }
-  // black list if we've made no progress for a long time
-  if (goal_active_ &&
-      (this->now() - last_progress_ >
-       tf2::durationFromSec(progress_timeout_)) &&
-      !resuming_) {
-    frontier_blacklist_.push_back(target_position);
-    RCLCPP_DEBUG(logger_, "Adding current goal to black list");
-    makePlan();
-    return;
-  }
+  last_progress_ = this->now();
+  prev_distance_ = current_dist_to_target;
 
   // ensure only first call of makePlan was set resuming to true
   if (resuming_) {
@@ -320,7 +382,8 @@ void Explore::makePlan()
     return;
   }
 
-  RCLCPP_DEBUG(logger_, "Sending goal to move base nav2");
+  RCLCPP_INFO(logger_, "Dispatching navigation goal to (%.2f, %.2f) [dist=%.2fm]",
+              target_position.x, target_position.y, current_dist_to_target);
 
   // send goal to move_base if we have something new to pursue
   auto goal = nav2_msgs::action::NavigateToPose::Goal();
@@ -330,6 +393,7 @@ void Explore::makePlan()
   goal.pose.header.stamp = this->now();
 
   goal_active_ = true;
+  goal_dispatched_time_ = this->now();
   auto send_goal_options = rclcpp_action::Client<
       nav2_msgs::action::NavigateToPose>::SendGoalOptions();
 
@@ -381,17 +445,14 @@ void Explore::returnToInitialPose()
 }
 bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
 {
-  constexpr static size_t tolerace = 5;
-  nav2_costmap_2d::Costmap2D* costmap2d = costmap_client_.getCostmap();
+  constexpr static double blacklist_radius = 0.35;
 
   // check if a goal is on the blacklist for goals that we're pursuing
   for (auto& frontier_goal : frontier_blacklist_) {
-    double x_diff = fabs(goal.x - frontier_goal.x);
-    double y_diff = fabs(goal.y - frontier_goal.y);
-
-    if (x_diff < tolerace * costmap2d->getResolution() &&
-        y_diff < tolerace * costmap2d->getResolution())
+    double dist = std::hypot(goal.x - frontier_goal.x, goal.y - frontier_goal.y);
+    if (dist < blacklist_radius) {
       return true;
+    }
   }
   return false;
 }
@@ -406,30 +467,26 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
   goal_active_ = false;
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
-      RCLCPP_DEBUG(logger_, "Goal was successful");
+      RCLCPP_INFO(logger_, "Goal at (%.2f, %.2f) SUCCEEDED — retiring frontier to blacklist",
+                  frontier_goal.x, frontier_goal.y);
+      frontier_blacklist_.push_back(frontier_goal);
       last_progress_ = this->now();
-      prev_distance_ = 0;
+      prev_distance_ = 0.0;
       break;
     case rclcpp_action::ResultCode::ABORTED:
-#ifdef NAV2_RESULT_HAS_ERROR_CODE
-      if (result.result && result.result->error_code != 0) {
-        RCLCPP_DEBUG(logger_, "Goal aborted with error_code=%d (%s) — blacklisting frontier",
-                     result.result->error_code,
-                     result.result->error_msg.c_str());
-        frontier_blacklist_.push_back(frontier_goal);
+      if ((this->now() - goal_dispatched_time_) < tf2::durationFromSec(0.8)) {
+        RCLCPP_WARN(logger_, "Goal at (%.2f, %.2f) aborted immediately at start (<0.8s) — planner/start issue, skipping blacklist to preserve map frontiers",
+                    frontier_goal.x, frontier_goal.y);
       } else {
-        RCLCPP_DEBUG(logger_, "Goal aborted with error_code=0 — likely a preemption, not blacklisting");
+        RCLCPP_WARN(logger_, "Goal at (%.2f, %.2f) aborted during transit — blacklisting frontier",
+                    frontier_goal.x, frontier_goal.y);
+        frontier_blacklist_.push_back(frontier_goal);
       }
-#else
-      // Humble: no error_code field, blacklist unconditionally on abort
-      RCLCPP_DEBUG(logger_, "Goal aborted — blacklisting frontier");
-      frontier_blacklist_.push_back(frontier_goal);
-#endif
-      // If it was aborted probably because we've found another frontier goal,
-      // so just return and don't make plan again
+      makePlan();
       return;
     case rclcpp_action::ResultCode::CANCELED:
-      RCLCPP_DEBUG(logger_, "Goal was canceled");
+      RCLCPP_DEBUG(logger_, "Goal at (%.2f, %.2f) was canceled",
+                   frontier_goal.x, frontier_goal.y);
       // If goal canceled might be because exploration stopped from topic. Don't make new plan.
       return;
     default:
