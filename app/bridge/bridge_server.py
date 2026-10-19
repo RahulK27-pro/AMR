@@ -30,8 +30,8 @@ import io
 import json
 import math
 import os
-os.environ.pop('ROS_LOCALHOST_ONLY', None)
-os.environ.pop('ROS_AUTOMATIC_DISCOVERY_RANGE', None)
+os.environ['RCUTILS_LOGGING_SEVERITY_THRESHOLD'] = 'ERROR'
+os.environ['ROS_LOCALHOST_ONLY'] = '1'
 import signal
 import subprocess
 import sys
@@ -344,14 +344,19 @@ class MappingManager:
             run_explore_flag = 'true' if run_explore else 'false'
             headless_flag = 'true' if headless else 'false'
             rviz_flag = 'true' if use_rviz else 'false'
+            display_env = os.environ.get('DISPLAY', ':0')
+            domain_id = os.environ.get('ROS_DOMAIN_ID', '7')
+            rmw_impl = os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
 
             cmd = (
-                f"unset ROS_LOCALHOST_ONLY && "
-                f"unset ROS_AUTOMATIC_DISCOVERY_RANGE && "
+                f"export DISPLAY=\"{display_env}\" && "
+                f"export QT_QPA_PLATFORM=xcb && "
+                f"export ROS_DOMAIN_ID=\"{domain_id}\" && "
+                f"export RMW_IMPLEMENTATION=\"{rmw_impl}\" && "
+                f"export ROS_LOCALHOST_ONLY=1 && "
                 f"export LIBGL_ALWAYS_SOFTWARE=1 && "
                 f"export GALLIUM_DRIVER=llvmpipe && "
                 f"export MESA_GL_VERSION_OVERRIDE=4.5 && "
-                f"export DISPLAY=\"${{DISPLAY:-:0}}\" && "
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
                 f"ros2 launch agv_description mapping_session.launch.py "
@@ -361,6 +366,15 @@ class MappingManager:
             logger.info(f"[MappingManager] Starting mapping_session: {cmd}")
             try:
                 self.mapping_log = open('/tmp/amr_mapping.log', 'w')
+                sub_env = os.environ.copy()
+                sub_env['DISPLAY'] = display_env
+                sub_env['QT_QPA_PLATFORM'] = 'xcb'
+                sub_env['ROS_DOMAIN_ID'] = domain_id
+                sub_env['RMW_IMPLEMENTATION'] = rmw_impl
+                sub_env['ROS_LOCALHOST_ONLY'] = '1'
+                sub_env['LIBGL_ALWAYS_SOFTWARE'] = '1'
+                sub_env['GALLIUM_DRIVER'] = 'llvmpipe'
+                sub_env['MESA_GL_VERSION_OVERRIDE'] = '4.5'
                 self.proc = subprocess.Popen(
                     cmd,
                     shell=True,
@@ -368,7 +382,8 @@ class MappingManager:
                     cwd=str(self.ws_root),
                     preexec_fn=os.setsid,
                     stdout=self.mapping_log,
-                    stderr=subprocess.STDOUT
+                    stderr=subprocess.STDOUT,
+                    env=sub_env
                 )
             except Exception as e:
                 logger.error(f"[MappingManager] Failed to launch mapping_session: {e}")
@@ -392,9 +407,12 @@ class MappingManager:
                 return True
 
             if self.state == 'MAPPING':
+                domain_id = os.environ.get('ROS_DOMAIN_ID', '7')
+                rmw_impl = os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
                 cmd = (
-                    f"unset ROS_LOCALHOST_ONLY && "
-                    f"unset ROS_AUTOMATIC_DISCOVERY_RANGE && "
+                    f"export ROS_DOMAIN_ID=\"{domain_id}\" && "
+                    f"export RMW_IMPLEMENTATION=\"{rmw_impl}\" && "
+                    f"export ROS_LOCALHOST_ONLY=1 && "
                     f"source /opt/ros/jazzy/setup.bash && "
                     f"source {self.ws_root}/install/setup.bash && "
                     f"ros2 run explore_lite explore --ros-args -r __node:=explore_node "
@@ -2954,11 +2972,11 @@ async def post_gui_launch(req: GuiLaunchRequest):
     """Launch Gazebo GUI or RViz2 visualizer client in the current display."""
     target_app = req.app.lower().strip()
     env = os.environ.copy()
-    env.pop('ROS_LOCALHOST_ONLY', None)
-    env.pop('ROS_AUTOMATIC_DISCOVERY_RANGE', None)
     env['DISPLAY'] = os.environ.get('DISPLAY', ':0')
-    env['WAYLAND_DISPLAY'] = os.environ.get('WAYLAND_DISPLAY', 'wayland-0')
-    env['XDG_RUNTIME_DIR'] = os.environ.get('XDG_RUNTIME_DIR', '/run/user/1000')
+    env['QT_QPA_PLATFORM'] = 'xcb'
+    env['ROS_DOMAIN_ID'] = os.environ.get('ROS_DOMAIN_ID', '7')
+    env['RMW_IMPLEMENTATION'] = os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
+    env['ROS_LOCALHOST_ONLY'] = '1'
     env['LIBGL_ALWAYS_SOFTWARE'] = '1'
     env['GALLIUM_DRIVER'] = 'llvmpipe'
     env['MESA_GL_VERSION_OVERRIDE'] = '4.5'

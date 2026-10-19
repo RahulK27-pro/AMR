@@ -60,8 +60,20 @@ export default function StatusBar({
     };
     fetchMaps();
     const interval = setInterval(fetchMaps, 8000);
-    return () => { mounted = false; clearInterval(interval); };
-  }, []);
+
+    const handleCustomRefresh = () => {
+      fetchMaps();
+    };
+    window.addEventListener('amr_maps_updated', handleCustomRefresh);
+    window.addEventListener('amr_map_saved', handleCustomRefresh);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+      window.removeEventListener('amr_maps_updated', handleCustomRefresh);
+      window.removeEventListener('amr_map_saved', handleCustomRefresh);
+    };
+  }, [activeMap, currentView]);
 
   const handleConnect = () => {
     bridge.connect(host, Number(port));
@@ -127,6 +139,11 @@ export default function StatusBar({
           id="select-active-map"
           value={activeMap}
           onChange={(e) => onMapChange && onMapChange(e.target.value)}
+          onFocus={() => {
+            bridge.getSavedMaps().then((res) => {
+              if (res?.maps) setAvailableMaps(res.maps);
+            });
+          }}
           style={{
             background: 'transparent',
             color: '#38bdf8',
@@ -139,13 +156,23 @@ export default function StatusBar({
           }}
         >
           {availableMaps.length > 0 ? (
-            availableMaps.map((m) => (
-              <option key={m.name} value={m.name} style={{ background: '#1e293b', color: '#f8fafc' }}>
-                {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
-              </option>
-            ))
+            <>
+              {availableMaps.map((m) => (
+                <option key={m.name} value={m.name} style={{ background: '#1e293b', color: '#f8fafc' }}>
+                  {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
+                </option>
+              ))}
+              {activeMap && !availableMaps.some((m) => m.name === activeMap) && (
+                <option key={activeMap} value={activeMap} style={{ background: '#1e293b', color: '#f8fafc' }}>
+                  {activeMap} (newly saved)
+                </option>
+              )}
+            </>
           ) : (
             <>
+              {activeMap && activeMap !== 'warehouse_01' && activeMap !== 'warehouse_map' && (
+                <option value={activeMap} style={{ background: '#1e293b', color: '#f8fafc' }}>{activeMap}</option>
+              )}
               <option value="warehouse_01" style={{ background: '#1e293b', color: '#f8fafc' }}>warehouse_01 (565 nodes)</option>
               <option value="warehouse_map" style={{ background: '#1e293b', color: '#f8fafc' }}>warehouse_map (764 nodes)</option>
             </>

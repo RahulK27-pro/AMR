@@ -8,12 +8,11 @@ import bridge from '../services/amrBridge';
  * Pipeline Stages:
  *   1. Map New Place (SLAM Toolbox + Manual Drive or Auto Frontier Exploration)
  *   2. Map Verification & Saving (Quality Audit, Metrics, PGM/YAML Generation, On-disk Verification)
- *   3. Graph Extraction (Topological Roadmap generation — Phase 3 preview)
- *   4. Graph Verification
- *   5. Place Naming
- *   6. Navigation
+ *   3. Graph Extraction (Topological Roadmap generation)
+ *   4. Graph Verification (Roadmap Quality & Route Audit)
+ *   5. Place Naming & Final Save (Semantic Stations & System Activation)
  */
-export default function MappingScreen({ telemetry, onReturnToDashboard }) {
+export default function MappingScreen({ telemetry, onReturnToDashboard, onMapChange }) {
   // Mapping state from telemetry or local fallback
   const mappingData = telemetry?.mapping ?? {};
   const pose = telemetry?.pose ?? { x: 0, y: 0, yaw: 0 };
@@ -32,7 +31,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   const [liveMapImg, setLiveMapImg] = useState(null);
   const [liveMapMeta, setLiveMapMeta] = useState(null);
   const [teleopSpeed, setTeleopSpeed] = useState(0.4); // m/s safe mapping speed
-  const [guiMode, setGuiMode] = useState('rviz'); // 'rviz' (Recommended - RViz2 with fast background sim) | 'all' | 'headless'
+  const [enableGui, setEnableGui] = useState(true); // Complete GUI mode (Gazebo 3D + RViz2)
   const [guiFeedback, setGuiFeedback] = useState(null);
 
   // Virtual Joystick & Teleop refs
@@ -120,16 +119,11 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     py: 0,
   });
 
-  // Phase 6: Navigation Using Place Names state
-  const [navMode, setNavMode] = useState('single'); // 'single' | 'multi'
-  const [navDestinationPlaceId, setNavDestinationPlaceId] = useState('');
-  const [selectedStopToAdd, setSelectedStopToAdd] = useState('');
-  const [navSequence, setNavSequence] = useState([]);
-  const [isDispatchingNav, setIsDispatchingNav] = useState(false);
-  const [navRoutePreview, setNavRoutePreview] = useState(null);
-  const [navError, setNavError] = useState(null);
-  const [isNavApproved, setIsNavApproved] = useState(false);
-  const [activeNavInfo, setActiveNavInfo] = useState(null);
+  // Phase 5: Final Map Save & Completion state
+  const [isFinalSaving, setIsFinalSaving] = useState(false);
+  const [isFinalSaved, setIsFinalSaved] = useState(false);
+  const [finalSaveError, setFinalSaveError] = useState(null);
+  const [finalSaveReport, setFinalSaveReport] = useState(null);
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -446,8 +440,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
     setSaveErrorMsg(null);
     setSaveSuccessMsg(null);
     try {
-      const headless = (guiMode !== 'all');
-      const useRviz = (guiMode === 'rviz' || guiMode === 'all');
+      const headless = !enableGui;
+      const useRviz = enableGui;
       const targetMapName = (mapName || 'hospital_map').trim();
       const ok = await bridge.startMapping(targetMapName, world, runExplore, headless, useRviz);
       if (ok) {
@@ -459,7 +453,11 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
         setVerificationData(null);
         setLiveMapImg(null);
         setLiveMapMeta(null);
+      } else {
+        setSaveErrorMsg('Failed to start mapping session. Please verify that the AMR Bridge server is running on port 8000.');
       }
+    } catch (err) {
+      setSaveErrorMsg(`Error starting mapping: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -521,9 +519,13 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
         setMapName(targetName);
         setSelectedMapForGraph(targetName);
         setSavedReport(res.report);
-        setSaveSuccessMsg(`Map "${targetName}" verified and saved to disk.`);
         fetchVerificationData();
         fetchSavedMaps();
+        if (onMapChange) {
+          onMapChange(targetName);
+        }
+        window.dispatchEvent(new CustomEvent('amr_map_saved', { detail: { mapName: targetName } }));
+        window.dispatchEvent(new CustomEvent('amr_maps_updated', { detail: { activeMap: targetName } }));
       } else {
         setSaveErrorMsg(res?.error || 'Failed to save map to disk.');
       }
@@ -862,165 +864,66 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
   };
 
 
-  const handleApprovePlaces = async () => {
-    if (namedPlaces.length === 0) {
-      setPlacesError('Please define at least one named station or place before approving');
-      return;
-    }
-    await handleSavePlacesToDisk();
-    setIsPlacesApproved(true);
-    setCurrentStep(6);
-  };
-
-  // ---- Phase 6: Navigation Using Place Names Callbacks & Handlers ----
-
-  const calculateRoutePreview = useCallback(async (targetPlace) => {
-    if (!targetPlace) return;
-    const targetMap = selectedMapForGraph || mapName || 'warehouse_01';
-    const nodes = extractedGraphReport?.nodes || [];
-    if (nodes.length === 0) return;
-
-    let startNodeId = nodes[0].id;
-    let minD = Infinity;
-    for (const n of nodes) {
-      const d = Math.hypot((n.x ?? n.wx ?? 0) - pose.x, (n.y ?? n.wy ?? 0) - pose.y);
-      if (d < minD) {
-        minD = d;
-        startNodeId = n.id;
-      }
-    }
-
+  // ---- Phase 5: Final Map Save & Completion Handler ----
+  const handleFinalSaveMap = async () => {
+    setIsFinalSaving(true);
+    setFinalSaveError(null);
     try {
-      const res = await bridge.planRoute(startNodeId, targetPlace.node_id, targetMap);
-      if (res?.ok && res.route) {
-        setNavRoutePreview(res.route);
+      const targetMap = (selectedMapForGraph || mapName || 'warehouse_01').trim();
+
+      // 1. Save named places to disk and inject into roadmap
+      const placeRes = await bridge.saveNamedPlaces(namedPlaces, targetMap);
+      if (!placeRes?.ok) {
+        throw new Error(placeRes?.error || 'Failed to save named places to disk');
       }
-    } catch (_) {}
-  }, [selectedMapForGraph, mapName, extractedGraphReport, pose.x, pose.y]);
 
-  const hasAttemptedFetchPlacesRef = useRef(false);
-
-  useEffect(() => {
-    if (currentStep === 6) {
-      if (namedPlaces.length > 0) {
-        const first = namedPlaces[0];
-        if (!navDestinationPlaceId) {
-          setNavDestinationPlaceId(first.id);
-          calculateRoutePreview(first);
-        }
-        if (!selectedStopToAdd) {
-          setSelectedStopToAdd(first.id);
-        }
-      } else if (!hasAttemptedFetchPlacesRef.current && !isLoadingPlaces) {
-        hasAttemptedFetchPlacesRef.current = true;
-        fetchNamedPlaces();
+      // 2. Ensure base SLAM map files exist on disk
+      if (!isSaved) {
+        try {
+          const saveRes = await bridge.saveMap(targetMap);
+          if (saveRes?.ok) {
+            setIsSaved(true);
+          }
+        } catch (_) {}
       }
-      if (!extractedGraphReport) {
-        fetchExistingGraph();
+
+      // 3. Set active map on backend bridge
+      try {
+        await bridge.setActiveMap(targetMap);
+      } catch (e) {
+        console.warn('Could not set active map on backend:', e);
       }
-    } else {
-      hasAttemptedFetchPlacesRef.current = false;
-    }
-  }, [currentStep, namedPlaces.length, navDestinationPlaceId, selectedStopToAdd, calculateRoutePreview, fetchNamedPlaces, fetchExistingGraph, extractedGraphReport, isLoadingPlaces]);
 
-  useEffect(() => {
-    if (telemetry?.active_place_nav) {
-      setActiveNavInfo(telemetry.active_place_nav);
-    }
-  }, [telemetry?.active_place_nav]);
+      // 4. Update localStorage
+      localStorage.setItem('amr_active_map', targetMap);
 
-  const handleSelectPlaceAsDestination = (place) => {
-    setNavDestinationPlaceId(place.id);
-    setSelectedPlaceId(place.id);
-    setNavError(null);
-    calculateRoutePreview(place);
-  };
-
-  const handleDispatchSinglePlace = async () => {
-    const target = namedPlaces.find((p) => p.id === navDestinationPlaceId);
-    if (!target) {
-      setNavError('Please select a destination place.');
-      return;
-    }
-    setIsDispatchingNav(true);
-    setNavError(null);
-    try {
-      const res = await bridge.dispatchPlace(target, selectedMapForGraph || mapName);
-      if (res?.ok) {
-        setActiveNavInfo({
-          target_place: target.name,
-          target_node: target.node_id,
-          target_x: target.x,
-          target_y: target.y,
-          status: 'NAVIGATING',
-        });
-        calculateRoutePreview(target);
-      } else {
-        setNavError(res?.error || 'Failed to dispatch navigation');
+      // 5. Notify parent App component
+      if (onMapChange) {
+        onMapChange(targetMap);
       }
+
+      // 6. Broadcast global events for immediate live dashboard & dropdown update
+      window.dispatchEvent(new CustomEvent('amr_map_saved', { detail: { mapName: targetMap } }));
+      window.dispatchEvent(new CustomEvent('amr_maps_updated', { detail: { activeMap: targetMap } }));
+
+      // 7. Update state & report
+      setIsFinalSaved(true);
+      setIsPlacesApproved(true);
+      setPlacesSaveSuccess(true);
+      setFinalSaveReport({
+        mapName: targetMap,
+        placesCount: namedPlaces.length,
+        nodesCount: extractedGraphReport?.total_nodes || extractedGraphReport?.nodes?.length || 0,
+        edgesCount: extractedGraphReport?.total_edges || extractedGraphReport?.edges?.length || 0,
+      });
+
+      bridge.emitEvent('success', `Final save complete: Map "${targetMap}" saved and activated!`);
     } catch (err) {
-      setNavError(err.message || 'Error dispatching navigation');
+      setFinalSaveError(err.message || 'Error completing final map save');
+      bridge.emitEvent('critical', `Final save error: ${err.message}`);
     } finally {
-      setIsDispatchingNav(false);
+      setIsFinalSaving(false);
     }
-  };
-
-  const handleAddStopToSequence = () => {
-    const p = namedPlaces.find((item) => item.id === selectedStopToAdd);
-    if (p) {
-      setNavSequence((prev) => [...prev, p]);
-    }
-  };
-
-  const handleRemoveStopFromSequence = (idx) => {
-    setNavSequence((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleDispatchSequence = async () => {
-    if (navSequence.length === 0) {
-      setNavError('Please add at least one stop to the mission queue.');
-      return;
-    }
-    setIsDispatchingNav(true);
-    setNavError(null);
-    try {
-      const res = await bridge.dispatchPlaceSequence(navSequence, selectedMapForGraph || mapName);
-      if (res?.ok) {
-        setActiveNavInfo({
-          target_place: navSequence[0].name,
-          target_node: navSequence[0].node_id,
-          target_x: navSequence[0].x,
-          target_y: navSequence[0].y,
-          status: 'NAVIGATING',
-          total_stops: navSequence.length,
-          current_stop: 1,
-        });
-        calculateRoutePreview(navSequence[0]);
-      } else {
-        setNavError(res?.error || 'Failed to dispatch mission sequence');
-      }
-    } catch (err) {
-      setNavError(err.message || 'Error dispatching sequence');
-    } finally {
-      setIsDispatchingNav(false);
-    }
-  };
-
-  const handleCancelNavigation = async () => {
-    await bridge.cancelPlaceNavigation();
-    setActiveNavInfo(null);
-    setNavRoutePreview(null);
-  };
-
-  const handleEmergencyStop = async () => {
-    await bridge.sendStop();
-    setActiveNavInfo(null);
-    setNavRoutePreview(null);
-  };
-
-  const handleApproveNavigation = () => {
-    setIsNavApproved(true);
-    setCurrentStep(7);
   };
 
   const handleCanvasClickForNodePick = (e) => {
@@ -1097,11 +1000,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
       ? 'Step 3: Graph Extraction & Topological Roadmap Generation'
       : currentStep === 4
       ? 'Step 4: Roadmap Quality Verification & Route Pathfinding'
-      : currentStep === 5
-      ? 'Step 5: Semantic Place Naming & Station Setup'
-      : currentStep === 6
-      ? 'Step 6: Fleet Navigation Using Place Names'
-      : 'Step 7: Live Fleet Monitoring & Supervised Dashboard';
+      : 'Step 5: Semantic Place Naming & Final Map Save';
 
   return (
     <div className="mapping-workflow-container">
@@ -1124,7 +1023,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
           </div>
         </div>
 
-        {/* Pipeline Stepper */}
+        {/* Pipeline Stepper (5-Step Streamlined Mapping Flow) */}
         <div className="pipeline-stepper">
           <div
             className={`stepper-step ${
@@ -1202,50 +1101,16 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
             className={`stepper-step ${
               currentStep === 5
                 ? 'stepper-step--active'
-                : (isPlacesApproved || currentStep > 5)
+                : (isFinalSaved || isPlacesApproved)
                 ? 'stepper-step--completed'
                 : 'stepper-step--pending'
             }`}
-            onClick={() => (isGraphApproved || currentStep > 4) && setCurrentStep(5)}
-            style={{ cursor: isGraphApproved || currentStep > 4 ? 'pointer' : 'default' }}
-            title={isGraphApproved || currentStep > 4 ? 'Review Step 5 (Place Naming)' : 'Pending Step 4 roadmap approval'}
+            onClick={() => (isGraphApproved || currentStep >= 4) && setCurrentStep(5)}
+            style={{ cursor: isGraphApproved || currentStep >= 4 ? 'pointer' : 'default' }}
+            title={isGraphApproved || currentStep >= 4 ? 'Step 5 (Place Naming & Final Save)' : 'Pending Step 4 roadmap approval'}
           >
-            <span className="step-num">{(isPlacesApproved || currentStep > 5) ? '✓' : '5'}</span>
-            <span className="step-label">Place Naming</span>
-          </div>
-
-          <div className="stepper-arrow">➔</div>
-
-          <div
-            className={`stepper-step ${
-              currentStep === 6
-                ? 'stepper-step--active'
-                : (isNavApproved || currentStep > 6)
-                ? 'stepper-step--completed'
-                : 'stepper-step--pending'
-            }`}
-            onClick={() => (isPlacesApproved || currentStep >= 6) && setCurrentStep(6)}
-            style={{ cursor: isPlacesApproved || currentStep >= 6 ? 'pointer' : 'default' }}
-            title={isPlacesApproved || currentStep >= 6 ? 'Step 6 (Navigation)' : 'Pending Step 5 completion'}
-          >
-            <span className="step-num">{(isNavApproved || currentStep > 6) ? '✓' : '6'}</span>
-            <span className="step-label">Navigation</span>
-          </div>
-
-          <div className="stepper-arrow">➔</div>
-
-          <div
-            className={`stepper-step ${
-              currentStep === 7
-                ? 'stepper-step--active'
-                : 'stepper-step--pending'
-            }`}
-            onClick={() => isNavApproved && setCurrentStep(7)}
-            style={{ cursor: isNavApproved ? 'pointer' : 'default' }}
-            title={isNavApproved ? 'Step 7 (Live Monitoring)' : 'Pending Step 6 completion'}
-          >
-            <span className="step-num">7</span>
-            <span className="step-label">Live Monitoring</span>
+            <span className="step-num">{isFinalSaved || isPlacesApproved ? '✓' : '5'}</span>
+            <span className="step-label">Place Naming & Save</span>
           </div>
         </div>
       </div>
@@ -1374,35 +1239,26 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 <div className="mapping-field">
                   <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <label className="mapping-label">GUI Windows</label>
-                    <span className="text-dim text-mono" style={{ fontSize: 10 }}>Desktop Visualizers</span>
+                    <span className="text-dim text-mono" style={{ fontSize: 10 }}>Gazebo 3D + RViz2</span>
                   </div>
-                  <div className="mode-toggle-group" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                  <div className="mode-toggle-group">
                     <button
                       type="button"
-                      className={`btn-mode-toggle ${guiMode === 'rviz' ? 'btn-mode-toggle--active' : ''}`}
-                      onClick={() => setGuiMode('rviz')}
+                      className={`btn-mode-toggle ${enableGui ? 'btn-mode-toggle--active' : ''}`}
+                      onClick={() => setEnableGui(true)}
                       disabled={isProcessing || status === 'MAPPING'}
-                      title="Launch RViz2 visualizer on desktop with Gazebo running fast and headless in background (Recommended)"
+                      title="Launch full desktop GUI with Gazebo 3D simulation and RViz2 SLAM windows"
                     >
-                      🖥️ RViz2 (Recommended)
+                      🖥️ Complete GUI (Gazebo + RViz)
                     </button>
                     <button
                       type="button"
-                      className={`btn-mode-toggle ${guiMode === 'all' ? 'btn-mode-toggle--active' : ''}`}
-                      onClick={() => setGuiMode('all')}
+                      className={`btn-mode-toggle ${!enableGui ? 'btn-mode-toggle--active' : ''}`}
+                      onClick={() => setEnableGui(false)}
                       disabled={isProcessing || status === 'MAPPING'}
-                      title="Launch full desktop GUI with both Gazebo 3D simulation and RViz2 SLAM windows"
+                      title="Run headless in background for lower resource usage"
                     >
-                      🎮 Full 3D (Gazebo + RViz)
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn-mode-toggle ${guiMode === 'headless' ? 'btn-mode-toggle--active' : ''}`}
-                      onClick={() => setGuiMode('headless')}
-                      disabled={isProcessing || status === 'MAPPING'}
-                      title="Run simulation and SLAM headless in background without desktop windows (Dashboard only)"
-                    >
-                      ⚡ Headless (Dashboard Only)
+                      ⚡ Headless (Background)
                     </button>
                   </div>
                 </div>
@@ -2667,488 +2523,148 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 </button>
               </div>
 
-              {/* Card 3: Progression to Step 6 */}
+              {/* Card 3: Final Map Save & Completion (Step 5 Final Save) */}
               <div className="card save-config-card">
-                <div className="card__title" style={{ fontSize: 14 }}>
-                  🏁 Complete Place Naming
-                </div>
-                <div className="text-dim text-xs" style={{ lineHeight: 1.5 }}>
-                  Roadmap places configured. Approving places will advance the operational pipeline to Phase 6 (Navigation Using Place Names).
-                </div>
-                <div className="mapping-actions">
-                  <button
-                    id="btn-approve-places"
-                    type="button"
-                    className="btn--proceed-graph"
-                    onClick={handleApprovePlaces}
-                    style={{ background: 'linear-gradient(135deg, #0284c7, #06b6d4)' }}
-                    disabled={namedPlaces.length === 0}
-                  >
-                    <span>✓</span> APPROVE PLACES & PROCEED TO NAVIGATION (STEP 6)
-                  </button>
-                  <div className="flex-row" style={{ gap: 8 }}>
-                    <button
-                      type="button"
-                      className="btn btn--outline flex-1"
-                      onClick={() => setCurrentStep(4)}
-                      style={{ fontSize: 12 }}
-                    >
-                      ← Back to Step 4 (Graph Verification)
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--sm"
-                      onClick={onReturnToDashboard}
-                      style={{ fontSize: 12 }}
-                    >
-                      Dashboard
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================= STEP 6: NAVIGATION USING PLACE NAMES ================= */}
-          {currentStep === 6 && (
-            <div className="places-panel-container flex-col" style={{ gap: 12 }}>
-              {/* Card 1: Destination & Route Dispatch */}
-              <div className="card nav-dispatch-card">
                 <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <div className="card__title" style={{ fontSize: 14 }}>
-                    🚀 Place Navigation Dispatch
+                    🏁 Final Save: Complete & Deploy Map
                   </div>
-                  {/* Mode Selector */}
-                  <div className="view-mode-pill-group">
-                    <button
-                      type="button"
-                      className={`btn-view-pill ${navMode === 'single' ? 'btn-view-pill--active' : ''}`}
-                      onClick={() => setNavMode('single')}
-                      style={{ fontSize: 11, padding: '3px 8px' }}
-                    >
-                      📍 Single Place
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn-view-pill ${navMode === 'multi' ? 'btn-view-pill--active' : ''}`}
-                      onClick={() => setNavMode('multi')}
-                      style={{ fontSize: 11, padding: '3px 8px' }}
-                    >
-                      🔄 Multi-Stop
-                    </button>
-                  </div>
+                  {isFinalSaved ? (
+                    <span className="audit-check-row__badge badge--pass">✓ FINAL MAP SAVED</span>
+                  ) : (
+                    <span className="audit-check-row__badge badge--info">STEP 5 OF 5</span>
+                  )}
                 </div>
 
-                {/* Single Place Mode */}
-                {navMode === 'single' ? (
-                  <div className="flex-col" style={{ gap: 10 }}>
-                    <div className="mapping-field" style={{ margin: 0 }}>
-                      <label className="mapping-label">Select Destination Place</label>
-                      <select
-                        id="select-nav-place"
-                        className="input-field mapping-input text-mono"
-                        value={navDestinationPlaceId}
-                        onChange={(e) => {
-                          const p = namedPlaces.find((item) => item.id === e.target.value);
-                          if (p) handleSelectPlaceAsDestination(p);
-                        }}
-                      >
-                        {namedPlaces.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            📍 {p.name} [{p.node_id}] — ({p.x}m, {p.y}m)
-                          </option>
-                        ))}
-                      </select>
+                {!isFinalSaved ? (
+                  <>
+                    <div className="text-dim text-xs" style={{ lineHeight: 1.5 }}>
+                      Review configured places above. Performing the final save will write all stations to disk, finalize <strong>{selectedMapForGraph || mapName}</strong> as the active map, and make it instantly selectable in the Live Dashboard dropdown.
                     </div>
 
-                    {/* Target Place Details Card */}
-                    {(() => {
-                      const selectedNavPlace = namedPlaces.find((p) => p.id === navDestinationPlaceId) || namedPlaces[0];
-                      return selectedNavPlace ? (
-                        <div className="nav-target-card">
-                          <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span className="nav-target-card__name font-bold">{selectedNavPlace.name}</span>
-                            <span className="badge badge--primary text-mono">{selectedNavPlace.node_id}</span>
-                          </div>
-                          <div className="text-dim text-xs text-mono" style={{ marginTop: 2 }}>
-                            World Coordinates: ({selectedNavPlace.x}m, {selectedNavPlace.y}m)
-                          </div>
+                    {/* Summary Info */}
+                    <div className="audit-metrics-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, margin: '8px 0' }}>
+                      <div className="audit-metric-box" style={{ padding: '6px 10px' }}>
+                        <span className="audit-metric-box__label">Active Map Name</span>
+                        <span className="audit-metric-box__val text-mono" style={{ fontSize: 12, color: 'var(--accent-cyan)' }}>
+                          {selectedMapForGraph || mapName}
+                        </span>
+                      </div>
+                      <div className="audit-metric-box" style={{ padding: '6px 10px' }}>
+                        <span className="audit-metric-box__label">Configured Places</span>
+                        <span className="audit-metric-box__val text-mono" style={{ fontSize: 12, color: 'var(--accent-green)' }}>
+                          {namedPlaces.length} station{namedPlaces.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    </div>
 
-                          {/* Route Calculation Preview */}
-                          {navRoutePreview && (
-                            <div className="nav-route-metrics-bar">
-                              <span>🛣️ <strong>{navRoutePreview.total_distance_m} m</strong></span>
-                              <span>• <strong>{navRoutePreview.hop_count} hops</strong></span>
-                              <span>• Est: <strong>{navRoutePreview.est_time_sec}s</strong></span>
-                            </div>
-                          )}
-                        </div>
-                      ) : null;
-                    })()}
-
-                    {navError && (
+                    {finalSaveError && (
                       <div className="save-error-banner" style={{ margin: 0, padding: '6px 10px', fontSize: 12 }}>
-                        ⚠️ {navError}
+                        ⚠️ {finalSaveError}
                       </div>
                     )}
 
-                    {/* Dispatch Action */}
-                    <button
-                      id="btn-dispatch-single"
-                      type="button"
-                      className="btn btn--primary"
-                      onClick={handleDispatchSinglePlace}
-                      disabled={isDispatchingNav || namedPlaces.length === 0}
-                      style={{ padding: '10px 16px', fontSize: 13, fontWeight: 700 }}
-                    >
-                      {isDispatchingNav ? 'Dispatching...' : `🚀 DISPATCH AMR TO ${(namedPlaces.find((p) => p.id === navDestinationPlaceId)?.name || 'PLACE').toUpperCase()}`}
-                    </button>
-                  </div>
-                ) : (
-                  /* Multi-Stop Mission Mode */
-                  <div className="flex-col" style={{ gap: 10 }}>
-                    <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
-                      <select
-                        id="select-add-stop"
-                        className="input-field mapping-input text-mono flex-1"
-                        value={selectedStopToAdd}
-                        onChange={(e) => setSelectedStopToAdd(e.target.value)}
-                      >
-                        {namedPlaces.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            📍 {p.name} [{p.node_id}]
-                          </option>
-                        ))}
-                      </select>
+                    <div className="mapping-actions">
                       <button
+                        id="btn-final-save-map"
                         type="button"
-                        className="btn btn--outline btn--sm"
-                        onClick={handleAddStopToSequence}
-                        style={{ fontSize: 12, padding: '7px 12px' }}
+                        className="btn--proceed-graph"
+                        onClick={handleFinalSaveMap}
+                        disabled={isFinalSaving}
+                        style={{ background: 'linear-gradient(135deg, #059669, #10b981)', padding: '10px 16px', fontWeight: 700 }}
                       >
-                        ➕ Add Stop
+                        {isFinalSaving ? (
+                          <span>⏳ Finalizing & Saving Map to Disk...</span>
+                        ) : (
+                          <span>💾 FINAL SAVE MAP</span>
+                        )}
                       </button>
-                    </div>
 
-                    {/* Sequence List */}
-                    <div className="nav-sequence-list">
-                      {navSequence.map((stop, idx) => (
-                        <div key={`${stop.id}_${idx}`} className="nav-sequence-item">
-                          <span className="nav-sequence-item__idx">{idx + 1}</span>
-                          <span className="nav-sequence-item__name flex-1 font-bold text-xs">{stop.name}</span>
-                          <span className="badge badge--primary text-mono" style={{ fontSize: 10 }}>{stop.node_id}</span>
-                          <button
-                            type="button"
-                            className="btn btn--ghost btn--icon text-danger"
-                            onClick={() => handleRemoveStopFromSequence(idx)}
-                            style={{ height: 22, width: 22, fontSize: 11 }}
-                            title="Remove stop"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                      {navSequence.length === 0 && (
-                        <div className="text-dim text-xs text-center p-sm">
-                          No stops added yet. Pick a place above and click "Add Stop" to build a delivery route.
-                        </div>
-                      )}
-                    </div>
-
-                    {navError && (
-                      <div className="save-error-banner" style={{ margin: 0, padding: '6px 10px', fontSize: 12 }}>
-                        ⚠️ {navError}
-                      </div>
-                    )}
-
-                    {/* Dispatch Multi-Stop Mission */}
-                    <div className="flex-row" style={{ gap: 8 }}>
-                      <button
-                        id="btn-dispatch-sequence"
-                        type="button"
-                        className="btn btn--primary flex-1"
-                        onClick={handleDispatchSequence}
-                        disabled={isDispatchingNav || navSequence.length === 0}
-                        style={{ padding: '9px 14px', fontSize: 12, fontWeight: 700 }}
-                      >
-                        {isDispatchingNav ? 'Dispatching...' : `📦 DISPATCH MISSION (${navSequence.length} STOPS)`}
-                      </button>
-                      {navSequence.length > 0 && (
+                      <div className="flex-row" style={{ gap: 8 }}>
                         <button
                           type="button"
-                          className="btn btn--outline btn--sm"
-                          onClick={() => setNavSequence([])}
+                          className="btn btn--outline flex-1"
+                          onClick={() => setCurrentStep(4)}
                           style={{ fontSize: 12 }}
                         >
-                          Clear
+                          ← Back to Step 4 (Graph Verification)
                         </button>
-                      )}
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm"
+                          onClick={onReturnToDashboard}
+                          style={{ fontSize: 12 }}
+                        >
+                          Dashboard
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="save-success-banner" style={{ background: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.4)', marginTop: 4 }}>
+                      <div className="text-sm font-bold" style={{ color: 'var(--accent-green)' }}>
+                        🎉 Final Save Complete: Map "{selectedMapForGraph || mapName}" Ready!
+                      </div>
+                      <div className="text-dim text-xs" style={{ marginTop: 4, lineHeight: 1.5 }}>
+                        The map floorplan, topological roadmap, and {namedPlaces.length} named place(s) have been verified and saved to disk. This map is now registered and active in the Live Dashboard dropdown.
+                      </div>
+                    </div>
+
+                    {/* Files Verified List */}
+                    <div className="saved-files-list" style={{ marginTop: 8 }}>
+                      <div className="saved-file-item">
+                        📄 src/agv_description/maps/{selectedMapForGraph || mapName}.yaml
+                      </div>
+                      <div className="saved-file-item">
+                        🖼️ src/agv_description/maps/{selectedMapForGraph || mapName}.pgm
+                      </div>
+                      <div className="saved-file-item">
+                        🕸️ src/agv_description/maps/{selectedMapForGraph || mapName}_graph.json
+                      </div>
+                      <div className="saved-file-item">
+                        🏷️ src/agv_description/maps/{selectedMapForGraph || mapName}_places.json ({namedPlaces.length} stations)
+                      </div>
+                    </div>
+
+                    <div className="mapping-actions" style={{ marginTop: 12 }}>
+                      <button
+                        id="btn-return-dashboard-final"
+                        type="button"
+                        className="btn btn--primary"
+                        onClick={onReturnToDashboard}
+                        style={{ width: '100%', padding: '10px 18px', fontWeight: 700, fontSize: 13, background: 'linear-gradient(135deg, #0284c7, #10b981)' }}
+                      >
+                        📊 GO TO LIVE DASHBOARD ➔
+                      </button>
+
+                      <div className="flex-row" style={{ gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn--outline flex-1"
+                          onClick={() => setIsFinalSaved(false)}
+                          style={{ fontSize: 12 }}
+                        >
+                          ✏️ Edit Places
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm"
+                          onClick={handleRedoMapping}
+                          style={{ fontSize: 12 }}
+                        >
+                          🔄 Map Another Area
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
-
-              {/* Card 2: Live Navigation HUD & Active State */}
-              <div className="card nav-status-card">
-                <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="card__title" style={{ fontSize: 14 }}>
-                    📡 Live Navigation Monitor
-                  </div>
-                  <span className={`badge ${
-                    (activeNavInfo?.status === 'NAVIGATING' || navState === 'NAVIGATING')
-                      ? 'badge--pass'
-                      : navState === 'PLANNING'
-                      ? 'badge--info'
-                      : navState === 'ESTOP'
-                      ? 'badge--danger'
-                      : 'badge--default'
-                  }`}>
-                    {(activeNavInfo?.status === 'NAVIGATING' || navState === 'NAVIGATING') ? '● NAVIGATING' : (activeNavInfo?.status || navState || 'IDLE')}
-                  </span>
-                </div>
-
-                <div className="nav-hud-grid">
-                  <div className="nav-hud-metric">
-                    <span className="text-dim text-xs">Active Target</span>
-                    <span className="font-bold text-sm text-truncate" style={{ color: 'var(--accent-cyan)' }}>
-                      {activeNavInfo?.target_place || (namedPlaces.find((p) => p.id === navDestinationPlaceId)?.name) || 'Standby / Idle'}
-                    </span>
-                  </div>
-                  <div className="nav-hud-metric">
-                    <span className="text-dim text-xs">Dist to Goal</span>
-                    <span className="text-mono font-bold text-sm" style={{ color: 'var(--accent-green)' }}>
-                      {(() => {
-                        const target = namedPlaces.find((p) => p.id === navDestinationPlaceId) || namedPlaces[0];
-                        if (target) {
-                          const d = Math.hypot(pose.x - target.x, pose.y - target.y);
-                          return `${d.toFixed(2)} m`;
-                        }
-                        return '--';
-                      })()}
-                    </span>
-                  </div>
-                  <div className="nav-hud-metric">
-                    <span className="text-dim text-xs">Speed</span>
-                    <span className="text-mono font-bold text-sm">
-                      {Math.abs(velocity.linear).toFixed(2)} m/s
-                    </span>
-                  </div>
-                  <div className="nav-hud-metric">
-                    <span className="text-dim text-xs">Mission Progress</span>
-                    <span className="text-mono font-bold text-sm">
-                      {telemetry?.mission?.total ? `${telemetry.mission.current || 1} / ${telemetry.mission.total}` : activeNavInfo?.total_stops ? `${activeNavInfo.current_stop || 1} / ${activeNavInfo.total_stops}` : '1 / 1'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Cancel & E-STOP controls */}
-                <div className="flex-row" style={{ gap: 8, marginTop: 4 }}>
-                  <button
-                    type="button"
-                    className="btn btn--outline flex-1"
-                    onClick={handleCancelNavigation}
-                    style={{ fontSize: 12, padding: '7px 0' }}
-                  >
-                    ⏹ Cancel Navigation
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--danger flex-1"
-                    onClick={handleEmergencyStop}
-                    style={{ fontSize: 12, padding: '7px 0', fontWeight: 700 }}
-                  >
-                    🛑 E-STOP
-                  </button>
-                </div>
-              </div>
-
-              {/* Card 3: Phase 6 Approval & Advancement to Phase 7 */}
-              <div className="card save-config-card">
-                <div className="card__title" style={{ fontSize: 14 }}>
-                  🏁 Step 6 Sign-Off & Live Monitoring
-                </div>
-                <div className="text-dim text-xs" style={{ lineHeight: 1.5 }}>
-                  Fleet navigation using place names is operational. Approving navigation will complete Phase 6 and advance the pipeline to Phase 7 (Live Fleet Monitoring & Supervised Dashboard).
-                </div>
-                <div className="mapping-actions">
-                  <button
-                    id="btn-approve-navigation"
-                    type="button"
-                    className="btn--proceed-graph"
-                    onClick={handleApproveNavigation}
-                    style={{ background: 'linear-gradient(135deg, #0284c7, #10b981)' }}
-                  >
-                    <span>✓</span> APPROVE NAVIGATION & PROCEED TO MONITORING (STEP 7)
-                  </button>
-                  <div className="flex-row" style={{ gap: 8 }}>
-                    <button
-                      type="button"
-                      className="btn btn--outline flex-1"
-                      onClick={() => setCurrentStep(5)}
-                      style={{ fontSize: 12 }}
-                    >
-                      ← Back to Step 5 (Place Naming)
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--sm"
-                      onClick={onReturnToDashboard}
-                      style={{ fontSize: 12 }}
-                    >
-                      Dashboard
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 
-          {/* ================= STEP 7: LIVE MONITORING & FLEET OPERATIONS ================= */}
-          {currentStep === 7 && (
-            <div className="card phase4-ready-card" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(12, 16, 28, 0.9))', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
-              <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <div className="card__title" style={{ fontSize: 15 }}>
-                  🎯 Step 7: Live Fleet Monitoring & Supervised Operations
-                </div>
-                <span className="audit-check-row__badge badge--pass">PIPELINE COMPLETE</span>
-              </div>
 
-              {/* End-to-End Pipeline Certification Banner */}
-              <div className="save-success-banner" style={{ background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.35)', marginTop: 12 }}>
-                <div className="text-sm font-bold" style={{ color: 'var(--accent-green)' }}>
-                  🎉 Full AMR Operational Pipeline Verified & Deployed!
-                </div>
-                <div className="text-dim text-xs" style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginTop: 4 }}>
-                  All 7 operational phases (SLAM Mapping, Verification, Roadmap Extraction, Graph Auditing, Semantic Places, Place Navigation, and Live Monitoring) are operational. Your AMR is fully mapped, indexed, and ready for supervised industrial warehouse missions.
-                </div>
-              </div>
 
-              {/* Pipeline Certification Checklist */}
-              <div className="audit-checklist-card mt-sm">
-                <div className="card__title" style={{ fontSize: 13, marginBottom: 8 }}>
-                  ✓ Operational Pipeline Certification
-                </div>
-                <div className="audit-check-row">
-                  <div className="audit-check-row__left">
-                    <span className="audit-check-icon audit-check-icon--pass">✓</span>
-                    <div>
-                      <div className="font-bold text-xs">Phase 1 & 2: Floorplan Map Verified & Saved</div>
-                      <div className="text-dim text-xs">{selectedMapForGraph || mapName}.yaml / .pgm on disk</div>
-                    </div>
-                  </div>
-                  <span className="audit-check-row__badge badge--pass">ACTIVE</span>
-                </div>
-                <div className="audit-check-row">
-                  <div className="audit-check-row__left">
-                    <span className="audit-check-icon audit-check-icon--pass">✓</span>
-                    <div>
-                      <div className="font-bold text-xs">Phase 3 & 4: Topological Roadmap Graph</div>
-                      <div className="text-dim text-xs">{extractedGraphReport?.nodes?.length || 596} nodes · {extractedGraphReport?.edges?.length || 32470} LOS edges</div>
-                    </div>
-                  </div>
-                  <span className="audit-check-row__badge badge--pass">VERIFIED</span>
-                </div>
-                <div className="audit-check-row">
-                  <div className="audit-check-row__left">
-                    <span className="audit-check-icon audit-check-icon--pass">✓</span>
-                    <div>
-                      <div className="font-bold text-xs">Phase 5: Semantic Places & Stations</div>
-                      <div className="text-dim text-xs">{namedPlaces.length} stations bound to roadmap</div>
-                    </div>
-                  </div>
-                  <span className="audit-check-row__badge badge--pass">REGISTERED</span>
-                </div>
-                <div className="audit-check-row">
-                  <div className="audit-check-row__left">
-                    <span className="audit-check-icon audit-check-icon--pass">✓</span>
-                    <div>
-                      <div className="font-bold text-xs">Phase 6: Navigation Using Place Names</div>
-                      <div className="text-dim text-xs">A*/Dijkstra trajectory dispatch & sequencing</div>
-                    </div>
-                  </div>
-                  <span className="audit-check-row__badge badge--pass">OPERATIONAL</span>
-                </div>
-              </div>
-
-              {/* Real-time Fleet Telemetry Card */}
-              <div className="card mt-sm" style={{ background: 'rgba(15, 23, 42, 0.6)' }}>
-                <div className="card__title" style={{ fontSize: 13, marginBottom: 8 }}>
-                  📡 Live Telemetry Stream
-                </div>
-                <div className="nav-hud-grid">
-                  <div className="nav-hud-metric">
-                    <span className="text-dim text-xs">AMR Pose</span>
-                    <span className="text-mono font-bold text-sm" style={{ color: 'var(--accent-cyan)' }}>
-                      ({pose.x.toFixed(2)}, {pose.y.toFixed(2)}) m
-                    </span>
-                  </div>
-                  <div className="nav-hud-metric">
-                    <span className="text-dim text-xs">Speed</span>
-                    <span className="text-mono font-bold text-sm" style={{ color: 'var(--accent-green)' }}>
-                      {Math.abs(velocity.linear).toFixed(2)} m/s
-                    </span>
-                  </div>
-                  <div className="nav-hud-metric">
-                    <span className="text-dim text-xs">Obstacle Min</span>
-                    <span className="text-mono font-bold text-sm" style={{ color: minObs && minObs < 0.6 ? 'var(--accent-red)' : 'var(--accent-yellow)' }}>
-                      {minObs != null ? `${minObs.toFixed(2)} m` : 'Clear'}
-                    </span>
-                  </div>
-                  <div className="nav-hud-metric">
-                    <span className="text-dim text-xs">Nav State</span>
-                    <span className="text-mono font-bold text-sm">
-                      {navState || 'IDLE'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick Station Dispatch Matrix */}
-              {namedPlaces.length > 0 && (
-                <div className="card mt-sm" style={{ background: 'rgba(15, 23, 42, 0.6)' }}>
-                  <div className="card__title flex-row" style={{ justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
-                    <span>📍 Quick Station Dispatch</span>
-                    <span className="text-dim text-xs">Click to test dispatch</span>
-                  </div>
-                  <div className="preset-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                    {namedPlaces.map((place) => (
-                      <button
-                        key={place.id}
-                        type="button"
-                        className="btn btn--outline btn--sm"
-                        onClick={() => {
-                          handleSelectPlaceAsDestination(place);
-                          bridge.dispatchPlace(place);
-                        }}
-                        style={{ fontSize: 11, padding: '4px 10px', gap: 4 }}
-                      >
-                        🚀 {place.name} <span className="text-dim">({place.node_id})</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Navigation Actions */}
-              <div className="mapping-actions mt-md">
-                <button
-                  type="button"
-                  className="btn btn--outline"
-                  onClick={() => setCurrentStep(6)}
-                >
-                  ← Back to Navigation (Step 6)
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  onClick={onReturnToDashboard}
-                  style={{ alignSelf: 'center', fontWeight: 700 }}
-                >
-                  📊 Go to Live Monitoring Dashboard
-                </button>
-              </div>
-            </div>
-          )}
 
         </div>
 
@@ -3423,94 +2939,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                 )}
 
 
-                {/* SVG Route Highlighting Overlay (Step 6 Place Navigation Preview) */}
-                {currentStep === 6 && navRoutePreview && navRoutePreview.waypoints?.length > 1 && (
-                  <svg
-                    className="route-svg-overlay nav-route-overlay"
-                    viewBox={`0 0 ${imgDimensions.width} ${imgDimensions.height}`}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      height: '100%',
-                      pointerEvents: 'none',
-                      zIndex: 3,
-                    }}
-                  >
-                    {/* Cyan polyline for active/previewed navigation path */}
-                    <polyline
-                      points={navRoutePreview.waypoints.map((w) => `${w.px},${w.py}`).join(' ')}
-                      fill="none"
-                      stroke="#06b6d4"
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeDasharray="7 5"
-                      style={{ filter: 'drop-shadow(0 0 8px rgba(6, 182, 212, 0.95))' }}
-                    />
-                    {/* Waypoint beads along path */}
-                    {navRoutePreview.waypoints.map((w, idx) => (
-                      <circle
-                        key={idx}
-                        cx={w.px}
-                        cy={w.py}
-                        r="3"
-                        fill="#38bdf8"
-                      />
-                    ))}
-                    {/* Start point marker */}
-                    {navRoutePreview.waypoints[0] && (
-                      <g>
-                        <circle
-                          cx={navRoutePreview.waypoints[0].px}
-                          cy={navRoutePreview.waypoints[0].py}
-                          r="6"
-                          fill="#10b981"
-                          stroke="#fff"
-                          strokeWidth="2"
-                        />
-                        <text
-                          x={navRoutePreview.waypoints[0].px}
-                          y={navRoutePreview.waypoints[0].py - 9}
-                          fill="#10b981"
-                          fontSize="11"
-                          fontWeight="bold"
-                          textAnchor="middle"
-                          style={{ filter: 'drop-shadow(0 0 4px #000)' }}
-                        >
-                          AMR ({navRoutePreview.start_node})
-                        </text>
-                      </g>
-                    )}
-                    {/* Destination marker */}
-                    {navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1] && (
-                      <g>
-                        <circle
-                          cx={navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1].px}
-                          cy={navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1].py}
-                          r="8"
-                          fill="#06b6d4"
-                          stroke="#fff"
-                          strokeWidth="2"
-                        />
-                        <text
-                          x={navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1].px}
-                          y={navRoutePreview.waypoints[navRoutePreview.waypoints.length - 1].py - 11}
-                          fill="#06b6d4"
-                          fontSize="11"
-                          fontWeight="bold"
-                          textAnchor="middle"
-                          style={{ filter: 'drop-shadow(0 0 4px #000)' }}
-                        >
-                          DEST ({navRoutePreview.goal_node})
-                        </text>
-                      </g>
-                    )}
-                  </svg>
-                )}
-
-                {/* SVG Place Markers Overlay (Step 5 & 6) */}
+                {/* SVG Place Markers Overlay (Step 5 Place Naming) */}
                 {currentStep >= 5 && namedPlaces.length > 0 && (
                   <svg
                     className="places-svg-overlay"
@@ -3526,9 +2955,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                     }}
                   >
                     {namedPlaces.map((place) => {
-                      const isNavDestination = currentStep === 6 && (navDestinationPlaceId === place.id || activeNavInfo?.target_place_id === place.id || activeNavInfo?.target_place === place.name);
-                      const isSelected = selectedPlaceId === place.id || isNavDestination;
-                      const markerColor = isNavDestination ? '#06b6d4' : (isSelected ? '#06b6d4' : '#10b981');
+                      const isSelected = selectedPlaceId === place.id;
+                      const markerColor = isSelected ? '#06b6d4' : '#10b981';
                       const labelText = place.name.length > 16 ? place.name.slice(0, 15) + '…' : place.name;
                       const pillW = Math.max(28, Math.min(labelText.length * 6 + 10, 85));
                       const pillH = 14;
@@ -3539,26 +2967,22 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                           className={`place-pin-marker ${isSelected ? 'place-pin-marker--selected' : ''}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (currentStep === 6) {
-                              handleSelectPlaceAsDestination(place);
-                            } else {
-                              handleSelectPlaceForEdit(place);
-                            }
+                            handleSelectPlaceForEdit(place);
                           }}
                           style={{ cursor: 'pointer' }}
                         >
                           <title>{`${place.name} (${place.node_id}) [${place.x}m, ${place.y}m]`}</title>
 
-                          {/* Outer highlight ring on selected or nav destination */}
-                          {(isSelected || isNavDestination) && (
+                          {/* Outer highlight ring on selected place */}
+                          {isSelected && (
                             <circle
                               cx={place.px}
                               cy={place.py}
-                              r={isNavDestination ? 10 : 8}
+                              r={8}
                               fill="none"
-                              stroke={isNavDestination ? '#06b6d4' : '#10b981'}
-                              strokeWidth={isNavDestination ? '2' : '1.5'}
-                              strokeDasharray={isNavDestination ? '4 3' : '3 2'}
+                              stroke="#06b6d4"
+                              strokeWidth="1.5"
+                              strokeDasharray="3 2"
                             />
                           )}
 
@@ -3566,7 +2990,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                           <circle
                             cx={place.px}
                             cy={place.py}
-                            r={isNavDestination ? 5 : (isSelected ? 4 : 3)}
+                            r={isSelected ? 4 : 3}
                             fill={markerColor}
                             stroke="#ffffff"
                             strokeWidth="1"
@@ -3582,14 +3006,14 @@ export default function MappingScreen({ telemetry, onReturnToDashboard }) {
                               rx="3"
                               fill="rgba(15, 23, 42, 0.88)"
                               stroke={markerColor}
-                              strokeWidth={isSelected || isNavDestination ? '1.4' : '0.8'}
+                              strokeWidth={isSelected ? '1.4' : '0.8'}
                             />
                             <text
                               x="0"
                               y={-pillH / 2}
-                              fill={isNavDestination ? '#38bdf8' : '#f1f5f9'}
+                              fill="#f1f5f9"
                               fontSize="8.5"
-                              fontWeight={isSelected || isNavDestination ? '700' : '500'}
+                              fontWeight={isSelected ? '700' : '500'}
                               textAnchor="middle"
                               dominantBaseline="central"
                               style={{ pointerEvents: 'none', userSelect: 'none' }}

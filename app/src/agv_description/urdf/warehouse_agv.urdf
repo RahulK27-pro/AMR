@@ -25,31 +25,31 @@
   <link name="base_link">
 
     <visual>
-      <origin xyz="0 0 0.07"/>
+      <origin xyz="0 0 0.06"/>
       <geometry>
-        <cylinder radius="0.15" length="0.12"/>
+        <cylinder radius="0.11" length="0.10"/>
       </geometry>
       <material name="blue"/>
     </visual>
 
     <collision>
-      <origin xyz="0 0 0.07"/>
+      <origin xyz="0 0 0.06"/>
       <geometry>
-        <cylinder radius="0.15" length="0.12"/>
+        <cylinder radius="0.11" length="0.10"/>
       </geometry>
     </collision>
 
     <inertial>
-      <origin xyz="0 0 0.07"/>
-      <mass value="12.0"/>
+      <origin xyz="0 0 0.06"/>
+      <mass value="8.0"/>
 
       <inertia 
-         ixx="0.0778"
+         ixx="0.0309"
          ixy="0"
          ixz="0"
-         iyy="0.0778"
+         iyy="0.0309"
          iyz="0"
-         izz="0.135"/>
+         izz="0.0484"/>
     </inertial>
 
   </link>
@@ -63,7 +63,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
       <geometry>
-        <cylinder radius="0.05" length="0.04"/>
+        <cylinder radius="0.025" length="0.03"/>
       </geometry>
       <material name="black"/>
     </visual>
@@ -71,20 +71,20 @@
     <collision>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
       <geometry>
-        <cylinder radius="0.05" length="0.04"/>
+        <cylinder radius="0.025" length="0.03"/>
       </geometry>
     </collision>
 
     <inertial>
-      <mass value="2.0"/>
+      <mass value="1.0"/>
 
       <inertia
-          ixx="0.002"
+          ixx="0.0005"
           ixy="0"
           ixz="0"
-          iyy="0.002"
+          iyy="0.0005"
           iyz="0"
-          izz="0.002"/>
+          izz="0.0005"/>
     </inertial>
 
   </link>
@@ -92,7 +92,7 @@
   <joint name="left_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="left_wheel"/>
-    <origin xyz="0 0.17 0.05"/>
+    <origin xyz="0 0.13 0.025"/>
     <axis xyz="0 1 0"/>
     <dynamics damping="0.1" friction="0.05"/>
   </joint>
@@ -106,7 +106,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
       <geometry>
-        <cylinder radius="0.05" length="0.04"/>
+        <cylinder radius="0.025" length="0.03"/>
       </geometry>
       <material name="black"/>
     </visual>
@@ -114,20 +114,20 @@
     <collision>
       <origin xyz="0 0 0" rpy="1.5708 0 0"/>
       <geometry>
-        <cylinder radius="0.05" length="0.04"/>
+        <cylinder radius="0.025" length="0.03"/>
       </geometry>
     </collision>
 
     <inertial>
-      <mass value="2.0"/>
+      <mass value="1.0"/>
 
       <inertia
-          ixx="0.002"
+          ixx="0.0005"
           ixy="0"
           ixz="0"
-          iyy="0.002"
+          iyy="0.0005"
           iyz="0"
-          izz="0.002"/>
+          izz="0.0005"/>
     </inertial>
 
   </link>
@@ -135,7 +135,7 @@
   <joint name="right_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="right_wheel"/>
-    <origin xyz="0 -0.17 0.05"/>
+    <origin xyz="0 -0.13 0.025"/>
     <axis xyz="0 1 0"/>
     <dynamics damping="0.1" friction="0.05"/>
   </joint>
@@ -160,15 +160,15 @@
     </collision>
 
     <inertial>
-      <mass value="0.5"/>
+      <mass value="0.2"/>
 
       <inertia
-        ixx="0.0001"
+        ixx="0.00005"
         ixy="0"
         ixz="0"
-        iyy="0.0001"
+        iyy="0.00005"
         iyz="0"
-        izz="0.0001"/>
+        izz="0.00005"/>
     </inertial>
 
   </link>
@@ -178,7 +178,7 @@
     <parent link="base_link"/>
     <child link="front_caster"/>
 
-    <origin xyz="0.12 0 0.025"/>
+    <origin xyz="0.09 0 0.025"/>
 
   </joint>
 
@@ -202,15 +202,15 @@
     </collision>
 
     <inertial>
-      <mass value="0.5"/>
+      <mass value="0.2"/>
 
       <inertia
-        ixx="0.0001"
+        ixx="0.00005"
         ixy="0"
         ixz="0"
-        iyy="0.0001"
+        iyy="0.00005"
         iyz="0"
-        izz="0.0001"/>
+        izz="0.00005"/>
     </inertial>
 
   </link>
@@ -220,7 +220,7 @@
     <parent link="base_link"/>
     <child link="rear_caster"/>
 
-    <origin xyz="-0.12 0 0.025"/>
+    <origin xyz="-0.09 0 0.025"/>
 
   </joint>
 
@@ -263,7 +263,7 @@
     <parent link="base_link"/>
     <child link="lidar_link"/>
 
-    <origin xyz="0 0 0.155"/>
+    <origin xyz="0 0 0.135"/>
 
   </joint>
 
@@ -281,7 +281,7 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <origin xyz="0 0 0.07"/>
+    <origin xyz="0 0 0.06"/>
   </joint>
 
   <gazebo reference="imu_link">
@@ -293,39 +293,14 @@
     </sensor>
   </gazebo>
 
-  <!-- ===================================================== -->
-  <!-- CAMERA -->
-  <!-- ===================================================== -->
-
-  <link name="camera_link">
-    <visual>
-      <geometry>
-        <box size="0.02 0.05 0.05"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <geometry>
-        <box size="0.02 0.05 0.05"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0.1"/>
-      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
-    </inertial>
-  </link>
-
-  <joint name="camera_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="camera_link"/>
-    <origin xyz="0.15 0 0.07"/>
-  </joint>
 
   <gazebo reference="base_link">
     <visual>
       <material>
-        <ambient>0.2 0.4 0.8 1</ambient>
-        <diffuse>0.2 0.4 0.8 1</diffuse>
+        <ambient>0.0 0.75 0.95 1</ambient>
+        <diffuse>0.0 0.85 1.0 1</diffuse>
+        <specular>0.4 0.4 0.4 1</specular>
+        <emissive>0.05 0.20 0.30 1</emissive>
       </material>
     </visual>
   </gazebo>
@@ -369,8 +344,9 @@
   <gazebo reference="lidar_link">
     <visual>
       <material>
-        <ambient>0.8 0.1 0.1 1</ambient>
-        <diffuse>0.8 0.1 0.1 1</diffuse>
+        <ambient>1.0 0.35 0.0 1</ambient>
+        <diffuse>1.0 0.45 0.0 1</diffuse>
+        <emissive>0.45 0.12 0.0 1</emissive>
       </material>
     </visual>
   </gazebo>
@@ -410,17 +386,21 @@
   <!-- ===================================================== -->
 
   <gazebo reference="front_caster">
-
-    <mu1>0.01</mu1>
-    <mu2>0.01</mu2>
-
+    <mu1>0.0001</mu1>
+    <mu2>0.0001</mu2>
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+    <minDepth>0.001</minDepth>
+    <maxVel>1.0</maxVel>
   </gazebo>
 
   <gazebo reference="rear_caster">
-
-    <mu1>0.01</mu1>
-    <mu2>0.01</mu2>
-
+    <mu1>0.0001</mu1>
+    <mu2>0.0001</mu2>
+    <kp>1000000.0</kp>
+    <kd>100.0</kd>
+    <minDepth>0.001</minDepth>
+    <maxVel>1.0</maxVel>
   </gazebo>
 
   <!-- ===================================================== -->
@@ -432,8 +412,8 @@
             name="gz::sim::systems::DiffDrive">
       <left_joint>left_wheel_joint</left_joint>
       <right_joint>right_wheel_joint</right_joint>
-      <wheel_separation>0.34</wheel_separation>
-      <wheel_radius>0.05</wheel_radius>
+      <wheel_separation>0.26</wheel_separation>
+      <wheel_radius>0.025</wheel_radius>
       <max_linear_acceleration>5.0</max_linear_acceleration>
       <max_angular_acceleration>5.0</max_angular_acceleration>
       <topic>/cmd_vel</topic>
@@ -442,7 +422,7 @@
       <child_frame_id>base_link</child_frame_id>
       <odom_publisher_frequency>50</odom_publisher_frequency>
       <publish_odom>true</publish_odom>
-      <publish_odom_tf>true</publish_odom_tf>
+      <publish_odom_tf>false</publish_odom_tf>
     </plugin>
   </gazebo>
 
@@ -453,7 +433,7 @@
   <gazebo reference="lidar_link">
     <sensor name="laser" type="gpu_lidar">
       <always_on>true</always_on>
-      <visualize>true</visualize>
+      <visualize>false</visualize>
       <update_rate>10</update_rate>
       <topic>/scan</topic>
       <gz_frame_id>lidar_link</gz_frame_id>
@@ -474,6 +454,7 @@
       </lidar>
     </sensor>
   </gazebo>
+
 
   <!-- ===================================================== -->
   <!-- JOINT STATE PUBLISHER -->

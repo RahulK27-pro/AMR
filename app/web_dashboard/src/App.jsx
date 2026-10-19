@@ -120,6 +120,8 @@ export default function App() {
             <MappingScreen
               telemetry={telemetry}
               onReturnToDashboard={() => setCurrentView('dashboard')}
+              onMapChange={handleMapChange}
+              activeMap={activeMap}
             />
           </ErrorBoundary>
         </main>

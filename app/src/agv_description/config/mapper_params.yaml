@@ -14,37 +14,62 @@ slam_toolbox:
     mode: mapping
 
     # ── Map publish period ───────────────────────────────────────────
-    # How often SLAM publishes the map→odom TF transform (seconds).
-    # 0.05 = 20 Hz — keeps the robot movement smooth in RViz.
     transform_publish_period: 0.05
-
-    # How often the occupancy grid image is rebuilt (seconds).
     map_update_interval: 1.0
+    resolution: 0.05
 
-    # ── Motion thresholds ────────────────────────────────────────────
-    # SLAM only processes a new scan when the robot has moved at least
-    # this much since the last processed scan. Very low values ensure
-    # SLAM triggers immediately on the first tiny movement.
+    # ── High-density motion thresholds (ensures continuous scan-matching during turns) ──
     minimum_travel_distance: 0.05    # 5 cm
-    minimum_travel_heading:  0.05    # ~3 degrees
+    minimum_travel_heading:  0.05    # ~2.8 degrees (prevents scan starvation during in-place spins)
 
     # ── LiDAR range ──────────────────────────────────────────────────
-    # Must match the <max> value in the URDF lidar sensor block.
+    min_laser_range: 0.15
     max_laser_range: 12.0
 
     # ── Timing tolerances ────────────────────────────────────────────
-    # minimum_time_interval: minimum seconds between scan processing.
-    # transform_timeout: how long SLAM waits for a TF before giving up.
-    # tf_buffer_duration: how far back TF history is kept (seconds).
-    minimum_time_interval:  0.1
+    minimum_time_interval:  0.05
     transform_timeout:      0.2
-    tf_buffer_duration:     5.0
+    tf_buffer_duration:     10.0
+
+    # ── Robust Scan Matcher Parameters ───────────────────────────────
+    use_scan_matching: true
+    use_scan_barycenter: true
+    scan_buffer_size: 20
+    scan_buffer_maximum_scan_distance: 12.0
+    link_match_minimum_response_fine: 0.60
+    link_scan_maximum_distance: 1.5
+
+    # Correlation search space (larger capture basin absorbs dynamic turning accelerations)
+    correlation_search_space_dimension: 0.8
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.10
+
+    # ── Anti-False Loop Closure Guard (Prevents double/ghost walls) ──
+    do_loop_closing: true
+    loop_search_maximum_distance: 4.0
+    loop_match_minimum_chain_size: 15
+    loop_match_maximum_variance_coarse: 2.0
+    loop_match_minimum_response_coarse: 0.65   # High threshold prevents premature snap in corridors
+    loop_match_minimum_response_fine:   0.80   # Strict threshold ensures only true loop closures occur
+
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # Angle & Distance penalties
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
 
     # ── Ceres solver ─────────────────────────────────────────────────
-    # Most accurate solver available.
     solver_plugin:               solver_plugins::CeresSolver
     ceres_linear_solver:         SPARSE_NORMAL_CHOLESKY
     ceres_preconditioner:        SCHUR_JACOBI
     ceres_trust_region_strategy: LEVENBERG_MARQUARDT
     ceres_dogleg_type:           TRADITIONAL_DOGLEG
-    ceres_loss_function:         None
+    ceres_loss_function:         HuberLoss

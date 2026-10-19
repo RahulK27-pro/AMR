@@ -33,8 +33,7 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def launch_setup(context, *args, **kwargs):
-    os.environ.pop('ROS_LOCALHOST_ONLY', None)
-    os.environ.pop('ROS_AUTOMATIC_DISCOVERY_RANGE', None)
+    os.environ['ROS_LOCALHOST_ONLY'] = '1'
     pkg_agv = get_package_share_directory('agv_description')
 
     urdf_file        = os.path.join(pkg_agv, 'urdf',   'warehouse_agv.urdf')
@@ -76,15 +75,27 @@ def launch_setup(context, *args, **kwargs):
     if headless_val:
         gz_cmd[2:2] = ['-s', '--headless-rendering']
 
+    display_env = os.environ.get('DISPLAY', ':0')
+    wayland_env = os.environ.get('WAYLAND_DISPLAY', '')
+    runtime_env = os.environ.get('XDG_RUNTIME_DIR', '/run/user/1000')
+
+    gazebo_env = {
+        'DISPLAY': display_env,
+        'QT_QPA_PLATFORM': 'xcb',
+        'LIBGL_ALWAYS_SOFTWARE': '1',
+        'GALLIUM_DRIVER': 'llvmpipe',
+        'MESA_GL_VERSION_OVERRIDE': '4.5',
+        'GZ_IP': '127.0.0.1',
+        'ROS_LOCALHOST_ONLY': '1',
+    }
+    if wayland_env:
+        gazebo_env['WAYLAND_DISPLAY'] = wayland_env
+    if runtime_env:
+        gazebo_env['XDG_RUNTIME_DIR'] = runtime_env
+
     gazebo = ExecuteProcess(
         cmd=gz_cmd,
-        additional_env={
-            'DISPLAY': os.environ.get('DISPLAY', ':0'),
-            'LIBGL_ALWAYS_SOFTWARE': '1',
-            'GALLIUM_DRIVER': 'llvmpipe',
-            'MESA_GL_VERSION_OVERRIDE': '4.5',
-            'GZ_IP': '127.0.0.1',
-        },
+        additional_env=gazebo_env,
         condition=IfCondition(LaunchConfiguration('run_sim')),
         output='screen'
     )
@@ -133,7 +144,7 @@ def launch_setup(context, *args, **kwargs):
                 name='robot_spawner',
                 arguments=[
                     '-name', 'warehouse_agv',
-                    '-file', urdf_file,
+                    '-topic', 'robot_description',
                     '-world', world_stem,
                     '-z', '0.05'
                 ],
@@ -162,24 +173,30 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
 
+    rviz_env = {
+        'DISPLAY': display_env,
+        'QT_QPA_PLATFORM': 'xcb',
+        'LIBGL_ALWAYS_SOFTWARE': '1',
+        'GALLIUM_DRIVER': 'llvmpipe',
+        'MESA_GL_VERSION_OVERRIDE': '4.5',
+        'ROS_LOCALHOST_ONLY': '1',
+    }
+    if wayland_env:
+        rviz_env['WAYLAND_DISPLAY'] = wayland_env
+    if runtime_env:
+        rviz_env['XDG_RUNTIME_DIR'] = runtime_env
+
     rviz_node = TimerAction(
-        period=6.0,
+        period=4.0,
         actions=[
-            LogInfo(msg='[MAPPING] t=6s: Starting RViz2...'),
+            LogInfo(msg='[MAPPING] t=4s: Starting RViz2...'),
             Node(
                 package='rviz2',
                 executable='rviz2',
                 name='rviz2',
                 arguments=['-d', rviz_config_file],
                 parameters=[{'use_sim_time': True}],
-                additional_env={
-                    'DISPLAY': os.environ.get('DISPLAY', ':0'),
-                    'WAYLAND_DISPLAY': os.environ.get('WAYLAND_DISPLAY', 'wayland-0'),
-                    'XDG_RUNTIME_DIR': os.environ.get('XDG_RUNTIME_DIR', '/run/user/1000'),
-                    'LIBGL_ALWAYS_SOFTWARE': '1',
-                    'GALLIUM_DRIVER': 'llvmpipe',
-                    'MESA_GL_VERSION_OVERRIDE': '4.5',
-                },
+                additional_env=rviz_env,
                 condition=IfCondition(LaunchConfiguration('use_rviz')),
                 output='screen'
             )

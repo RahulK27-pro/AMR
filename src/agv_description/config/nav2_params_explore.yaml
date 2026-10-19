@@ -143,28 +143,12 @@ global_costmap:
       # No width/height/origin needed — static_layer auto-resizes to the SLAM map
       rolling_window: false
       always_send_full_costmap: true
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "inflation_layer"]
 
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: true
         subscribe_to_updates: true
-
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: true
-        track_unknown_space: true
-        observation_sources: scan
-        scan:
-          topic: /scan
-          max_obstacle_height: 2.0
-          clearing: true
-          marking: true
-          data_type: LaserScan
-          raytrace_max_range: 12.0
-          raytrace_min_range: 0.15
-          obstacle_max_range: 11.5
-          obstacle_min_range: 0.20
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -180,7 +164,7 @@ planner_server:
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.5
+      tolerance: 1.0
       use_astar: false
       allow_unknown: true   # essential during exploration
 
@@ -216,9 +200,9 @@ behavior_server:
     robot_base_frame: base_link
     transform_tolerance: 0.1
     simulate_ahead_time: 2.0
-    max_rotational_vel: 0.8
-    min_rotational_vel: 0.3
-    rotational_acc_lim: 3.2
+    max_rotational_vel: 0.35
+    min_rotational_vel: 0.15
+    rotational_acc_lim: 1.2
 
 waypoint_follower:
   ros__parameters:
