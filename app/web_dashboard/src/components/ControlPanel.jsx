@@ -6,7 +6,7 @@ export default function ControlPanel({
   selectedNodes = [],
   setSelectedNodes,
   onOpenMapping,
-  activeMap = 'warehouse_01',
+  activeMap = 'hospital_map',
   onMapChange,
   controlMode = 'auto',
   setControlMode,

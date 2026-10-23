@@ -61,7 +61,7 @@ export default function App() {
   const [controlMode, setControlMode] = useState('auto');
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'mapping'
   const [activeMap, setActiveMap] = useState(() => {
-    return localStorage.getItem('amr_active_map') || 'warehouse_01';
+    return localStorage.getItem('amr_active_map') || 'hospital_map';
   });
 
   useEffect(() => {

@@ -8,7 +8,7 @@ export default function StatusBar({
   telemetry,
   currentView = 'dashboard',
   onViewChange,
-  activeMap = 'warehouse_01',
+  activeMap = 'hospital_map',
   onMapChange,
 }) {
   const [status, setStatus] = useState('connecting');
@@ -170,10 +170,10 @@ export default function StatusBar({
             </>
           ) : (
             <>
-              {activeMap && activeMap !== 'warehouse_01' && activeMap !== 'warehouse_map' && (
+              {activeMap && activeMap !== 'hospital_map' && activeMap !== 'warehouse_map' && (
                 <option value={activeMap} style={{ background: '#1e293b', color: '#f8fafc' }}>{activeMap}</option>
               )}
-              <option value="warehouse_01" style={{ background: '#1e293b', color: '#f8fafc' }}>warehouse_01 (565 nodes)</option>
+              <option value="hospital_map" style={{ background: '#1e293b', color: '#f8fafc' }}>hospital_map (661 nodes)</option>
               <option value="warehouse_map" style={{ background: '#1e293b', color: '#f8fafc' }}>warehouse_map (764 nodes)</option>
             </>
           )}

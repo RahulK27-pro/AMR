@@ -124,25 +124,25 @@ MAP_HEIGHT_PX  = 275           # default rows
 def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
     """Read map metadata (resolution, origin, width, height) dynamically from <map_name>.yaml and image."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target = (map_name or 'warehouse_01').strip()
+    target = (map_name or 'hospital_map').strip()
     yaml_path = maps_dir / f"{target}.yaml"
     if not yaml_path.exists():
         if target in ('warehouse_map', 'warehouse'):
             yaml_path = maps_dir / "warehouse_map.yaml"
-        elif target == 'warehouse_01':
-            yaml_path = maps_dir / "warehouse_01.yaml"
+        elif target == 'hospital_map':
+            yaml_path = maps_dir / "hospital_map.yaml"
         else:
             matches = list(maps_dir.glob(f"*{target}*.yaml"))
             if matches:
                 yaml_path = matches[0]
 
     # Map-specific calibrated fallbacks
-    if target == 'warehouse_01':
+    if target in ('hospital', 'hospital_map'):
         res = 0.05
-        ox = -6.976
-        oy = -4.976
-        width = 279
-        height = 199
+        ox = -8.5
+        oy = -6.5
+        width = 340
+        height = 260
     else:
         res = 0.05
         ox = -7.397
@@ -190,7 +190,7 @@ def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
 def resolve_map_image_path(map_name: Optional[str] = None) -> Optional[Path]:
     """Find or convert the clean floorplan PNG for a given map."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target = (map_name or 'warehouse_01').strip()
+    target = (map_name or 'hospital_map').strip()
     
     # 1. Direct png file
     direct_png = maps_dir / f"{target}.png"
@@ -234,7 +234,7 @@ def resolve_map_image_path(map_name: Optional[str] = None) -> Optional[Path]:
 
 def world_to_pixel(wx: float, wy: float, map_name: Optional[str] = None):
     """Convert world (x,y) metres → (col, row) pixel in the map image."""
-    meta = get_map_metadata_by_name(map_name or (node.active_map_name if 'node' in globals() and node else 'warehouse_01'))
+    meta = get_map_metadata_by_name(map_name or (node.active_map_name if 'node' in globals() and node else 'hospital_map'))
     col = int((wx - meta['origin_x']) / meta['resolution'])
     row = meta['height'] - int((wy - meta['origin_y']) / meta['resolution'])
     return col, row
@@ -249,12 +249,12 @@ class MappingManager:
     def __init__(self, workspace_root: Path):
         self.ws_root = workspace_root
         self.state = 'READY'  # 'READY' | 'MAPPING' | 'STOPPED' | 'SAVED'
-        self.map_name = 'warehouse_01'
+        self.map_name = 'hospital_map'
         self.start_time: Optional[float] = None
         self.stop_time: Optional[float] = None
         self.proc: Optional[subprocess.Popen] = None
         self.explore_proc: Optional[subprocess.Popen] = None
-        self.target_world = 'test1.world'
+        self.target_world = 'hospital.world'
         self.run_explore = False
         self.is_saved: bool = False
         self.saved_map_name: Optional[str] = None
@@ -306,7 +306,7 @@ class MappingManager:
             except Exception:
                 pass
 
-    def start(self, map_name: str = 'warehouse_01', world: str = 'test1.world', run_explore: bool = False, headless: bool = True, use_rviz: bool = False):
+    def start(self, map_name: str = 'hospital_map', world: str = 'hospital.world', run_explore: bool = False, headless: bool = True, use_rviz: bool = False):
         with self.lock:
             # 1. Stop any active navigation stack first to prevent conflicts
             if 'system_mgr' in globals() and globals()['system_mgr'] is not None:
@@ -500,10 +500,10 @@ class MappingManager:
                 }
 
             import re
-            raw_name = (map_name or self.map_name or 'warehouse_01').strip()
+            raw_name = (map_name or self.map_name or 'hospital_map').strip()
             clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_name)
             if not clean_name:
-                clean_name = 'warehouse_01'
+                clean_name = 'hospital_map'
 
             maps_dir = self.ws_root / "src" / "agv_description" / "maps"
             maps_dir.mkdir(parents=True, exist_ok=True)
@@ -658,7 +658,7 @@ class MappingManager:
             return {
                 'state': self.state,
                 'map_name': self.map_name,
-                'world': getattr(self, 'target_world', 'test1.world'),
+                'world': getattr(self, 'target_world', 'hospital.world'),
                 'run_explore': getattr(self, 'run_explore', False),
                 'elapsed_sec': round(elapsed, 1),
                 'elapsed_str': elapsed_str,
@@ -686,7 +686,7 @@ class SystemLaunchManager:
     def __init__(self, workspace_root: Path):
         self.ws_root = workspace_root
         self.state = 'STOPPED'  # 'STOPPED' | 'STARTING' | 'RUNNING' | 'STOPPING' | 'ERROR'
-        self.active_map = 'warehouse_01'
+        self.active_map = 'hospital_map'
         self.stage = 0  # 0: Stopped, 1: Launching Nav & Gazebo, 2: Starting MPPI, 3: Starting BT Manager, 4: Running
         self.stage_text = 'Stopped'
         self.start_time: Optional[float] = None
@@ -713,12 +713,12 @@ class SystemLaunchManager:
         except Exception as e:
             return f"(error reading log: {e})"
 
-    def start(self, map_name: str = 'warehouse_01', world: Optional[str] = None, headless: bool = True, use_rviz: bool = False) -> dict:
+    def start(self, map_name: str = 'hospital_map', world: Optional[str] = None, headless: bool = True, use_rviz: bool = False) -> dict:
         with self.lock:
             if self.state in ('STARTING', 'RUNNING'):
                 return {'ok': False, 'error': f'System is already {self.state.lower()}'}
 
-            target_map = (map_name or self.active_map or 'warehouse_01').strip()
+            target_map = (map_name or self.active_map or 'hospital_map').strip()
             self.active_map = target_map
             self.state = 'STARTING'
             self.stage = 1
@@ -1071,7 +1071,7 @@ class AmrBridgeNode(Node):
         self.obstacle_alert: Optional[str] = None
         self.imu              = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0}
         self.mission          = {}
-        self.active_map_name: str = 'warehouse_01'
+        self.active_map_name: str = 'hospital_map'
         self._cached_graphs: Dict[str, dict] = {}
         self._cached_graph: Optional[dict] = None
         self.active_place_nav: Optional[dict] = None
@@ -1145,7 +1145,7 @@ class AmrBridgeNode(Node):
         except Exception:
             pass
         active = getattr(self, 'active_map_name', None)
-        if active == 'warehouse_01':
+        if active == 'hospital_map':
             return 'test1'
         if active == 'warehouse_map':
             return 'warehouse'
@@ -1600,7 +1600,7 @@ class AmrBridgeNode(Node):
                 self.get_logger().warning(f"Could not sync graph to warehouse_graph.json: {e}")
 
     def get_graph_data(self, map_name: Optional[str] = None) -> dict:
-        target_name = (map_name or self.active_map_name or 'warehouse_01').strip()
+        target_name = (map_name or self.active_map_name or 'hospital_map').strip()
         if target_name in self._cached_graphs:
             return self._cached_graphs[target_name]
 
@@ -1748,7 +1748,7 @@ class AmrBridgeNode(Node):
             'obstacle_alert':  self.obstacle_alert,
             'imu':             self.imu,
             'mission':         self.mission,
-            'active_map':      getattr(self, 'active_map_name', 'warehouse_01'),
+            'active_map':      getattr(self, 'active_map_name', 'hospital_map'),
             'active_place_nav': getattr(self, 'active_place_nav', None),
             'dynamic_obstacle': dyn_obs,
             'scan':            scan_ds,
@@ -1763,7 +1763,7 @@ class AmrBridgeNode(Node):
 
     def get_map_image_b64(self, map_name: Optional[str] = None) -> Optional[str]:
         """Return base64-encoded JPEG of map PNG with robot dot overlaid for specified map."""
-        target = (map_name or self.active_map_name or 'warehouse_01').strip()
+        target = (map_name or self.active_map_name or 'hospital_map').strip()
         img_path = resolve_map_image_path(target)
         if not img_path or not img_path.exists():
             return None
@@ -1858,14 +1858,14 @@ class GoalSequenceRequest(BaseModel):
     nodes: list
 
 class SystemStartRequest(BaseModel):
-    map_name: Optional[str] = 'warehouse_01'
+    map_name: Optional[str] = 'hospital_map'
     world: Optional[str] = None
     headless: bool = True
     use_rviz: bool = False
 
 class StartMappingRequest(BaseModel):
-    map_name: str = 'warehouse_01'
-    world: str = 'test1.world'
+    map_name: str = 'hospital_map'
+    world: str = 'hospital.world'
     run_explore: bool = False
     headless: bool = True
     use_rviz: bool = False
@@ -1875,7 +1875,7 @@ class GuiLaunchRequest(BaseModel):
     mode: Optional[str] = None  # "nav" | "explore"
 
 class SaveMapRequest(BaseModel):
-    map_name: Optional[str] = 'warehouse_01'
+    map_name: Optional[str] = 'hospital_map'
 
 class ExtractGraphRequest(BaseModel):
     map_name: Optional[str] = None
@@ -1938,7 +1938,7 @@ async def get_status():
 
 @app.get('/api/map/active')
 async def get_active_map():
-    curr = node.active_map_name if node else 'warehouse_01'
+    curr = node.active_map_name if node else 'hospital_map'
     return {'ok': True, 'active_map': curr}
 
 @app.post('/api/map/active')
@@ -1955,7 +1955,7 @@ async def post_active_map(req: SetActiveMapRequest):
 async def get_map(map_name: Optional[str] = None):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
-    target = (map_name or node.active_map_name or 'warehouse_01').strip()
+    target = (map_name or node.active_map_name or 'hospital_map').strip()
     data = node.get_map_image_b64(target)
     if data is None:
         return JSONResponse({'error': f'Map image for {target} not found'}, status_code=404)
@@ -2003,13 +2003,13 @@ async def post_goal_sequence(req: GoalSequenceRequest):
 
 @app.get('/api/map/metadata')
 async def get_map_metadata(map_name: Optional[str] = None):
-    target = (map_name or (node.active_map_name if node else None) or 'warehouse_01').strip()
+    target = (map_name or (node.active_map_name if node else None) or 'hospital_map').strip()
     return get_map_metadata_by_name(target)
 
 @app.get('/api/map/raw')
 async def get_map_raw(map_name: Optional[str] = None):
     """Serve the clean architectural floorplan (no graph overlay)."""
-    target = (map_name or (node.active_map_name if node else None) or 'warehouse_01').strip()
+    target = (map_name or (node.active_map_name if node else None) or 'hospital_map').strip()
     img_path = resolve_map_image_path(target)
     if not img_path or not img_path.exists():
         return JSONResponse({'error': f'Map image for {target} not found'}, status_code=404)
@@ -2024,7 +2024,7 @@ async def get_map_clean(map_name: Optional[str] = None):
 async def get_graph(map_name: Optional[str] = None):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
-    target = (map_name or node.active_map_name or 'warehouse_01').strip()
+    target = (map_name or node.active_map_name or 'hospital_map').strip()
     return node.get_graph_data(target)
 
 @app.post('/api/obstacle/cmd_vel')
@@ -2061,7 +2061,7 @@ async def get_mapping_status():
 
 @app.post('/api/mapping/start')
 async def post_mapping_start(req: StartMappingRequest = StartMappingRequest()):
-    target_name = (req.map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (req.map_name or mapping_mgr.map_name or 'hospital_map').strip()
     mapping_mgr.map_name = target_name
     if node:
         node.active_map_name = target_name
@@ -2143,7 +2143,7 @@ async def get_mapping_verify():
 async def post_mapping_save(req: SaveMapRequest = SaveMapRequest()):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
-    target_name = (req.map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (req.map_name or mapping_mgr.map_name or 'hospital_map').strip()
     mapping_mgr.map_name = target_name
     res = mapping_mgr.save_map(target_name, ros_node=node)
     if res.get('ok') and node:
@@ -2154,7 +2154,7 @@ async def post_mapping_save(req: SaveMapRequest = SaveMapRequest()):
 async def get_saved_maps():
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
     maps = []
-    curr_active = node.active_map_name if node else 'warehouse_01'
+    curr_active = node.active_map_name if node else 'hospital_map'
     if maps_dir.exists():
         for yaml_file in sorted(maps_dir.glob("*.yaml")):
             name = yaml_file.stem
@@ -2204,15 +2204,15 @@ async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
     if graph_extractor is None:
         return JSONResponse({'error': 'Graph extractor module not available'}, status_code=500)
 
-    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
 
     yaml_path = maps_dir / f"{target_name}.yaml"
     if not yaml_path.exists():
         if target_name in ('warehouse_map', 'warehouse'):
             yaml_path = maps_dir / "warehouse_map.yaml"
-        elif target_name == 'warehouse_01':
-            yaml_path = maps_dir / "warehouse_01.yaml"
+        elif target_name == 'hospital_map':
+            yaml_path = maps_dir / "hospital_map.yaml"
 
     if not yaml_path.exists():
         return JSONResponse({'error': f'Map YAML file not found for "{target_name}" in {maps_dir}'}, status_code=404)
@@ -2299,7 +2299,7 @@ async def get_latest_graph(map_name: Optional[str] = None):
             return {'ok': True, 'graph': active}
 
     # Fallback to reading active map graph or warehouse_map graph
-    fallback_graph = maps_dir / f"{getattr(node, 'active_map_name', 'warehouse_01')}_graph.json"
+    fallback_graph = maps_dir / f"{getattr(node, 'active_map_name', 'hospital_map')}_graph.json"
     if not fallback_graph.exists():
         fallback_graph = _GRAPH_JSON_PATH
     if fallback_graph.exists():
@@ -2309,7 +2309,7 @@ async def get_latest_graph(map_name: Optional[str] = None):
             vis_b64 = None
             vis_candidates = [
                 maps_dir / f"{fallback_graph.stem.replace('_graph', '')}_graph_vis.png",
-                maps_dir / "warehouse_01_graph_vis.png",
+                maps_dir / "hospital_map_graph_vis.png",
                 maps_dir / "warehouse_map_graph_vis.png",
             ]
             for vc in vis_candidates:
@@ -2344,7 +2344,7 @@ async def get_latest_graph(map_name: Optional[str] = None):
 async def get_graph_verification(map_name: Optional[str] = None):
     """Phase 4: Performs topological, clearance, and routing audits on the graph roadmap."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
     cand = maps_dir / f"{target_name}_graph.json"
     if not cand.exists():
         cand = maps_dir / f"{target_name}.json"
@@ -2521,7 +2521,7 @@ async def get_graph_verification(map_name: Optional[str] = None):
 async def post_plan_route(req: PlanRouteRequest):
     """Phase 4: Computes shortest path and waypoint metrics between two roadmap nodes."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
     cand = maps_dir / f"{target_name}_graph.json"
     if not cand.exists():
         cand = maps_dir / f"{target_name}.json"
@@ -2619,7 +2619,7 @@ async def post_plan_route(req: PlanRouteRequest):
 async def get_named_places(map_name: Optional[str] = None):
     """Phase 5: Retrieve all named places and stations for a roadmap."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
     
     # Strictly isolated search candidates for target_name only:
     candidates = [
@@ -2646,7 +2646,7 @@ async def get_named_places(map_name: Optional[str] = None):
 async def post_save_named_places(req: SavePlacesRequest):
     """Phase 5: Persist named places into active graph and dedicated places files."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    active_now = node.active_map_name if node else 'warehouse_01'
+    active_now = node.active_map_name if node else 'hospital_map'
     target_name = (req.map_name or active_now).strip()
     places_data = [p.dict() for p in req.places]
     
@@ -2690,7 +2690,7 @@ async def post_save_named_places(req: SavePlacesRequest):
 async def post_generate_default_templates(map_name: Optional[str] = None):
     """Phase 5: Auto-generate intelligent default warehouse stations based on roadmap topology."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
     
     # Load roadmap nodes strictly from target map
     target_graph = maps_dir / f"{target_name}_graph.json"
@@ -2798,7 +2798,7 @@ async def post_generate_default_templates(map_name: Optional[str] = None):
 async def delete_named_place(place_id: str, map_name: Optional[str] = None):
     """Phase 5: Remove a named place from the saved places list."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'warehouse_01').strip()
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
     
     places_file = maps_dir / f"{target_name}_places.json"
     if not places_file.exists():
@@ -2949,7 +2949,7 @@ async def get_navigation_status():
 @app.post('/api/system/start')
 async def post_system_start(req: SystemStartRequest):
     """Start full AMR navigation stack (navigation_launch + route_runner + bt_manager)."""
-    curr_map = (req.map_name or (node.active_map_name if node else None) or 'warehouse_01').strip()
+    curr_map = (req.map_name or (node.active_map_name if node else None) or 'hospital_map').strip()
     if node:
         node.set_active_map(curr_map)
     return system_mgr.start(map_name=curr_map, world=req.world, headless=req.headless, use_rviz=req.use_rviz)

@@ -22,6 +22,14 @@
       <render_engine>ogre2</render_engine>
     </plugin>
 
+    <!-- Default User Camera View (Top-down angled view framing robot in corridor) -->
+    <gui fullscreen="0">
+      <camera name="user_camera">
+        <pose>0.0 -2.5 15.0 0 1.25 1.5708</pose>
+        <view_controller>orbit</view_controller>
+      </camera>
+    </gui>
+
     <!-- ============================================================ -->
     <!-- INDOOR HOSPITAL LIGHTING                                     -->
     <!-- Clean, sterile, evenly distributed soft illumination         -->
@@ -579,108 +587,6 @@
       </link>
     </model>
 
-    <!-- ============================================================ -->
-    <!-- OPEN DOOR PANELS (Swung flat against walls for floor plan)   -->
-    <!-- Keeps 0.9m doorway completely open and unobstructed          -->
-    <!-- ============================================================ -->
-    <model name="door_panel_r1">
-      <static>true</static>
-      <pose>-4.85 1.55 1.05 0 0 0</pose>
-      <link name="link">
-        <visual name="vis">
-          <geometry><box><size>0.04 0.85 2.1</size></box></geometry>
-          <material><ambient>0.75 0.52 0.30 1</ambient><diffuse>0.80 0.55 0.32 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
-
-    <model name="door_panel_r2">
-      <static>true</static>
-      <pose>-1.70 1.55 1.05 0 0 0</pose>
-      <link name="link">
-        <visual name="vis">
-          <geometry><box><size>0.04 0.85 2.1</size></box></geometry>
-          <material><ambient>0.75 0.52 0.30 1</ambient><diffuse>0.80 0.55 0.32 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
-
-    <model name="door_panel_dr">
-      <static>true</static>
-      <pose>-0.60 1.55 1.05 0 0 0</pose>
-      <link name="link">
-        <visual name="vis">
-          <geometry><box><size>0.04 0.85 2.1</size></box></geometry>
-          <material><ambient>0.75 0.52 0.30 1</ambient><diffuse>0.80 0.55 0.32 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
-
-    <model name="door_panel_lab">
-      <static>true</static>
-      <pose>2.55 1.55 1.05 0 0 0</pose>
-      <link name="link">
-        <visual name="vis">
-          <geometry><box><size>0.04 0.85 2.1</size></box></geometry>
-          <material><ambient>0.75 0.52 0.30 1</ambient><diffuse>0.80 0.55 0.32 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
-
-    <model name="door_panel_sc">
-      <static>true</static>
-      <pose>5.70 1.55 1.05 0 0 0</pose>
-      <link name="link">
-        <visual name="vis">
-          <geometry><box><size>0.04 0.85 2.1</size></box></geometry>
-          <material><ambient>0.75 0.52 0.30 1</ambient><diffuse>0.80 0.55 0.32 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
-
-    <model name="door_panel_ph">
-      <static>true</static>
-      <pose>-4.70 -1.55 1.05 0 0 0</pose>
-      <link name="link">
-        <visual name="vis">
-          <geometry><box><size>0.04 0.85 2.1</size></box></geometry>
-          <material><ambient>0.75 0.52 0.30 1</ambient><diffuse>0.80 0.55 0.32 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
-
-    <model name="door_panel_ns">
-      <static>true</static>
-      <pose>0.80 -1.55 1.05 0 0 0</pose>
-      <link name="link">
-        <visual name="vis">
-          <geometry><box><size>0.04 0.85 2.1</size></box></geometry>
-          <material><ambient>0.75 0.52 0.30 1</ambient><diffuse>0.80 0.55 0.32 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
-
-    <model name="door_panel_ut">
-      <static>true</static>
-      <pose>3.95 -1.55 1.05 0 0 0</pose>
-      <link name="link">
-        <visual name="vis">
-          <geometry><box><size>0.04 0.85 2.1</size></box></geometry>
-          <material><ambient>0.75 0.52 0.30 1</ambient><diffuse>0.80 0.55 0.32 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
-
-    <model name="door_panel_toilet_m">
-      <static>true</static>
-      <pose>6.55 -1.55 1.05 0 0 0</pose>
-      <link name="link">
-        <visual name="vis">
-          <geometry><box><size>0.04 0.85 2.1</size></box></geometry>
-          <material><ambient>0.75 0.52 0.30 1</ambient><diffuse>0.80 0.55 0.32 1</diffuse></material>
-        </visual>
-      </link>
-    </model>
 
     <!-- ============================================================ -->
     <!-- R1: PATIENT ROOM 1 FURNITURE                                 -->

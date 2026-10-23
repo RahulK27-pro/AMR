@@ -72,7 +72,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
 
   // Phase 3: Graph Extraction state
   const [savedMaps, setSavedMaps] = useState([]);
-  const [selectedMapForGraph, setSelectedMapForGraph] = useState(mapName || 'warehouse_01');
+  const [selectedMapForGraph, setSelectedMapForGraph] = useState(mapName || 'hospital_map');
   const [densityPreset, setDensityPreset] = useState('balanced'); // 'balanced' | 'dense' | 'sparse' | 'custom'
   const [customParams, setCustomParams] = useState({
     robotRadius: 0.11,
@@ -577,7 +577,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     setIsExtracting(true);
     setGraphExtractError(null);
     try {
-      const targetMap = (selectedMapForGraph || mapName || 'warehouse_01').trim();
+      const targetMap = (selectedMapForGraph || mapName || 'hospital_map').trim();
       let payload = {
         map_name: targetMap,
       };
@@ -648,7 +648,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
   const runGraphVerification = useCallback(async (targetMap) => {
     setIsAuditingGraph(true);
     try {
-      const target = targetMap || selectedMapForGraph || mapName || 'warehouse_01';
+      const target = targetMap || selectedMapForGraph || mapName || 'hospital_map';
       const res = await bridge.verifyGraph(target);
       if (res?.ok) {
         setGraphVerificationData(res);
@@ -675,7 +675,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     setIsPlanningRoute(true);
     setRoutePlanError(null);
     try {
-      const target = selectedMapForGraph || mapName || 'warehouse_01';
+      const target = selectedMapForGraph || mapName || 'hospital_map';
       const res = await bridge.planRoute(routeTesterStart, routeTesterGoal, target);
       if (res?.ok && res.route) {
         setTestedRoute(res.route);
@@ -718,7 +718,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     setIsLoadingPlaces(true);
     setPlacesError(null);
     try {
-      const target = selectedMapForGraph || mapName || 'warehouse_01';
+      const target = selectedMapForGraph || mapName || 'hospital_map';
       const res = await bridge.getNamedPlaces(target);
       if (res?.ok && Array.isArray(res.places)) {
         setNamedPlaces(res.places);
@@ -848,7 +848,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     setIsSavingPlaces(true);
     setPlacesError(null);
     try {
-      const target = selectedMapForGraph || mapName || 'warehouse_01';
+      const target = selectedMapForGraph || mapName || 'hospital_map';
       const res = await bridge.saveNamedPlaces(namedPlaces, target);
       if (res?.ok) {
         setPlacesSaveSuccess(true);
@@ -869,7 +869,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     setIsFinalSaving(true);
     setFinalSaveError(null);
     try {
-      const targetMap = (selectedMapForGraph || mapName || 'warehouse_01').trim();
+      const targetMap = (selectedMapForGraph || mapName || 'hospital_map').trim();
 
       // 1. Save named places to disk and inject into roadmap
       const placeRes = await bridge.saveNamedPlaces(namedPlaces, targetMap);
@@ -1199,7 +1199,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       onClick={() => {
                         setWorld('warehouse.world');
                         if (!isMapNameDirtyRef.current) {
-                          setMapName('warehouse_01');
+                          setMapName('warehouse_map');
                         }
                       }}
                       disabled={status === 'MAPPING'}

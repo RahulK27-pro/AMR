@@ -37,7 +37,7 @@ function DistBar({ value, max = 8 }) {
   );
 }
 
-export default function TelemetryPanel({ telemetry, activeMap = 'warehouse_01' }) {
+export default function TelemetryPanel({ telemetry, activeMap = 'hospital_map' }) {
   const p  = telemetry?.pose     ?? { x: 0, y: 0, yaw: 0 };
   const v  = telemetry?.velocity ?? { linear: 0, angular: 0 };
   const im = telemetry?.imu      ?? { roll: 0, pitch: 0, yaw: 0 };

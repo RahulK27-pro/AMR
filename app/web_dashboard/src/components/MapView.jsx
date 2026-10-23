@@ -15,7 +15,7 @@ const TRAIL_MIN_DIST   = 0.05;  // metres — min movement before adding a crumb
 // LERP smoothing: lower = smoother but slower response; 0.18 @ 60fps ≈ 100ms settle
 const LERP_FACTOR = 0.18;
 
-export default function MapView({ telemetry, selectedNodes = [], onSelectNode, activeMap = 'warehouse_01' }) {
+export default function MapView({ telemetry, selectedNodes = [], onSelectNode, activeMap = 'hospital_map' }) {
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
 
@@ -98,10 +98,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       if (data && mounted) {
         setMeta({
           resolution: data.resolution || DEFAULT_MAP_RES,
-          origin_x:   data.origin_x   ?? (activeMap === 'warehouse_01' ? -6.976 : DEFAULT_ORIGIN_X),
-          origin_y:   data.origin_y   ?? (activeMap === 'warehouse_01' ? -4.976 : DEFAULT_ORIGIN_Y),
-          width:      data.width       || (activeMap === 'warehouse_01' ? 279 : MAP_WIDTH_PX),
-          height:     data.height      || (activeMap === 'warehouse_01' ? 199 : MAP_HEIGHT_PX),
+          origin_x:   data.origin_x   ?? (activeMap === 'hospital_map' ? -8.50 : DEFAULT_ORIGIN_X),
+          origin_y:   data.origin_y   ?? (activeMap === 'hospital_map' ? -6.50 : DEFAULT_ORIGIN_Y),
+          width:      data.width       || (activeMap === 'hospital_map' ? 340 : MAP_WIDTH_PX),
+          height:     data.height      || (activeMap === 'hospital_map' ? 260 : MAP_HEIGHT_PX),
         });
       }
     });

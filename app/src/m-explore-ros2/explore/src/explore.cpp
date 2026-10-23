@@ -63,7 +63,7 @@ Explore::Explore()
   double timeout;
   double min_frontier_size;
   this->declare_parameter<float>("planner_frequency", 1.0);
-  this->declare_parameter<float>("progress_timeout", 8.0);
+  this->declare_parameter<float>("progress_timeout", 20.0);
   this->declare_parameter<bool>("visualize", false);
   this->declare_parameter<float>("potential_scale", 1e-3);
   this->declare_parameter<float>("orientation_scale", 0.0);
@@ -245,16 +245,34 @@ void Explore::makePlan()
   auto pose = costmap_client_.getRobotPose();
 
   // 1. HARD STALL CONSTRAINT:
-  // If an active goal is being pursued, verify that the robot is physically progressing towards it.
+  // If an active goal is being pursued, verify that the robot is physically progressing towards it or moving.
   if (goal_active_ && !resuming_) {
+    double robot_disp = std::hypot(pose.position.x - last_robot_pose_.position.x,
+                                   pose.position.y - last_robot_pose_.position.y);
     double current_dist_to_active = std::hypot(prev_goal_.x - pose.position.x,
                                                prev_goal_.y - pose.position.y);
-    if (prev_distance_ - current_dist_to_active > 0.08) {
-      // Robot physically advanced towards the active goal
+
+    // Compute yaw difference
+    double siny_cosp = 2.0 * (pose.orientation.w * pose.orientation.z + pose.orientation.x * pose.orientation.y);
+    double cosy_cosp = 1.0 - 2.0 * (pose.orientation.y * pose.orientation.y + pose.orientation.z * pose.orientation.z);
+    double cur_yaw = std::atan2(siny_cosp, cosy_cosp);
+
+    double last_siny = 2.0 * (last_robot_pose_.orientation.w * last_robot_pose_.orientation.z + last_robot_pose_.orientation.x * last_robot_pose_.orientation.y);
+    double last_cosy = 1.0 - 2.0 * (last_robot_pose_.orientation.y * last_robot_pose_.orientation.y + last_robot_pose_.orientation.z * last_robot_pose_.orientation.z);
+    double last_yaw = std::atan2(last_siny, last_cosy);
+
+    double yaw_diff = std::abs(cur_yaw - last_yaw);
+    while (yaw_diff > M_PI) yaw_diff = std::abs(yaw_diff - 2.0 * M_PI);
+
+    if (robot_disp > 0.05 || yaw_diff > 0.08 || (prev_distance_ - current_dist_to_active > 0.08)) {
+      // Robot physically advanced or rotated (navigating around obstacles or turning)
       last_progress_ = this->now();
-      prev_distance_ = current_dist_to_active;
+      last_robot_pose_ = pose;
+      if (current_dist_to_active < prev_distance_) {
+        prev_distance_ = current_dist_to_active;
+      }
     } else if (this->now() - last_progress_ > tf2::durationFromSec(progress_timeout_)) {
-      // Robot made NO progress for > progress_timeout_ (8.0s) — hard constraint triggered!
+      // Robot made NO progress and did NOT rotate for > progress_timeout_ — hard constraint triggered!
       RCLCPP_WARN(logger_,
                   "STALL CONSTRAINT TRIGGERED: Robot motionless for %.1f s towards (%.2f, %.2f). "
                   "Cancelling active Nav2 goal, blacklisting stuck target, and forcing immediate re-plan.",
@@ -263,7 +281,9 @@ void Explore::makePlan()
       move_base_client_->async_cancel_all_goals();
       goal_active_ = false;
       last_progress_ = this->now();
+      last_robot_pose_ = pose;
       prev_distance_ = 0.0;
+      return;  // Yield 1 cycle to allow Nav2 to cleanly halt
     }
   }
 
@@ -381,6 +401,7 @@ void Explore::makePlan()
 
   prev_goal_ = target_position;
   last_progress_ = this->now();
+  last_robot_pose_ = pose;
   prev_distance_ = current_dist_to_target;
 
   RCLCPP_INFO(logger_, "Dispatching navigation goal to (%.2f, %.2f) [dist=%.2fm]",

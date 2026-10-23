@@ -206,7 +206,7 @@ class AmrBridgeService {
 
   // ---- Mapping Pipeline (Phase 1) ----
   async getMappingStatus() { return this._get('/api/mapping/status'); }
-  async startMapping(mapName = 'warehouse_01', world = 'test1.world', runExplore = false, headless = true, useRviz = false) {
+  async startMapping(mapName = 'hospital_map', world = 'hospital.world', runExplore = false, headless = true, useRviz = false) {
     this.emitEvent('info', `Started mapping pipeline: "${mapName}" (world: ${world}, explore: ${runExplore ? 'autonomous' : 'manual'}, gui: ${useRviz ? 'enabled' : 'headless'})`);
     return this._post('/api/mapping/start', { map_name: mapName, world, run_explore: runExplore, headless, use_rviz: useRviz });
   }

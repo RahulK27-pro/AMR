@@ -10,14 +10,14 @@ Launches the full navigation session with configurable map and matching Gazebo w
   5. Automatic synchronization of graph roadmap for route_runner and bt_manager
 
 Usage Examples:
-  # Launch with warehouse_01 map & test1.world (default):
-  ros2 launch agv_description navigation_launch.py map:=warehouse_01
+  # Launch with hospital_map & hospital.world (default):
+  ros2 launch agv_description navigation_launch.py
 
-  # Launch with warehouse_map & warehouse.world:
-  ros2 launch agv_description navigation_launch.py map:=warehouse_map
+  # Launch with specific map:
+  ros2 launch agv_description navigation_launch.py map:=hospital_map
 
   # Custom world override:
-  ros2 launch agv_description navigation_launch.py map:=warehouse_01 world:=test1.world
+  ros2 launch agv_description navigation_launch.py map:=hospital_map world:=hospital.world
 """
 
 import os
@@ -67,8 +67,8 @@ def launch_setup(context, *args, **kwargs):
         candidates = [
             os.path.join(pkg_agv, 'maps', f'{clean_map}.yaml'),
             os.path.join(ws_maps_dir, f'{clean_map}.yaml'),
-            os.path.join(pkg_agv, 'maps', 'warehouse_01.yaml'),
-            os.path.join(ws_maps_dir, 'warehouse_01.yaml'),
+            os.path.join(pkg_agv, 'maps', 'hospital_map.yaml'),
+            os.path.join(ws_maps_dir, 'hospital_map.yaml'),
             os.path.join(pkg_agv, 'maps', 'warehouse_map.yaml'),
             os.path.join(ws_maps_dir, 'warehouse_map.yaml'),
         ]
@@ -100,18 +100,16 @@ def launch_setup(context, *args, **kwargs):
                     break
     else:
         # Automatic Pairing:
-        # warehouse_01 -> test1.world
+        # hospital_map -> hospital.world
         # warehouse_map -> warehouse.world
-        if map_stem == 'warehouse_01':
-            target_world_name = 'test1.world'
+        if map_stem in ('hospital', 'hospital_map'):
+            target_world_name = 'hospital.world'
         elif map_stem == 'warehouse_map':
             target_world_name = 'warehouse.world'
-        elif map_stem in ('hospital', 'hospital_map'):
-            target_world_name = 'hospital.world'
         else:
             # Check if matching world exists
             matching = os.path.join(pkg_agv, 'worlds', f'{map_stem}.world')
-            target_world_name = f'{map_stem}.world' if os.path.exists(matching) else 'warehouse.world'
+            target_world_name = f'{map_stem}.world' if os.path.exists(matching) else 'hospital.world'
 
         w_candidates = [
             os.path.join(pkg_agv, 'worlds', target_world_name),
@@ -226,8 +224,8 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     map_arg = DeclareLaunchArgument(
         'map',
-        default_value='warehouse_01',
-        description='Map name (e.g. "warehouse_01", "warehouse_map") or full path to map YAML file'
+        default_value='hospital_map',
+        description='Map name (e.g. "hospital_map", "warehouse_map") or full path to map YAML file'
     )
 
     world_arg = DeclareLaunchArgument(
