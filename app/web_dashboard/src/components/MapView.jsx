@@ -15,48 +15,87 @@ const TRAIL_MIN_DIST   = 0.05;  // metres — min movement before adding a crumb
 // LERP smoothing: lower = smoother but slower response; 0.18 @ 60fps ≈ 100ms settle
 const LERP_FACTOR = 0.18;
 
-// Offscreen canvas transformer: converts dark/cyan map to clinical white & slate light theme
-function createLightMapCanvas(img, width, height) {
-  if (!img) return null;
+/**
+ * Transforms the high-tech dark floorplan into a clinical light blueprint in-memory.
+ * Translates walkable rooms/corridors to pure crisp white,
+ * perimeter padding to architectural ice-blue slate,
+ * and cyan walls/furniture to crisp deep obsidian navy (#0f172a).
+ */
+function createLightMapCanvas(image) {
+  if (!image) return null;
+  const w = image.naturalWidth || image.width;
+  const h = image.naturalHeight || image.height;
+  if (!w || !h) return null;
+
   try {
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth || img.width || width || 340;
-    c.height = img.naturalHeight || img.height || height || 260;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(img, 0, 0, c.width, c.height);
-    const idata = ctx.getImageData(0, 0, c.width, c.height);
-    const d = idata.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const r = d[i], g = d[i + 1], b = d[i + 2];
-      // Check if wall/furniture: cyan (g > 130 && b > 160 && r < 100) or bright line (r>180 && g>180 && b>180)
-      if ((g > 130 && b > 160 && r < 100) || (r > 180 && g > 180 && b > 180)) {
-        d[i] = 15;     // Deep obsidian slate navy (#0f172a)
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0);
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    const len = d.length;
+
+    for (let i = 0; i < len; i += 4) {
+      const a = d[i + 3];
+      if (a === 0) continue;
+
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
+
+      // 1. Walls and Obstacles (Cyan [0, 212, 255] or bright lines in dark maps)
+      const isCyanWall = (g > 120 && b > 150 && r < 125);
+      const isBrightWall = (r > 175 && g > 175 && b > 175);
+
+      if (isCyanWall || isBrightWall) {
+        // Deep obsidian navy (#0f172a) for crisp architectural walls and furniture
+        d[i]     = 15;
         d[i + 1] = 23;
         d[i + 2] = 42;
-      } else if (r < 22 && g < 26 && b < 36) {
-        // Walkable interior floor: pure crisp white (#ffffff)
-        d[i] = 255;
+      }
+      // 2. Walkable Interior Floor (Dark interior space [12, 16, 28] or [8, 12, 22])
+      else if (r < 32 && g < 36 && b < 52) {
+        // Pure clean white (#ffffff) for all rooms, corridors, and doorways
+        d[i]     = 255;
         d[i + 1] = 255;
         d[i + 2] = 255;
-      } else {
-        // Outer margin: soft blueprint ice-blue (#e2eaf4)
-        d[i] = 226;
+      }
+      // 3. Exterior Perimeter / Non-walkable background ([26, 32, 46])
+      else if (r >= 20 && r <= 65 && g >= 24 && g <= 70 && b >= 34 && b <= 85) {
+        // Soft architectural blueprint ice-blue (#e2eaf4) to seamlessly match light dashboard
+        d[i]     = 226;
         d[i + 1] = 234;
         d[i + 2] = 244;
       }
+      // 4. Any other pixels (generic fallback)
+      else {
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        if (lum < 75) {
+          d[i]     = 255;
+          d[i + 1] = 255;
+          d[i + 2] = 255;
+        } else if (lum > 170) {
+          d[i]     = 15;
+          d[i + 1] = 23;
+          d[i + 2] = 42;
+        }
+      }
     }
-    ctx.putImageData(idata, 0, 0);
-    return c;
-  } catch (_) {
-    return img;
+
+    ctx.putImageData(imgData, 0, 0);
+    return canvas;
+  } catch (err) {
+    console.warn('createLightMapCanvas error:', err);
+    return null;
   }
 }
 
 export default function MapView({ telemetry, selectedNodes = [], onSelectNode, activeMap = 'hospital_map', theme = 'dark' }) {
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
-  const lightMapCanvasRef = useRef(null);
-  const mapCacheRef = useRef({});
 
   // ── Map state ─────────────────────────────────────────────────────────────
   const [meta, setMeta] = useState({
@@ -68,6 +107,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   });
   const [graphNodes, setGraphNodes] = useState([]);
   const [mapImage,   setMapImage]   = useState(null);
+  const [lightMapCanvas, setLightMapCanvas] = useState(null);
 
   // ── Viewport (pan & zoom) ─────────────────────────────────────────────────
   const [zoom, setZoom] = useState(1.8);
@@ -133,15 +173,6 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     smoothPoseRef.current = { x: 0, y: 0, yaw: 0 };
     rawPoseRef.current = { x: 0, y: 0, yaw: 0 };
 
-    const cacheKey = `${activeMap}_${theme}`;
-    if (mapCacheRef.current[cacheKey]) {
-      const cached = mapCacheRef.current[cacheKey];
-      setMapImage(cached);
-      if (theme === 'light') {
-        lightMapCanvasRef.current = createLightMapCanvas(cached, meta.width, meta.height);
-      }
-    }
-
     bridge.getMapMetadata(activeMap).then((data) => {
       if (data && mounted) {
         setMeta({
@@ -168,43 +199,30 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload  = () => {
-      mapCacheRef.current[cacheKey] = img;
-      if (mounted) {
-        setMapImage(img);
-        if (theme === 'light') {
-          lightMapCanvasRef.current = createLightMapCanvas(img, meta.width, meta.height);
-        }
-      }
-    };
+    img.onload  = () => { if (mounted) setMapImage(img); };
     img.onerror = () => {
       bridge.getMapImage(activeMap).then((res) => {
         if (res?.image && mounted) {
           const fb = new Image();
-          fb.onload = () => {
-            mapCacheRef.current[cacheKey] = fb;
-            if (mounted) {
-              setMapImage(fb);
-              if (theme === 'light') {
-                lightMapCanvasRef.current = createLightMapCanvas(fb, meta.width, meta.height);
-              }
-            }
-          };
+          fb.onload = () => mounted && setMapImage(fb);
           fb.src = `data:image/jpeg;base64,${res.image}`;
         }
       });
     };
-    img.src = bridge.getRawMapUrl(activeMap, theme);
+    img.src = bridge.getRawMapUrl(activeMap);
 
     return () => { mounted = false; };
-  }, [activeMap, theme]);
+  }, [activeMap]);
 
-  // Synchronize light map canvas immediately when theme or mapImage updates
+  // Generate high-resolution clinical light theme floorplan canvas in-memory
   useEffect(() => {
-    if (mapImage && theme === 'light') {
-      lightMapCanvasRef.current = createLightMapCanvas(mapImage, meta.width, meta.height);
+    if (!mapImage) {
+      setLightMapCanvas(null);
+      return;
     }
-  }, [mapImage, theme, meta.width, meta.height]);
+    const canvas = createLightMapCanvas(mapImage);
+    setLightMapCanvas(canvas);
+  }, [mapImage]);
 
   // Synchronize namedPlaces live whenever a place is created, renamed, or deleted
   useEffect(() => {
@@ -314,7 +332,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
 
       ctx.save();
       ctx.scale(dpr, dpr);
-      ctx.clearRect(0, 0, w, h);
+      const currentTheme = theme || (typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme')) || 'dark';
+      const isLight = currentTheme === 'light';
+      ctx.fillStyle = isLight ? '#e2eaf4' : '#080c16';
+      ctx.fillRect(0, 0, w, h);
 
       // ── LERP smooth pose ────────────────────────────────────────────────
       const raw = rawPoseRef.current;
@@ -358,15 +379,19 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       ctx.translate(-meta.width / 2, -meta.height / 2);
 
       // ── Layer 1: Base Map Image ─────────────────────────────────────────
-      if (mapImage) {
-        const isLight = theme === 'light';
-        const renderSource = isLight
-          ? (lightMapCanvasRef.current || mapImage)
-          : mapImage;
-        ctx.drawImage(renderSource, 0, 0, meta.width, meta.height);
+      const activeDrawable = (isLight && lightMapCanvas) ? lightMapCanvas : mapImage;
+
+      if (activeDrawable) {
+        if (isLight && !lightMapCanvas) {
+          // Hardware canvas filter fallback if offscreen canvas was delayed
+          ctx.filter = 'invert(0.92) hue-rotate(180deg)';
+          ctx.drawImage(activeDrawable, 0, 0, meta.width, meta.height);
+          ctx.filter = 'none';
+        } else {
+          ctx.drawImage(activeDrawable, 0, 0, meta.width, meta.height);
+        }
       } else {
         // Grid placeholder
-        const isLight = theme === 'light';
         ctx.fillStyle = isLight ? '#f1f5fa' : '#0b0f19';
         ctx.fillRect(0, 0, meta.width, meta.height);
         ctx.strokeStyle = isLight ? '#cbdced' : '#1a2035';
@@ -387,10 +412,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
           const isHover = hoveredNode?.id === n.id;
           ctx.beginPath();
           ctx.arc(n.px, n.py, isSel ? 4 : isHover ? 3.5 : 1.5, 0, Math.PI * 2);
-          ctx.fillStyle = isSel ? '#00f0ff' : isHover ? '#ffaa00' : 'rgba(0,240,255,0.45)';
+          ctx.fillStyle = isSel ? (isLight ? '#2563eb' : '#00f0ff') : isHover ? '#ffaa00' : (isLight ? 'rgba(2, 132, 199, 0.7)' : 'rgba(0,240,255,0.45)');
           ctx.fill();
           if (isSel) {
-            ctx.strokeStyle = '#ffffff';
+            ctx.strokeStyle = isLight ? '#0f172a' : '#ffffff';
             ctx.lineWidth   = 1.2 / zoom;
             ctx.stroke();
           }
@@ -402,14 +427,12 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         for (const p of namedPlaces) {
           const { px, py } = worldToPixel(p.x, p.y);
           const isHover = hoveredPlace?.id === p.id;
-          const isLight = theme === 'light';
-          const markerClr = isNavTarget
-            ? '#0284c7'
-            : isHover
-            ? '#2563eb'
-            : isLight
-            ? '#0284c7'
-            : '#10b981';
+          const isNavTarget = Boolean(
+            telemetry?.active_place_nav &&
+            (telemetry.active_place_nav.target_place === p.name ||
+             telemetry.active_place_nav.target_node === p.node_id)
+          );
+          const markerClr = isNavTarget ? '#06b6d4' : (isHover ? '#38bdf8' : '#10b981');
 
           ctx.save();
 
@@ -418,7 +441,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
             const pRing = 0.5 + 0.5 * Math.sin(pulseRef.current * 2);
             ctx.beginPath();
             ctx.arc(px, py, (7 + pRing * 6) / zoom, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(2, 132, 199, ${0.4 + pRing * 0.5})`;
+            ctx.strokeStyle = `rgba(6, 182, 212, ${0.4 + pRing * 0.5})`;
             ctx.lineWidth = 2 / zoom;
             ctx.stroke();
           }
@@ -442,13 +465,14 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
           const pillX = px - pillW / 2;
           const pillY = py - 6 / zoom - pillH;
 
-          ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(15, 23, 42, 0.88)';
+          const isLight = theme === 'light';
+          ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.94)' : 'rgba(15, 23, 42, 0.88)';
           ctx.fillRect(pillX, pillY, pillW, pillH);
-          ctx.strokeStyle = isLight ? (isNavTarget ? '#0284c7' : (isHover ? '#0284c7' : '#94a3b8')) : markerClr;
+          ctx.strokeStyle = markerClr;
           ctx.lineWidth = (isNavTarget || isHover ? 1.4 : 0.8) / zoom;
           ctx.strokeRect(pillX, pillY, pillW, pillH);
 
-          ctx.fillStyle = isNavTarget ? '#0284c7' : (isLight ? '#0f172a' : '#f1f5f9');
+          ctx.fillStyle = isNavTarget ? (isLight ? '#0284c7' : '#38bdf8') : (isLight ? '#0f172a' : '#f1f5f9');
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(label, px, pillY + pillH / 2);
@@ -482,7 +506,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         for (let i = 1; i < trail.length; i++) {
           const alpha = i / trail.length;
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(0, 212, 255, ${alpha * 0.55})`;
+          ctx.strokeStyle = isLight ? `rgba(2, 132, 199, ${alpha * 0.75})` : `rgba(0, 212, 255, ${alpha * 0.55})`;
           ctx.lineWidth   = (1.5 + alpha * 1.5) / zoom;
           ctx.moveTo(trail[i - 1].px, trail[i - 1].py);
           ctx.lineTo(trail[i].px,     trail[i].py);
@@ -492,7 +516,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         const t0 = trail[0];
         ctx.beginPath();
         ctx.arc(t0.px, t0.py, 2 / zoom, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0,212,255,0.3)';
+        ctx.fillStyle = isLight ? 'rgba(2, 132, 199, 0.4)' : 'rgba(0,212,255,0.3)';
         ctx.fill();
         ctx.restore();
       }
@@ -507,22 +531,24 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         // Outer pulsing ring
         ctx.beginPath();
         ctx.arc(gx, gy, (8 + pulse * 4) / zoom, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0,255,136,${0.4 + pulse * 0.4})`;
+        ctx.strokeStyle = isLight
+          ? `rgba(5, 150, 105, ${0.45 + pulse * 0.45})`
+          : `rgba(0,255,136,${0.4 + pulse * 0.4})`;
         ctx.lineWidth   = 2 / zoom;
-        ctx.shadowColor = 'rgba(0,255,136,0.6)';
+        ctx.shadowColor = isLight ? 'rgba(5, 150, 105, 0.4)' : 'rgba(0,255,136,0.6)';
         ctx.shadowBlur  = 12;
         ctx.stroke();
 
         // Inner solid ring
         ctx.beginPath();
         ctx.arc(gx, gy, 5 / zoom, 0, Math.PI * 2);
-        ctx.strokeStyle = '#00ff88';
+        ctx.strokeStyle = isLight ? '#059669' : '#00ff88';
         ctx.lineWidth   = 1.5 / zoom;
         ctx.shadowBlur  = 6;
         ctx.stroke();
 
         // Crosshair
-        ctx.strokeStyle = 'rgba(0,255,136,0.7)';
+        ctx.strokeStyle = isLight ? 'rgba(5, 150, 105, 0.85)' : 'rgba(0,255,136,0.7)';
         ctx.lineWidth   = 1 / zoom;
         ctx.shadowBlur  = 0;
         const ch = 12 / zoom;
@@ -580,12 +606,12 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       // Robot body disc
       ctx.beginPath();
       ctx.arc(rx, ry, robotRadiusPx * 0.65, 0, Math.PI * 2);
-      ctx.fillStyle   = 'rgba(0,212,255,0.22)';
+      ctx.fillStyle   = isLight ? 'rgba(2, 132, 199, 0.25)' : 'rgba(0,212,255,0.22)';
       ctx.fill();
-      ctx.strokeStyle = '#00d4ff';
+      ctx.strokeStyle = isLight ? '#0284c7' : '#00d4ff';
       ctx.lineWidth   = 1.8 / zoom;
-      ctx.shadowColor = '#00d4ff';
-      ctx.shadowBlur  = 14;
+      ctx.shadowColor = isLight ? 'rgba(2, 132, 199, 0.4)' : '#00d4ff';
+      ctx.shadowBlur  = isLight ? 8 : 14;
       ctx.stroke();
 
       // Heading direction arrow
@@ -623,7 +649,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       // Centre core dot
       ctx.beginPath();
       ctx.arc(rx, ry, 3 / zoom, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = isLight ? '#0f172a' : '#ffffff';
       ctx.shadowBlur = 0;
       ctx.fill();
 
@@ -738,7 +764,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
   }, [
-    mapImage, meta, zoom, pan, telemetry, theme,
+    mapImage, lightMapCanvas, theme, meta, zoom, pan, telemetry,
     showPlaces, showGraph, showPath, showTrail,
     showObstacle, isDropObstacleMode, cursorWorld,
     graphNodes, selectedNodes, hoveredNode,
@@ -874,10 +900,8 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         width:        '100%',
         height:       '100%',
         overflow:     'hidden',
-        background:   '#080c16',
         borderRadius: 12,
         cursor:       isDraggingRef.current ? 'grabbing' : hoveredNode ? 'pointer' : 'crosshair',
-        border:       '1px solid rgba(255,255,255,0.08)',
       }}
     >
       <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />

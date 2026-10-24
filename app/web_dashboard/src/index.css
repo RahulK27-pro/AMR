@@ -2662,7 +2662,7 @@ html, body, #root {
 /* Map Viewport, Canvas & HUDs */
 [data-theme="light"] .map-viewport,
 [data-theme="light"] .map-container {
-  background: #e2eaf4;
+  background: #e6eff8;
   border: 1px solid #cfe0ee;
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
 }

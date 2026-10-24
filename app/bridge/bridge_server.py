@@ -187,48 +187,11 @@ def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
     }
 
 
-def generate_light_map_image(src_path: Path, dst_path: Path) -> bool:
-    """Transform dark/cyan map PNG into a clinical blue & white light theme map."""
-    try:
-        from PIL import Image
-        import numpy as np
-        img = Image.open(src_path).convert('RGB')
-        arr = np.array(img)
-        # Identify walls and furniture (cyan or bright lines)
-        is_wall = (arr[:, :, 1] > 130) & (arr[:, :, 2] > 160) & (arr[:, :, 0] < 100)
-        is_bright_line = (arr[:, :, 0] > 180) & (arr[:, :, 1] > 180) & (arr[:, :, 2] > 180)
-        # Identify walkable rooms and corridors (dark interior)
-        is_walkable = (arr[:, :, 0] < 22) & (arr[:, :, 1] < 26) & (arr[:, :, 2] < 36)
-        
-        out = np.zeros_like(arr)
-        # Pure clean white for walkable floor space
-        out[is_walkable] = [255, 255, 255]
-        # Soft architectural blueprint ice-blue for perimeter
-        out[~is_walkable] = [226, 234, 244]
-        # Crisp deep obsidian slate navy for walls & obstacle furniture
-        out[is_wall | is_bright_line] = [15, 23, 42]
-
-        light_img = Image.fromarray(out)
-        light_img.save(dst_path, format='PNG')
-        return True
-    except Exception as e:
-        logger.warning(f"Failed to generate light map image: {e}")
-        return False
-
-
-def resolve_map_image_path(map_name: Optional[str] = None, theme: str = 'dark') -> Optional[Path]:
-    """Find or convert the clean floorplan PNG for a given map and theme."""
+def resolve_map_image_path(map_name: Optional[str] = None) -> Optional[Path]:
+    """Find or convert the clean floorplan PNG for a given map."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
     target = (map_name or 'hospital_map').strip()
     
-    if theme == 'light':
-        light_png = maps_dir / f"{target}_light.png"
-        if light_png.exists():
-            return light_png
-        dark_png = maps_dir / f"{target}.png"
-        if dark_png.exists() and generate_light_map_image(dark_png, light_png):
-            return light_png
-
     # 1. Direct png file
     direct_png = maps_dir / f"{target}.png"
     if direct_png.exists():
@@ -2044,18 +2007,18 @@ async def get_map_metadata(map_name: Optional[str] = None):
     return get_map_metadata_by_name(target)
 
 @app.get('/api/map/raw')
-async def get_map_raw(map_name: Optional[str] = None, theme: str = 'dark'):
-    """Serve the clean architectural floorplan (no graph overlay) for dark or light theme."""
+async def get_map_raw(map_name: Optional[str] = None):
+    """Serve the clean architectural floorplan (no graph overlay)."""
     target = (map_name or (node.active_map_name if node else None) or 'hospital_map').strip()
-    img_path = resolve_map_image_path(target, theme=theme)
+    img_path = resolve_map_image_path(target)
     if not img_path or not img_path.exists():
         return JSONResponse({'error': f'Map image for {target} not found'}, status_code=404)
     return FileResponse(img_path, media_type='image/png')
 
 @app.get('/api/map/clean')
-async def get_map_clean(map_name: Optional[str] = None, theme: str = 'dark'):
+async def get_map_clean(map_name: Optional[str] = None):
     """Alias for /api/map/raw — explicitly returns the clean floorplan."""
-    return await get_map_raw(map_name, theme=theme)
+    return await get_map_raw(map_name)
 
 @app.get('/api/graph')
 async def get_graph(map_name: Optional[str] = None):

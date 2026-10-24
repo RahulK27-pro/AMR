@@ -30,12 +30,9 @@ class AmrBridgeService {
   }
 
   get baseUrl()   { return `http://${this._host}:${this._port}`; }
-  getRawMapUrl(mapName = '', theme = 'dark') { 
-    const params = new URLSearchParams();
-    if (mapName) params.append('map_name', mapName);
-    if (theme) params.append('theme', theme);
-    const qs = params.toString();
-    return `${this.baseUrl}/api/map/raw${qs ? `?${qs}` : ''}`; 
+  get wsUrl()     { return `ws://${this._host}:${this._port}/ws/telemetry`; }
+  getRawMapUrl(mapName = '') { 
+    return `${this.baseUrl}/api/map/raw${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`; 
   }
   get rawMapUrl() { return this.getRawMapUrl(); }
 
