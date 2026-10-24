@@ -10,6 +10,8 @@ export default function StatusBar({
   onViewChange,
   activeMap = 'hospital_map',
   onMapChange,
+  theme = 'dark',
+  onToggleTheme,
 }) {
   const [status, setStatus] = useState('connecting');
   const [host, setHost]     = useState(window.location.hostname);
@@ -114,29 +116,20 @@ export default function StatusBar({
         {navState}
       </div>
 
-      {/* ── Active Map Switcher (Phase 7 / Multi-Map Separation) ── */}
+      {/* ── Active Map Switcher (Multi-Map Separation) ── */}
       <div
         className="status-bar__map-switcher"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          background: 'rgba(15, 23, 42, 0.85)',
-          border: '1px solid #334155',
-          borderRadius: 8,
-          padding: '3px 10px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-        }}
         title="Switch active operating map and topological roadmap"
       >
         <span style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
           <span>🗺️</span>
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#94a3b8', textTransform: 'uppercase' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
             Map:
           </span>
         </span>
         <select
           id="select-active-map"
+          className="status-bar__map-select"
           value={activeMap}
           onChange={(e) => onMapChange && onMapChange(e.target.value)}
           onFocus={() => {
@@ -144,26 +137,16 @@ export default function StatusBar({
               if (res?.maps) setAvailableMaps(res.maps);
             });
           }}
-          style={{
-            background: 'transparent',
-            color: '#38bdf8',
-            border: 'none',
-            outline: 'none',
-            fontSize: 12,
-            fontWeight: 700,
-            cursor: 'pointer',
-            padding: '2px 4px',
-          }}
         >
           {availableMaps.length > 0 ? (
             <>
               {availableMaps.map((m) => (
-                <option key={m.name} value={m.name} style={{ background: '#1e293b', color: '#f8fafc' }}>
+                <option key={m.name} value={m.name}>
                   {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
                 </option>
               ))}
               {activeMap && !availableMaps.some((m) => m.name === activeMap) && (
-                <option key={activeMap} value={activeMap} style={{ background: '#1e293b', color: '#f8fafc' }}>
+                <option key={activeMap} value={activeMap}>
                   {activeMap} (newly saved)
                 </option>
               )}
@@ -171,10 +154,10 @@ export default function StatusBar({
           ) : (
             <>
               {activeMap && activeMap !== 'hospital_map' && activeMap !== 'warehouse_map' && (
-                <option value={activeMap} style={{ background: '#1e293b', color: '#f8fafc' }}>{activeMap}</option>
+                <option value={activeMap}>{activeMap}</option>
               )}
-              <option value="hospital_map" style={{ background: '#1e293b', color: '#f8fafc' }}>hospital_map (661 nodes)</option>
-              <option value="warehouse_map" style={{ background: '#1e293b', color: '#f8fafc' }}>warehouse_map (764 nodes)</option>
+              <option value="hospital_map">hospital_map (661 nodes)</option>
+              <option value="warehouse_map">warehouse_map (764 nodes)</option>
             </>
           )}
         </select>
@@ -268,6 +251,18 @@ export default function StatusBar({
           ⚙ Bridge
         </button>
       )}
+
+      {/* ── Theme Mode Toggle Button (Light / Dark) ── */}
+      <button
+        id="btn-theme-toggle"
+        className={`btn-theme-toggle ${theme === 'light' ? 'btn-theme-toggle--light' : 'btn-theme-toggle--dark'}`}
+        onClick={onToggleTheme}
+        title={theme === 'light' ? 'Switch to Dark Theme' : 'Switch to Professional Light Theme (Clinical Blue & White)'}
+        aria-label="Toggle theme mode"
+      >
+        <span className="theme-toggle__icon">{theme === 'light' ? '☀️' : '🌙'}</span>
+        <span className="theme-toggle__text">{theme === 'light' ? 'Light Mode' : 'Dark Mode'}</span>
+      </button>
 
       {/* Clock */}
       <span className="text-dim text-mono" style={{ fontSize: 12, minWidth: 60 }}>

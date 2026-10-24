@@ -40,7 +40,7 @@ export default function EventLog() {
     <div className="card event-log-card" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
-          <span style={{ fontWeight: 700, letterSpacing: '0.06em', color: '#e2e8f0' }}>
+          <span style={{ fontWeight: 700, letterSpacing: '0.06em', color: 'var(--text-primary)' }}>
             AUTONOMOUS DECISIONS &amp; EVENT LOG
           </span>
           <span className="badge badge--cyan" style={{ fontSize: 10 }}>

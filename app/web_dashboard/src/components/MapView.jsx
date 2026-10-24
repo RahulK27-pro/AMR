@@ -15,9 +15,48 @@ const TRAIL_MIN_DIST   = 0.05;  // metres — min movement before adding a crumb
 // LERP smoothing: lower = smoother but slower response; 0.18 @ 60fps ≈ 100ms settle
 const LERP_FACTOR = 0.18;
 
-export default function MapView({ telemetry, selectedNodes = [], onSelectNode, activeMap = 'hospital_map' }) {
+// Offscreen canvas transformer: converts dark/cyan map to clinical white & slate light theme
+function createLightMapCanvas(img, width, height) {
+  if (!img) return null;
+  try {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth || img.width || width || 340;
+    c.height = img.naturalHeight || img.height || height || 260;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    const idata = ctx.getImageData(0, 0, c.width, c.height);
+    const d = idata.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      // Check if wall/furniture: cyan (g > 130 && b > 160 && r < 100) or bright line (r>180 && g>180 && b>180)
+      if ((g > 130 && b > 160 && r < 100) || (r > 180 && g > 180 && b > 180)) {
+        d[i] = 15;     // Deep obsidian slate navy (#0f172a)
+        d[i + 1] = 23;
+        d[i + 2] = 42;
+      } else if (r < 22 && g < 26 && b < 36) {
+        // Walkable interior floor: pure crisp white (#ffffff)
+        d[i] = 255;
+        d[i + 1] = 255;
+        d[i + 2] = 255;
+      } else {
+        // Outer margin: soft blueprint ice-blue (#e2eaf4)
+        d[i] = 226;
+        d[i + 1] = 234;
+        d[i + 2] = 244;
+      }
+    }
+    ctx.putImageData(idata, 0, 0);
+    return c;
+  } catch (_) {
+    return img;
+  }
+}
+
+export default function MapView({ telemetry, selectedNodes = [], onSelectNode, activeMap = 'hospital_map', theme = 'dark' }) {
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
+  const lightMapCanvasRef = useRef(null);
+  const mapCacheRef = useRef({});
 
   // ── Map state ─────────────────────────────────────────────────────────────
   const [meta, setMeta] = useState({
@@ -94,6 +133,15 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     smoothPoseRef.current = { x: 0, y: 0, yaw: 0 };
     rawPoseRef.current = { x: 0, y: 0, yaw: 0 };
 
+    const cacheKey = `${activeMap}_${theme}`;
+    if (mapCacheRef.current[cacheKey]) {
+      const cached = mapCacheRef.current[cacheKey];
+      setMapImage(cached);
+      if (theme === 'light') {
+        lightMapCanvasRef.current = createLightMapCanvas(cached, meta.width, meta.height);
+      }
+    }
+
     bridge.getMapMetadata(activeMap).then((data) => {
       if (data && mounted) {
         setMeta({
@@ -120,20 +168,43 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload  = () => { if (mounted) setMapImage(img); };
+    img.onload  = () => {
+      mapCacheRef.current[cacheKey] = img;
+      if (mounted) {
+        setMapImage(img);
+        if (theme === 'light') {
+          lightMapCanvasRef.current = createLightMapCanvas(img, meta.width, meta.height);
+        }
+      }
+    };
     img.onerror = () => {
       bridge.getMapImage(activeMap).then((res) => {
         if (res?.image && mounted) {
           const fb = new Image();
-          fb.onload = () => mounted && setMapImage(fb);
+          fb.onload = () => {
+            mapCacheRef.current[cacheKey] = fb;
+            if (mounted) {
+              setMapImage(fb);
+              if (theme === 'light') {
+                lightMapCanvasRef.current = createLightMapCanvas(fb, meta.width, meta.height);
+              }
+            }
+          };
           fb.src = `data:image/jpeg;base64,${res.image}`;
         }
       });
     };
-    img.src = bridge.getRawMapUrl(activeMap);
+    img.src = bridge.getRawMapUrl(activeMap, theme);
 
     return () => { mounted = false; };
-  }, [activeMap]);
+  }, [activeMap, theme]);
+
+  // Synchronize light map canvas immediately when theme or mapImage updates
+  useEffect(() => {
+    if (mapImage && theme === 'light') {
+      lightMapCanvasRef.current = createLightMapCanvas(mapImage, meta.width, meta.height);
+    }
+  }, [mapImage, theme, meta.width, meta.height]);
 
   // Synchronize namedPlaces live whenever a place is created, renamed, or deleted
   useEffect(() => {
@@ -288,12 +359,17 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
 
       // ── Layer 1: Base Map Image ─────────────────────────────────────────
       if (mapImage) {
-        ctx.drawImage(mapImage, 0, 0, meta.width, meta.height);
+        const isLight = theme === 'light';
+        const renderSource = isLight
+          ? (lightMapCanvasRef.current || mapImage)
+          : mapImage;
+        ctx.drawImage(renderSource, 0, 0, meta.width, meta.height);
       } else {
-        // Charcoal grid placeholder
-        ctx.fillStyle = '#0b0f19';
+        // Grid placeholder
+        const isLight = theme === 'light';
+        ctx.fillStyle = isLight ? '#f1f5fa' : '#0b0f19';
         ctx.fillRect(0, 0, meta.width, meta.height);
-        ctx.strokeStyle = '#1a2035';
+        ctx.strokeStyle = isLight ? '#cbdced' : '#1a2035';
         ctx.lineWidth = 0.5;
         const gridPx = 1 / meta.resolution; // 1 m grid
         for (let gx = 0; gx < meta.width;  gx += gridPx) {
@@ -326,12 +402,14 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         for (const p of namedPlaces) {
           const { px, py } = worldToPixel(p.x, p.y);
           const isHover = hoveredPlace?.id === p.id;
-          const isNavTarget = Boolean(
-            telemetry?.active_place_nav &&
-            (telemetry.active_place_nav.target_place === p.name ||
-             telemetry.active_place_nav.target_node === p.node_id)
-          );
-          const markerClr = isNavTarget ? '#06b6d4' : (isHover ? '#38bdf8' : '#10b981');
+          const isLight = theme === 'light';
+          const markerClr = isNavTarget
+            ? '#0284c7'
+            : isHover
+            ? '#2563eb'
+            : isLight
+            ? '#0284c7'
+            : '#10b981';
 
           ctx.save();
 
@@ -340,7 +418,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
             const pRing = 0.5 + 0.5 * Math.sin(pulseRef.current * 2);
             ctx.beginPath();
             ctx.arc(px, py, (7 + pRing * 6) / zoom, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(6, 182, 212, ${0.4 + pRing * 0.5})`;
+            ctx.strokeStyle = `rgba(2, 132, 199, ${0.4 + pRing * 0.5})`;
             ctx.lineWidth = 2 / zoom;
             ctx.stroke();
           }
@@ -364,13 +442,13 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
           const pillX = px - pillW / 2;
           const pillY = py - 6 / zoom - pillH;
 
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(15, 23, 42, 0.88)';
           ctx.fillRect(pillX, pillY, pillW, pillH);
-          ctx.strokeStyle = markerClr;
+          ctx.strokeStyle = isLight ? (isNavTarget ? '#0284c7' : (isHover ? '#0284c7' : '#94a3b8')) : markerClr;
           ctx.lineWidth = (isNavTarget || isHover ? 1.4 : 0.8) / zoom;
           ctx.strokeRect(pillX, pillY, pillW, pillH);
 
-          ctx.fillStyle = isNavTarget ? '#38bdf8' : '#f1f5f9';
+          ctx.fillStyle = isNavTarget ? '#0284c7' : (isLight ? '#0f172a' : '#f1f5f9');
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(label, px, pillY + pillH / 2);
@@ -660,7 +738,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
   }, [
-    mapImage, meta, zoom, pan, telemetry,
+    mapImage, meta, zoom, pan, telemetry, theme,
     showPlaces, showGraph, showPath, showTrail,
     showObstacle, isDropObstacleMode, cursorWorld,
     graphNodes, selectedNodes, hoveredNode,

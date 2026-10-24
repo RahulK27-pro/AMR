@@ -62,7 +62,7 @@ export default function TelemetryPanel({ telemetry, activeMap = 'hospital_map' }
             ONLINE
           </span>
         </div>
-        <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, color: '#38bdf8', fontFamily: 'var(--text-mono)' }}>
+        <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, color: 'var(--accent-cyan)', fontFamily: 'var(--text-mono)' }}>
           {activeMap}
         </div>
       </div>

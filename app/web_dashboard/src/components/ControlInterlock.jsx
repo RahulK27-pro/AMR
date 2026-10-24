@@ -60,11 +60,12 @@ export default function ControlInterlock({
     const isRobotManual = teleopTarget === 'robot' && controlMode === 'manual';
     const isInteractive = isObstacle || isRobotManual;
 
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
     const joyColor = isObstacle
       ? '#ea580c'
       : isRobotManual
-        ? '#00d4ff'
-        : '#475569';
+        ? (isLight ? '#0284c7' : '#00d4ff')
+        : (isLight ? '#94a3b8' : '#475569');
 
     const manager = nipplejs.create({
       zone: joystickRef.current,
@@ -320,17 +321,17 @@ export default function ControlInterlock({
               {/* Obstacle Stats & Quick Drop Actions */}
               <div
                 style={{
-                  background: 'rgba(15, 23, 42, 0.6)',
+                  background: 'var(--bg-elevated)',
                   padding: '5px 8px',
                   borderRadius: 6,
-                  border: '1px solid rgba(255,255,255,0.06)',
+                  border: '1px solid var(--border)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
                 }}
               >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span className="text-xs" style={{ fontWeight: 600, color: '#f1f5f9' }}>
+                  <span className="text-xs" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                     {dynObs?.x != null ? `Pos: (${dynObs.x.toFixed(2)}, ${dynObs.y.toFixed(2)})` : 'Pos: Not Dropped'}
                   </span>
                   <span className="text-dim text-xs">

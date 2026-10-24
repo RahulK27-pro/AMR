@@ -310,28 +310,10 @@ export default function ControlPanel({
 
       {/* ── 0. NAVIGATION SYSTEM LIFECYCLE CONTROLLER (PROFESSIONAL / NO EMOJIS) ── */}
       <div
-        className="card"
-        style={{
-          background:
-            systemState === 'RUNNING'
-              ? 'linear-gradient(180deg, rgba(6, 78, 59, 0.28) 0%, rgba(15, 23, 42, 0.85) 100%)'
-              : systemState === 'STARTING'
-              ? 'linear-gradient(180deg, rgba(120, 53, 15, 0.28) 0%, rgba(15, 23, 42, 0.85) 100%)'
-              : 'rgba(15, 23, 42, 0.65)',
-          border:
-            systemState === 'RUNNING'
-              ? '1px solid #059669'
-              : systemState === 'STARTING'
-              ? '1px solid #d97706'
-              : '1px solid #334155',
-          boxShadow:
-            systemState === 'RUNNING'
-              ? '0 0 16px rgba(16, 185, 129, 0.12)'
-              : 'none',
-        }}
+        className={`card lifecycle-card lifecycle-card--${systemState.toLowerCase()}`}
       >
         <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontWeight: 700, letterSpacing: '0.07em', color: '#e2e8f0', textTransform: 'uppercase' }}>
+          <span style={{ fontWeight: 700, letterSpacing: '0.07em', color: 'var(--text-primary)', textTransform: 'uppercase' }}>
             System Lifecycle
           </span>
           <span
@@ -352,17 +334,17 @@ export default function ControlPanel({
           <div
             style={{
               fontSize: 12,
-              background: 'rgba(0,0,0,0.3)',
+              background: 'var(--bg-elevated)',
               padding: '8px 10px',
               borderRadius: 6,
-              border: '1px solid rgba(255,255,255,0.06)',
+              border: '1px solid var(--border)',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
               <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
                 Environment:
               </span>
-              <strong style={{ color: '#38bdf8', fontFamily: 'var(--text-mono)' }}>
+              <strong style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--text-mono)' }}>
                 {systemStatus?.active_map || activeMap}
               </strong>
             </div>
@@ -843,12 +825,12 @@ export default function ControlPanel({
                         ? 'rgba(239, 68, 68, 0.15)'
                         : isProximity
                           ? 'rgba(249, 115, 22, 0.15)'
-                          : 'rgba(15, 23, 42, 0.8)',
+                          : 'var(--bg-elevated)',
                       border: isEvading
                         ? '1px solid #ef4444'
                         : isProximity
                           ? '1px solid #ea580c'
-                          : '1px solid rgba(255, 255, 255, 0.08)',
+                          : '1px solid var(--border)',
                       borderRadius: 8,
                       padding: '8px 10px',
                       display: 'flex',
@@ -887,12 +869,12 @@ export default function ControlPanel({
                         ? 'rgba(239, 68, 68, 0.15)'
                         : isProximity
                           ? 'rgba(249, 115, 22, 0.15)'
-                          : 'rgba(15, 23, 42, 0.8)',
+                          : 'var(--bg-elevated)',
                       border: isEvading
                         ? '1px solid #ef4444'
                         : isProximity
                           ? '1px solid #ea580c'
-                          : '1px solid rgba(255, 255, 255, 0.08)',
+                          : '1px solid var(--border)',
                       borderRadius: 8,
                       padding: '8px 10px',
                       display: 'flex',

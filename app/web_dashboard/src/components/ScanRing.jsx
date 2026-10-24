@@ -18,10 +18,12 @@ export default function ScanRing({ scan = [], angleMin = -Math.PI, angleInc = 0.
     const maxRange = 8.0; // metres — scale to this
     const scale = (W / 2 - 8) / maxRange;
 
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+
     ctx.clearRect(0, 0, W, H);
 
     // Background grid rings
-    ctx.strokeStyle = 'rgba(37,47,74,0.7)';
+    ctx.strokeStyle = isLight ? 'rgba(180, 205, 230, 0.7)' : 'rgba(37,47,74,0.7)';
     ctx.lineWidth = 1;
     for (let r of [1, 2, 4, 8]) {
       ctx.beginPath();
@@ -29,13 +31,13 @@ export default function ScanRing({ scan = [], angleMin = -Math.PI, angleInc = 0.
       ctx.stroke();
     }
     // Cross-hair
-    ctx.strokeStyle = 'rgba(37,47,74,0.5)';
+    ctx.strokeStyle = isLight ? 'rgba(180, 205, 230, 0.5)' : 'rgba(37,47,74,0.5)';
     ctx.beginPath(); ctx.moveTo(cx - W/2, cy); ctx.lineTo(cx + W/2, cy); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx, cy - H/2); ctx.lineTo(cx, cy + H/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy - H/2); ctx.lineTo(cx + cy/2, cy); ctx.stroke();
 
     if (!scan || scan.length === 0) {
       // No data label
-      ctx.fillStyle = 'rgba(74,85,128,0.6)';
+      ctx.fillStyle = isLight ? 'rgba(100, 116, 139, 0.8)' : 'rgba(74,85,128,0.6)';
       ctx.font = '12px JetBrains Mono, monospace';
       ctx.textAlign = 'center';
       ctx.fillText('No scan data', cx, cy + 4);
@@ -54,9 +56,9 @@ export default function ScanRing({ scan = [], angleMin = -Math.PI, angleInc = 0.
       else        { ctx.lineTo(px, py); }
     });
     ctx.closePath();
-    ctx.fillStyle = 'rgba(0,212,255,0.08)';
+    ctx.fillStyle = isLight ? 'rgba(2, 132, 199, 0.12)' : 'rgba(0,212,255,0.08)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0,212,255,0.5)';
+    ctx.strokeStyle = isLight ? 'rgba(2, 132, 199, 0.8)' : 'rgba(0,212,255,0.5)';
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
@@ -70,7 +72,9 @@ export default function ScanRing({ scan = [], angleMin = -Math.PI, angleInc = 0.
       const close = r < 1.5;
       ctx.beginPath();
       ctx.arc(px, py, close ? 2.5 : 1.2, 0, Math.PI * 2);
-      ctx.fillStyle = close ? 'rgba(255,51,85,0.9)' : 'rgba(0,212,255,0.7)';
+      ctx.fillStyle = close
+        ? 'rgba(220, 38, 38, 0.95)'
+        : (isLight ? 'rgba(2, 132, 199, 0.85)' : 'rgba(0,212,255,0.7)');
       ctx.fill();
     });
 
@@ -85,7 +89,7 @@ export default function ScanRing({ scan = [], angleMin = -Math.PI, angleInc = 0.
     ctx.stroke();
 
     // Range labels
-    ctx.fillStyle = 'rgba(74,85,128,0.8)';
+    ctx.fillStyle = isLight ? 'rgba(100, 116, 139, 0.85)' : 'rgba(74,85,128,0.8)';
     ctx.font = '9px JetBrains Mono, monospace';
     ctx.textAlign = 'left';
     [1, 2, 4].forEach(r => {

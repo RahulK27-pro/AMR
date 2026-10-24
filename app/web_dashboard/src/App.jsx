@@ -63,6 +63,20 @@ export default function App() {
   const [activeMap, setActiveMap] = useState(() => {
     return localStorage.getItem('amr_active_map') || 'hospital_map';
   });
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('amr_theme') || 'dark';
+  });
+
+  // Synchronize data-theme on html & body tags for CSS cascade
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.body.setAttribute('data-theme', theme);
+    localStorage.setItem('amr_theme', theme);
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
 
   useEffect(() => {
     const unsub = bridge.onTelemetry(setTelemetry);
@@ -112,6 +126,8 @@ export default function App() {
         onViewChange={setCurrentView}
         activeMap={activeMap}
         onMapChange={handleMapChange}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {currentView === 'mapping' ? (
@@ -122,6 +138,7 @@ export default function App() {
               onReturnToDashboard={() => setCurrentView('dashboard')}
               onMapChange={handleMapChange}
               activeMap={activeMap}
+              theme={theme}
             />
           </ErrorBoundary>
         </main>
@@ -141,6 +158,7 @@ export default function App() {
                 selectedNodes={selectedNodes}
                 onSelectNode={handleSelectNode}
                 activeMap={activeMap}
+                theme={theme}
               />
             </div>
 

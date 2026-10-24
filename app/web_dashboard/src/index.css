@@ -10,9 +10,11 @@
   --bg-elevated:   #1c2540;
   --border:        #252f4a;
   --border-bright: #3a4870;
+  --border-subtle: #1e263d;
 
   /* Accent colors */
   --accent-cyan:   #00d4ff;
+  --accent-blue:   #3b82f6;
   --accent-green:  #00ff9d;
   --accent-orange: #ff8c00;
   --accent-red:    #ff3355;
@@ -52,6 +54,47 @@
   --shadow-glow-red:    0 0 20px rgba(255,51,85,0.3);
 }
 
+:root[data-theme="light"],
+[data-theme="light"] {
+  /* Clinical Ice-Blue & Pure White Theme */
+  --bg-base:        #f0f5fa;
+  --bg-surface:     #ffffff;
+  --bg-card:        #ffffff;
+  --bg-elevated:    #e8f1fa;
+  --border:         #cfe0ee;
+  --border-bright:  #93c5fd;
+  --border-subtle:  #dce8f3;
+
+  /* Refined professional light accents */
+  --accent-cyan:    #0284c7;  /* High-contrast vibrant sapphire sky blue */
+  --accent-blue:    #2563eb;  /* Cobalt royal blue */
+  --accent-green:   #059669;  /* Clinical emerald */
+  --accent-orange:  #d97706;  /* Deep amber */
+  --accent-red:     #dc2626;  /* Safety crimson */
+  --accent-purple:  #7c3aed;  /* Royal purple */
+  --accent-yellow:  #b45309;  /* Amber bronze */
+
+  /* Razor-sharp typography */
+  --text-primary:   #0f172a;  /* Deep obsidian navy */
+  --text-secondary: #334155;  /* Slate navy */
+  --text-dim:       #64748b;  /* Muted cool steel */
+  --text-mono:      'JetBrains Mono', monospace;
+
+  /* Status colors */
+  --status-idle:       #64748b;
+  --status-planning:   #2563eb;
+  --status-navigating: #059669;
+  --status-arrived:    #b45309;
+  --status-yielding:   #d97706;
+  --status-estop:      #dc2626;
+
+  /* Soft modern shadows */
+  --shadow-card:       0 2px 14px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-glow-cyan:  0 0 16px rgba(2, 132, 199, 0.18);
+  --shadow-glow-green: 0 0 16px rgba(5, 150, 105, 0.18);
+  --shadow-glow-red:   0 0 16px rgba(220, 38, 38, 0.22);
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, #root {
@@ -64,6 +107,7 @@ html, body, #root {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 /* Scrollbars */
@@ -2406,8 +2450,572 @@ html, body, #root {
   filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.8));
 }
 
+/* ================================================================
+   Theme Mode Toggle & Shared Component Overrides
+   ================================================================ */
 
+/* ---- Theme Toggle Button ---- */
+.btn-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
 
+.btn-theme-toggle:hover {
+  background: rgba(0, 212, 255, 0.12);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
+}
 
+.theme-toggle__icon {
+  font-size: 14px;
+  line-height: 1;
+  display: inline-block;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
 
+.btn-theme-toggle:hover .theme-toggle__icon {
+  transform: rotate(20deg) scale(1.15);
+}
 
+.theme-toggle__text {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Map Switcher Header Component */
+.status-bar__map-switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.status-bar__map-select {
+  background: transparent;
+  color: var(--accent-cyan);
+  border: none;
+  outline: none;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.status-bar__map-select option {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+/* System Lifecycle Card Variations */
+.lifecycle-card--running {
+  background: linear-gradient(180deg, rgba(6, 78, 59, 0.28) 0%, rgba(15, 23, 42, 0.85) 100%);
+  border: 1px solid #059669;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.12);
+}
+
+.lifecycle-card--starting {
+  background: linear-gradient(180deg, rgba(120, 53, 15, 0.28) 0%, rgba(15, 23, 42, 0.85) 100%);
+  border: 1px solid #d97706;
+}
+
+.lifecycle-card--standby {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+/* ================================================================
+   CLINICAL BLUE & WHITE LIGHT THEME — GLOBAL DASHBOARD SPECIFICATION
+   Applies across all views, HUDs, modals, and workflow screens
+   ================================================================ */
+
+/* Scrollbars */
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #f0f5fa;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Header & Status Bar */
+[data-theme="light"] .status-bar {
+  background: #ffffff;
+  border-bottom: 1px solid #cfe0ee;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="light"] .status-bar__logo {
+  color: #0284c7;
+  text-shadow: 0 0 12px rgba(2, 132, 199, 0.25);
+}
+
+[data-theme="light"] .status-bar__pill {
+  background: #f1f7fc;
+  border: 1px solid #d0e1f0;
+  color: #1e293b;
+}
+
+[data-theme="light"] .status-bar__map-switcher {
+  background: #eaf2fa;
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.08);
+}
+
+[data-theme="light"] .status-bar__sep {
+  background: #cfe0ee;
+}
+
+[data-theme="light"] .btn-theme-toggle {
+  background: #e0f2fe;
+  border: 1px solid #93c5fd;
+  color: #0284c7;
+}
+
+[data-theme="light"] .btn-theme-toggle:hover {
+  background: #bae6fd;
+  border-color: #0284c7;
+  color: #0369a1;
+  box-shadow: 0 0 14px rgba(2, 132, 199, 0.25);
+}
+
+/* Left & Right Dashboard Panels */
+[data-theme="light"] .panel-left,
+[data-theme="light"] .panel-right {
+  background: #f0f5fa;
+  border-color: #cfe0ee;
+}
+
+[data-theme="light"] .panel-center {
+  background: #f0f5fa;
+}
+
+/* Cards & Surfaces */
+[data-theme="light"] .card {
+  background: #ffffff;
+  border: 1px solid #cfe0ee;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.05);
+}
+
+[data-theme="light"] .card__title {
+  color: #0f172a;
+}
+
+[data-theme="light"] .telem-item {
+  background: #f5f9fd;
+  border: 1px solid #e1ecf5;
+}
+
+[data-theme="light"] .telem-label {
+  color: #64748b;
+}
+
+[data-theme="light"] .telem-value {
+  color: #0f172a;
+}
+
+[data-theme="light"] .dist-bar-track {
+  background: #e2edf7;
+}
+
+[data-theme="light"] .divider {
+  background: #e2edf7;
+}
+
+/* Lifecycle Card Light Overrides */
+[data-theme="light"] .lifecycle-card--running {
+  background: linear-gradient(180deg, rgba(209, 250, 229, 0.7) 0%, #ffffff 100%);
+  border: 1px solid #10b981;
+  box-shadow: 0 2px 14px rgba(16, 185, 129, 0.15);
+}
+
+[data-theme="light"] .lifecycle-card--starting {
+  background: linear-gradient(180deg, rgba(254, 243, 199, 0.7) 0%, #ffffff 100%);
+  border: 1px solid #f59e0b;
+}
+
+[data-theme="light"] .lifecycle-card--standby {
+  background: #ffffff;
+  border: 1px solid #cfe0ee;
+}
+
+/* Map Viewport, Canvas & HUDs */
+[data-theme="light"] .map-viewport,
+[data-theme="light"] .map-container {
+  background: #e2eaf4;
+  border: 1px solid #cfe0ee;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+}
+
+[data-theme="light"] .hud-badge,
+[data-theme="light"] .hud-coords,
+[data-theme="light"] .map-overlay-label,
+[data-theme="light"] .map-coords-display,
+[data-theme="light"] .btn-toggle,
+[data-theme="light"] .btn-icon {
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="light"] .btn-toggle:hover {
+  border-color: #0284c7;
+  color: #0284c7;
+  background: #f0f9ff;
+}
+
+[data-theme="light"] .btn-toggle.active {
+  background: #e0f2fe;
+  border-color: #0284c7;
+  color: #0284c7;
+  box-shadow: 0 0 10px rgba(2, 132, 199, 0.2);
+}
+
+[data-theme="light"] .btn-icon:hover {
+  background: #e0f2fe;
+  border-color: #0284c7;
+  color: #0284c7;
+}
+
+[data-theme="light"] .scan-ring-container canvas {
+  background: #ffffff;
+  box-shadow: 0 0 16px rgba(2, 132, 199, 0.1);
+  border: 1px solid #cfe0ee;
+}
+
+/* Center Bottom: Joystick & Controls Dock */
+[data-theme="light"] .joystick-zone {
+  background: radial-gradient(circle, #e2eaf5 60%, #edf3fb);
+  border: 1px solid #cfe0ee;
+}
+
+[data-theme="light"] .joystick-lock-overlay {
+  background: rgba(240, 245, 250, 0.88);
+  color: #0f172a;
+}
+
+[data-theme="light"] .control-mode-pill {
+  background: #eaf2fa;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+}
+
+[data-theme="light"] .control-mode-pill.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+}
+
+/* Event Log & Decisions */
+[data-theme="light"] .event-log-card {
+  background: #ffffff;
+  border: 1px solid #cfe0ee;
+}
+
+[data-theme="light"] .event-log-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+}
+
+[data-theme="light"] .event-time {
+  color: #64748b;
+}
+
+[data-theme="light"] .btn-filter {
+  background: #f1f7fc;
+  border: 1px solid #cfe0ee;
+  color: #475569;
+}
+
+[data-theme="light"] .btn-filter.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+}
+
+/* Badges */
+[data-theme="light"] .badge--cyan {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+[data-theme="light"] .badge--green {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+[data-theme="light"] .badge--yellow {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+[data-theme="light"] .badge--red {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+[data-theme="light"] .badge--gray {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+/* Nav State Badges */
+[data-theme="light"] .nav-state--IDLE {
+  color: #64748b;
+  border-color: #94a3b8;
+  background: #f1f5f9;
+}
+
+[data-theme="light"] .nav-state--PLANNING {
+  color: #2563eb;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.15);
+}
+
+[data-theme="light"] .nav-state--NAVIGATING {
+  color: #059669;
+  border-color: #6ee7b7;
+  background: #ecfdf5;
+  box-shadow: 0 0 10px rgba(5, 150, 105, 0.15);
+}
+
+[data-theme="light"] .nav-state--ARRIVED {
+  color: #b45309;
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+[data-theme="light"] .nav-state--YIELDING {
+  color: #d97706;
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+[data-theme="light"] .nav-state--ESTOP {
+  color: #dc2626;
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+/* Buttons & Inputs */
+[data-theme="light"] .input-field,
+[data-theme="light"] .mapping-input,
+[data-theme="light"] select {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+[data-theme="light"] .input-field:focus,
+[data-theme="light"] .mapping-input:focus,
+[data-theme="light"] select:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+[data-theme="light"] .btn--primary {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
+}
+
+[data-theme="light"] .btn--primary:hover {
+  background: #0369a1;
+  border-color: #0369a1;
+}
+
+[data-theme="light"] .btn--ghost {
+  background: #f1f7fc;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .btn--ghost:hover {
+  background: #e0f2fe;
+  border-color: #0284c7;
+  color: #0284c7;
+}
+
+[data-theme="light"] .btn--outline {
+  background: #ffffff;
+  color: #0284c7;
+  border-color: #93c5fd;
+}
+
+[data-theme="light"] .btn--outline:hover {
+  background: #f0f9ff;
+  border-color: #0284c7;
+}
+
+[data-theme="light"] .btn--map-entry {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.3);
+}
+
+/* Mapping Workflow Full Screen (Steps 1 to 5) */
+[data-theme="light"] .mapping-workflow-container {
+  background: #f0f5fa;
+}
+
+[data-theme="light"] .mapping-pipeline-header {
+  background: #ffffff;
+  border: 1px solid #cfe0ee;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+}
+
+[data-theme="light"] .stepper-step {
+  background: #f1f7fc;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+}
+
+[data-theme="light"] .stepper-step--active {
+  background: #e0f2fe;
+  border: 1px solid #0284c7;
+  color: #0284c7;
+  box-shadow: 0 0 10px rgba(2, 132, 199, 0.15);
+}
+
+[data-theme="light"] .stepper-step--completed {
+  background: #dcfce7;
+  border: 1px solid #059669;
+  color: #059669;
+}
+
+[data-theme="light"] .mapping-card {
+  background: #ffffff;
+  border: 1px solid #cfe0ee;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.05);
+}
+
+[data-theme="light"] .mapping-timer {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
+[data-theme="light"] .mapping-info-box {
+  background: #f1f7fc;
+  border: 1px solid #cfe0ee;
+}
+
+[data-theme="light"] .mapping-viewport-panel {
+  background: #ffffff;
+  border: 1px solid #cfe0ee;
+}
+
+[data-theme="light"] .mapping-viewport-header {
+  background: #ffffff;
+  border-bottom: 1px solid #cfe0ee;
+}
+
+[data-theme="light"] .mapping-canvas-container {
+  background: #e8f1fa;
+  border: 1px solid #cbd5e1;
+}
+
+[data-theme="light"] .mapping-hud-footer {
+  background: rgba(255, 255, 255, 0.94);
+  border-top: 1px solid #cfe0ee;
+  color: #334155;
+}
+
+[data-theme="light"] .audit-checklist {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+[data-theme="light"] .audit-check-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+}
+
+[data-theme="light"] .preset-card {
+  background: #ffffff;
+  border: 1px solid #cfe0ee;
+}
+
+[data-theme="light"] .preset-card:hover {
+  border-color: #0284c7;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.15);
+}
+
+[data-theme="light"] .preset-card--selected {
+  background: #f0f9ff;
+  border-color: #0284c7;
+}
+
+[data-theme="light"] .place-card-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+}
+
+[data-theme="light"] .route-stat-item {
+  background: #f1f7fc;
+  border: 1px solid #cfe0ee;
+}
+
+[data-theme="light"] .nav-sequence-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+[data-theme="light"] .nav-sequence-item__name {
+  color: #0f172a;
+}
+
+[data-theme="light"] .nav-status-card {
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: linear-gradient(165deg, rgba(16, 185, 129, 0.08) 0%, #ffffff 100%);
+}
+
+[data-theme="light"] .nav-hud-metric {
+  background: #f1f7fc;
+  border: 1px solid #cfe0ee;
+}
+
+[data-theme="light"] .active-place-hud-banner {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.08), #ffffff);
+  border: 1px solid #93c5fd;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+}
+
+[data-theme="light"] .btn-preset--active {
+  background: rgba(2, 132, 199, 0.15) !important;
+  border-color: #0284c7 !important;
+  color: #0284c7 !important;
+  box-shadow: 0 0 8px rgba(2, 132, 199, 0.25);
+}
