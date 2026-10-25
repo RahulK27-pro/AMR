@@ -187,49 +187,61 @@ def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
     }
 
 
-def resolve_map_image_path(map_name: Optional[str] = None) -> Optional[Path]:
-    """Find or convert the clean floorplan PNG for a given map."""
+def resolve_map_image_path(map_name: Optional[str] = None, theme: str = 'dark') -> Optional[Path]:
+    """Find or convert the clean floorplan PNG for a given map and theme."""
     maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+    app_maps_dir = _WORKSPACE_ROOT / "app" / "src" / "agv_description" / "maps"
     target = (map_name or 'hospital_map').strip()
-    
-    # 1. Direct png file
-    direct_png = maps_dir / f"{target}.png"
-    if direct_png.exists():
-        return direct_png
-        
-    # 2. Check yaml
-    yaml_path = maps_dir / f"{target}.yaml"
-    if yaml_path.exists():
-        try:
-            with open(yaml_path, 'r', encoding='utf-8') as f:
-                yd = yaml.safe_load(f)
-            if isinstance(yd, dict) and 'image' in yd:
-                im_path = maps_dir / yd['image']
-                if im_path.suffix.lower() == '.pgm' and not direct_png.exists():
-                    try:
-                        from PIL import Image
-                        with Image.open(im_path) as pimg:
-                            pimg.save(direct_png, format='PNG')
-                        return direct_png
-                    except Exception:
-                        pass
-                if im_path.exists() and im_path.suffix.lower() == '.png':
-                    return im_path
-        except Exception:
-            pass
-            
-    # 3. If .pgm exists, convert to png
-    pgm_path = maps_dir / f"{target}.pgm"
-    if pgm_path.exists():
-        try:
-            from PIL import Image
-            with Image.open(pgm_path) as pimg:
-                pimg.save(direct_png, format='PNG')
-            return direct_png
-        except Exception:
-            pass
 
-    return direct_png if direct_png.exists() else None
+    if theme == 'light':
+        for d in (maps_dir, app_maps_dir):
+            lp = d / f"{target}_light.png"
+            if lp.exists():
+                return lp
+
+    # 1. Direct png file
+    for d in (maps_dir, app_maps_dir):
+        dp = d / f"{target}.png"
+        if dp.exists():
+            return dp
+
+    # 2. Check yaml
+    for d in (maps_dir, app_maps_dir):
+        yaml_path = d / f"{target}.yaml"
+        if yaml_path.exists():
+            try:
+                with open(yaml_path, 'r', encoding='utf-8') as f:
+                    yd = yaml.safe_load(f)
+                if isinstance(yd, dict) and 'image' in yd:
+                    im_path = d / yd['image']
+                    direct_png = d / f"{target}.png"
+                    if im_path.suffix.lower() == '.pgm' and not direct_png.exists():
+                        try:
+                            from PIL import Image
+                            with Image.open(im_path) as pimg:
+                                pimg.save(direct_png, format='PNG')
+                            return direct_png
+                        except Exception:
+                            pass
+                    if im_path.exists() and im_path.suffix.lower() == '.png':
+                        return im_path
+            except Exception:
+                pass
+
+    # 3. If .pgm exists, convert to png
+    for d in (maps_dir, app_maps_dir):
+        pgm_path = d / f"{target}.pgm"
+        direct_png = d / f"{target}.png"
+        if pgm_path.exists():
+            try:
+                from PIL import Image
+                with Image.open(pgm_path) as pimg:
+                    pimg.save(direct_png, format='PNG')
+                return direct_png
+            except Exception:
+                pass
+
+    return None
 
 
 def world_to_pixel(wx: float, wy: float, map_name: Optional[str] = None):
@@ -2007,18 +2019,22 @@ async def get_map_metadata(map_name: Optional[str] = None):
     return get_map_metadata_by_name(target)
 
 @app.get('/api/map/raw')
-async def get_map_raw(map_name: Optional[str] = None):
-    """Serve the clean architectural floorplan (no graph overlay)."""
+async def get_map_raw(map_name: Optional[str] = None, theme: str = 'dark'):
+    """Serve the clean architectural floorplan (no graph overlay) for dark or light theme."""
     target = (map_name or (node.active_map_name if node else None) or 'hospital_map').strip()
-    img_path = resolve_map_image_path(target)
+    img_path = resolve_map_image_path(target, theme=theme)
     if not img_path or not img_path.exists():
         return JSONResponse({'error': f'Map image for {target} not found'}, status_code=404)
-    return FileResponse(img_path, media_type='image/png')
+    return FileResponse(img_path, media_type='image/png', headers={
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+    })
 
 @app.get('/api/map/clean')
-async def get_map_clean(map_name: Optional[str] = None):
+async def get_map_clean(map_name: Optional[str] = None, theme: str = 'dark'):
     """Alias for /api/map/raw — explicitly returns the clean floorplan."""
-    return await get_map_raw(map_name)
+    return await get_map_raw(map_name, theme=theme)
 
 @app.get('/api/graph')
 async def get_graph(map_name: Optional[str] = None):

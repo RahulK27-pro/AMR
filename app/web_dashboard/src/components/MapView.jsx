@@ -38,6 +38,17 @@ function createLightMapCanvas(image) {
     const d = imgData.data;
     const len = d.length;
 
+    // Detect if image is already formatted as a light map (e.g. clean white floor [255, 255, 255])
+    let whiteCount = 0;
+    const sampleLimit = Math.min(len, 4000);
+    for (let i = 0; i < sampleLimit; i += 4) {
+      if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) whiteCount++;
+    }
+    // If already pre-rendered light map, return canvas directly
+    if (whiteCount > 150) {
+      return canvas;
+    }
+
     for (let i = 0; i < len; i += 4) {
       const a = d[i + 3];
       if (a === 0) continue;
@@ -209,10 +220,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         }
       });
     };
-    img.src = bridge.getRawMapUrl(activeMap);
+    img.src = bridge.getRawMapUrl(activeMap, theme);
 
     return () => { mounted = false; };
-  }, [activeMap]);
+  }, [activeMap, theme]);
 
   // Generate high-resolution clinical light theme floorplan canvas in-memory
   useEffect(() => {

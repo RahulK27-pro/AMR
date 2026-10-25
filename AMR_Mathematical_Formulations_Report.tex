@@ -1,0 +1,574 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[a4paper, top=0.85in, bottom=0.85in, left=0.75in, right=0.75in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{color}
+\usepackage{fancyhdr}
+\usepackage{array}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{multicol}
+
+% Define elegant palette
+\definecolor{primary}{rgb}{0.08, 0.28, 0.52}
+\definecolor{secondary}{rgb}{0.15, 0.40, 0.65}
+\definecolor{darkgray}{rgb}{0.25, 0.25, 0.25}
+\definecolor{lightgray}{rgb}{0.94, 0.94, 0.94}
+\definecolor{codebg}{rgb}{0.96, 0.96, 0.96}
+\definecolor{accent}{rgb}{0.80, 0.15, 0.15}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\textcolor{darkgray}{\footnotesize \textbf{Autonomous Mobile Robot (AMR)} $|$ Mathematical Formulations \& Algorithmic Analysis}}
+\rhead{\textcolor{darkgray}{\footnotesize Technical Report 2026}}
+\cfoot{\textcolor{darkgray}{\footnotesize Page \thepage}}
+
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0.5pt}
+
+\newcommand{\sectionbreak}{\vspace{0.4cm}}
+
+\begin{document}
+
+% Title Banner
+\begin{center}
+    {\Huge \textcolor{primary}{\textbf{Mathematical Formulations and Algorithmic Analysis}}}\\[0.25cm]
+    {\LARGE \textcolor{secondary}{\textbf{of the Autonomous Mobile Robot (AMR) Project}}}\\[0.35cm]
+    {\large \textbf{Full Analytical Derivations: Kinematics, Dynamics, EKF, AMCL, Graph SLAM, MPPI, and Evasion Geometry}}\\[0.2cm]
+    {\normalsize \textcolor{darkgray}{Autonomous Mobile Robot Engineering Team $|$ System Architecture \& Control Documentation}}\\[0.15cm]
+    {\footnotesize \textcolor{darkgray}{Compiled: \today}}
+\end{center}
+
+\vspace{0.2cm}
+\hrule height 1pt
+\vspace{0.3cm}
+
+\begin{abstract}
+\noindent This document delivers an exhaustive mathematical and algorithmic breakdown of the Autonomous Mobile Robot (AMR) platform. The analysis covers every governing equation implemented in the project codebase, spanning differential-drive non-holonomic kinematics and 3D rigid-body inertia tensors, dual-source continuous-discrete Extended Kalman Filter (EKF) sensor fusion, Adaptive Monte Carlo Localization (AMCL) state sampling, Ceres-based pose-graph SLAM optimization, potential field costmap inflation, Euclidean Distance Transform (EDT) topological roadmap extraction, Model Predictive Path Integral (MPPI) stochastic control, $C^1$-continuous cubic B\'ezier reactive evasion trajectories, wavefront frontier exploration, pinhole camera projection geometry, and affine Canvas web dashboard coordinate transformations.
+\end{abstract}
+
+\vspace{0.2cm}
+\hrule
+\vspace{0.3cm}
+
+\tableofcontents
+\vspace{0.4cm}
+\hrule height 1pt
+\vspace{0.5cm}
+
+% =========================================================================
+\section{Robot Kinematics, Dynamics \& Inertial Physics}
+% =========================================================================
+
+The AMR is modeled as a two-wheel differential drive ground vehicle stabilized by front and rear passive low-friction spherical casters, operating in the planar special Euclidean group $SE(2)$.
+
+\subsection{Differential Drive Forward Kinematics}
+Let $(x, y, \theta)^T \in SE(2)$ denote the robot pose in the global inertial reference frame. The physical platform parameters derived from the unified robot description format (\texttt{warehouse\_agv.urdf}) are:
+\begin{itemize}
+    \item Wheel radius: $r = 0.025\text{ m}$ (nominal wheel diameter $50\text{ mm}$)
+    \item Wheel track baseline: $L = 0.26\text{ m}$ (wheel centers positioned at $y = \pm 0.13\text{ m}$)
+    \item Chassis footprint radius: $R_{\text{base}} = 0.11\text{ m}$ (chassis cylinder diameter $220\text{ mm}$)
+    \item Total mobile base mass: $M = 10.0\text{ kg}$
+\end{itemize}
+
+Given individual left and right wheel angular rotational velocities $\omega_L, \omega_R \in \mathbb{R}$, the forward translational velocity $v$ and yaw rate $\omega$ in the robot body frame are defined by:
+\begin{equation}
+v = \frac{r}{2} (\omega_R + \omega_L)
+\end{equation}
+\begin{equation}
+\omega = \frac{r}{L} (\omega_R - \omega_L)
+\end{equation}
+
+In matrix mapping form:
+\begin{equation}
+\begin{bmatrix} v \\ \omega \end{bmatrix} = \begin{bmatrix} \frac{r}{2} & \frac{r}{2} \\ \frac{r}{L} & -\frac{r}{L} \end{bmatrix} \begin{bmatrix} \omega_R \\ \omega_L \end{bmatrix}
+\end{equation}
+
+The non-holonomic continuous-time state-space kinematic model in the global inertial frame is:
+\begin{equation}
+\dot{\mathbf{x}}(t) = \begin{bmatrix} \dot{x}(t) \\ \dot{y}(t) \\ \dot{\theta}(t) \end{bmatrix} = \begin{bmatrix} \cos\theta(t) & 0 \\ \sin\theta(t) & 0 \\ 0 & 1 \end{bmatrix} \begin{bmatrix} v(t) \\ \omega(t) \end{bmatrix}
+\end{equation}
+Subject to the non-holonomic zero lateral slip velocity constraint:
+\begin{equation}
+-\dot{x}(t)\sin\theta(t) + \dot{y}(t)\cos\theta(t) = 0
+\end{equation}
+
+\subsection{Inverse Kinematics}
+Given an arbitrary commanded velocity twist $(v, \omega)^T$ issued by the trajectory controller, the required individual wheel angular velocities are calculated by inverting the kinematic matrix:
+\begin{equation}
+\omega_R = \frac{v + \frac{L}{2}\omega}{r} = \frac{2v + L\omega}{2r}
+\end{equation}
+\begin{equation}
+\omega_L = \frac{v - \frac{L}{2}\omega}{r} = \frac{2v - L\omega}{2r}
+\end{equation}
+
+\subsection{Exact Circular Arc Odometry Dead-Reckoning}
+Over discrete sampling period $\Delta t$, the left and right wheel displacement increments are $\Delta s_L = r \Delta \theta_L$ and $\Delta s_R = r \Delta \theta_R$. The net chord displacement $\Delta s$ and rotational change $\Delta \theta$ are:
+\begin{equation}
+\Delta s = \frac{\Delta s_R + \Delta s_L}{2}, \quad \Delta \theta = \frac{\Delta s_R - \Delta s_L}{L}
+\end{equation}
+
+When $\Delta \theta \neq 0$, the robot moves along an instantaneous circular arc of radius $R_{\text{arc}} = \frac{\Delta s}{\Delta \theta}$. The exact closed-form integral over $[t_k, t_{k+1}]$ is:
+\begin{equation}
+x_{k+1} = x_k + \Delta s \cdot \frac{\sin(\Delta\theta)}{\Delta\theta}\cos\left(\theta_k + \frac{\Delta\theta}{2}\right)
+\end{equation}
+\begin{equation}
+y_{k+1} = y_k + \Delta s \cdot \frac{\sin(\Delta\theta)}{\Delta\theta}\sin\left(\theta_k + \frac{\Delta\theta}{2}\right)
+\end{equation}
+\begin{equation}
+\theta_{k+1} = \theta_k + \Delta \theta
+\end{equation}
+
+For quasi-straight motion where $|\Delta\theta| < 10^{-6}$, the third-order Taylor expansion replaces the division by zero:
+\begin{equation}
+\frac{\sin(\Delta\theta)}{\Delta\theta} \approx 1 - \frac{(\Delta\theta)^2}{6} + \mathcal{O}((\Delta\theta)^4)
+\end{equation}
+\begin{equation}
+x_{k+1} = x_k + \Delta s \cos\left(\theta_k + \frac{\Delta\theta}{2}\right), \quad y_{k+1} = y_k + \Delta s \sin\left(\theta_k + \frac{\Delta\theta}{2}\right)
+\end{equation}
+
+\subsection{Rigid-Body Mass \& Moment of Inertia Tensors}
+The AMR's dynamic response and Gazebo physics simulation rely on 3D spatial inertia tensors:
+\begin{enumerate}
+    \item \textbf{Cylindrical Chassis Body:} Radius $R = 0.11\text{ m}$, height $H = 0.08\text{ m}$, total mass $m = 10.0\text{ kg}$:
+    \begin{equation}
+    I_{xx} = I_{yy} = \frac{1}{12}m(3R^2 + H^2) = \frac{10}{12}(3(0.11)^2 + (0.08)^2) = 0.03558\text{ kg}\cdot\text{m}^2
+    \end{equation}
+    \begin{equation}
+    I_{zz} = \frac{1}{2}m R^2 = \frac{1}{2}(10)(0.11)^2 = 0.06050\text{ kg}\cdot\text{m}^2
+    \end{equation}
+    \item \textbf{Solid Drive Wheels:} Cylinders with mass $m_w = 0.5\text{ kg}$, radius $r = 0.025\text{ m}$, width $w = 0.02\text{ m}$:
+    \begin{equation}
+    I_{zz} = \frac{1}{2}m_w r^2 = \frac{1}{2}(0.5)(0.025)^2 = 1.5625 \times 10^{-4}\text{ kg}\cdot\text{m}^2
+    \end{equation}
+    \begin{equation}
+    I_{xx} = I_{yy} = \frac{1}{12}m_w(3r^2 + w^2) = \frac{0.5}{12}(3(0.025)^2 + (0.02)^2) = 9.479 \times 10^{-5}\text{ kg}\cdot\text{m}^2
+    \end{equation}
+\end{enumerate}
+
+% =========================================================================
+\section{State Estimation \& Sensor Fusion}
+% =========================================================================
+
+\subsection{Extended Kalman Filter (EKF Fusion)}
+The state estimation pipeline combines high-frequency wheel encoder dead-reckoning ($50\text{ Hz}$) and IMU angular rate / linear acceleration ($50\text{ Hz}$) using a 15-state non-linear continuous-discrete Extended Kalman Filter (\texttt{robot\_localization}).
+
+The full continuous state vector is:
+\begin{equation}
+\mathbf{x} = [x, y, z, \phi, \theta, \psi, \dot{x}, \dot{y}, \dot{z}, \dot{\phi}, \dot{\theta}, \dot{\psi}, \ddot{x}, \ddot{y}, \ddot{z}]^T \in \mathbb{R}^{15}
+\end{equation}
+
+For planar ground navigation (\texttt{two\_d\_mode: true}), the operational state vector contracts to:
+\begin{equation}
+\mathbf{x}_{2D} = [x, y, \psi, \dot{x}, \dot{y}, \dot{\psi}, \ddot{x}, \ddot{y}]^T \in \mathbb{R}^8
+\end{equation}
+
+\subsubsection{Continuous-Discrete Time State Prediction}
+The continuous-time process evolution model with zero-mean Gaussian white process noise $\mathbf{w}(t) \sim \mathcal{N}(\mathbf{0}, \mathbf{Q}_c)$ is:
+\begin{equation}
+\dot{\mathbf{x}}(t) = \mathbf{f}(\mathbf{x}(t)) + \mathbf{w}(t)
+\end{equation}
+For a sample period $\Delta t$, the discrete-time forward state propagation is:
+\begin{equation}
+\hat{\mathbf{x}}_{k|k-1} = \hat{\mathbf{x}}_{k-1|k-1} + \int_{t_{k-1}}^{t_k} \mathbf{f}(\hat{\mathbf{x}}(\tau)) d\tau
+\end{equation}
+
+The state transition Jacobian $\mathbf{F}_k = \left. \frac{\partial \mathbf{f}}{\partial \mathbf{x}} \right|_{\hat{\mathbf{x}}_{k-1|k-1}}$ yields the discrete covariance prediction:
+\begin{equation}
+\mathbf{P}_{k|k-1} = \mathbf{\Phi}_k \mathbf{P}_{k-1|k-1} \mathbf{\Phi}_k^T + \mathbf{Q}_k, \quad \mathbf{\Phi}_k \approx \mathbf{I} + \mathbf{F}_k \Delta t
+\end{equation}
+
+\subsubsection{Discrete Measurement Updates}
+When an observation $\mathbf{z}_k \in \mathbb{R}^m$ arrives from wheel odometry or IMU with noise covariance $\mathbf{R}_k$:
+\begin{equation}
+\mathbf{y}_k = \mathbf{z}_k - \mathbf{h}(\hat{\mathbf{x}}_{k|k-1}) \quad \text{(Innovation Residual)}
+\end{equation}
+\begin{equation}
+\mathbf{S}_k = \mathbf{H}_k \mathbf{P}_{k|k-1} \mathbf{H}_k^T + \mathbf{R}_k \quad \text{(Innovation Covariance)}
+\end{equation}
+\begin{equation}
+\mathbf{K}_k = \mathbf{P}_{k|k-1} \mathbf{H}_k^T \mathbf{S}_k^{-1} \quad \text{(Optimal Kalman Gain)}
+\end{equation}
+\begin{equation}
+\hat{\mathbf{x}}_{k|k} = \hat{\mathbf{x}}_{k|k-1} + \mathbf{K}_k \mathbf{y}_k \quad \text{(State Update)}
+\end{equation}
+\begin{equation}
+\mathbf{P}_{k|k} = (\mathbf{I} - \mathbf{K}_k \mathbf{H}_k) \mathbf{P}_{k|k-1} (\mathbf{I} - \mathbf{K}_k \mathbf{H}_k)^T + \mathbf{K}_k \mathbf{R}_k \mathbf{K}_k^T \quad \text{(Joseph Form Covariance)}
+\end{equation}
+
+\subsection{Adaptive Monte Carlo Localization (AMCL)}
+AMCL estimates the robot global pose $S_t = (x, y, \theta)^T$ using a particle filter $\{S_t^{[m]}, w_t^{[m]}\}_{m=1}^M$ conditioned on laser range scans $z_t$ and map $m$.
+
+\subsubsection{Sampling Odometry Motion Model}
+Given dead-reckoning odometry displacement $\bar{x}_{t-1} = (\bar{x}, \bar{y}, \bar{\theta})^T$ and $\bar{x}_t = (\bar{x}', \bar{y}', \bar{\theta}')^T$, the relative motion parameters are:
+\begin{equation}
+\delta_{\text{rot1}} = \text{atan2}(\bar{y}' - \bar{y}, \bar{x}' - \bar{x}) - \bar{\theta}
+\end{equation}
+\begin{equation}
+\delta_{\text{trans}} = \sqrt{(\bar{x}' - \bar{x})^2 + (\bar{y}' - \bar{y})^2}
+\end{equation}
+\begin{equation}
+\delta_{\text{rot2}} = \bar{\theta}' - \bar{\theta} - \delta_{\text{rot1}}
+\end{equation}
+
+Noisy perturbations are sampled using error parameters $\alpha_1, \alpha_2, \alpha_3, \alpha_4$:
+\begin{equation}
+\hat{\delta}_{\text{rot1}} = \delta_{\text{rot1}} - \text{sample}(\alpha_1 \delta_{\text{rot1}}^2 + \alpha_2 \delta_{\text{trans}}^2)
+\end{equation}
+\begin{equation}
+\hat{\delta}_{\text{trans}} = \delta_{\text{trans}} - \text{sample}(\alpha_3 \delta_{\text{trans}}^2 + \alpha_4 (\delta_{\text{rot1}}^2 + \delta_{\text{rot2}}^2))
+\end{equation}
+\begin{equation}
+\hat{\delta}_{\text{rot2}} = \delta_{\text{rot2}} - \text{sample}(\alpha_1 \delta_{\text{rot2}}^2 + \alpha_2 \delta_{\text{trans}}^2)
+\end{equation}
+
+\subsubsection{Likelihood Field Sensor Model}
+Each LiDAR beam endpoint in global coordinates:
+\begin{equation}
+x_{z_t^k} = x + x_{\text{laser}}\cos\theta - y_{\text{laser}}\sin\theta + z_t^k \cos(\theta + \theta_{\text{laser}} + \phi_k)
+\end{equation}
+\begin{equation}
+y_{z_t^k} = y + x_{\text{laser}}\sin\theta + y_{\text{laser}}\cos\theta + z_t^k \sin(\theta + \theta_{\text{laser}} + \phi_k)
+\end{equation}
+
+The likelihood probability mixes zero-delay Gaussian hit probability and random noise:
+\begin{equation}
+p(z_t^k | S_t, m) = z_{\text{hit}} \cdot \frac{1}{\sqrt{2\pi \sigma_{\text{hit}}^2}} \exp\left(-\frac{\text{dist}(x_{z_t^k}, y_{z_t^k}, m)^2}{2\sigma_{\text{hit}}^2}\right) + \frac{z_{\text{rand}}}{z_{\text{max}}}
+\end{equation}
+
+\subsubsection{Kullback-Leibler Divergence (KLD) Particle Bounds}
+The dynamic particle count $M$ required to keep the approximation error bounded by $\epsilon = 0.05$ with probability $1 - \delta = 0.99$ across $k$ occupied bins is:
+\begin{equation}
+M \approx \frac{k - 1}{2\epsilon} \left(1 - \frac{2}{9(k-1)} + \sqrt{\frac{2}{9(k-1)}} z_{1-\delta}\right)^3
+\end{equation}
+Clamped to the configured operational range: $M_{\text{min}} = 500 \le M \le M_{\text{max}} = 2000$.
+
+% =========================================================================
+\section{SLAM \& Pose-Graph Optimization}
+% =========================================================================
+
+\texttt{slam\_toolbox} optimizes robot trajectory poses $\mathbf{x} = \{x_1, \dots, x_N\}$ and laser scan matches using non-linear least squares.
+
+\subsection{Correlative Scan Matching}
+Given current scan points $P = \{p_i\}$ and previous local map $\mathcal{M}$, the optimal rigid transform $\hat{\xi} = (\hat{t}_x, \hat{t}_y, \hat{\theta})^T \in SE(2)$ maximizes the correlation score:
+\begin{equation}
+\hat{\xi} = \arg\max_{\xi} \sum_{i=1}^{|P|} \mathcal{M}(T(\xi) \cdot p_i)
+\end{equation}
+
+\subsection{Ceres Pose-Graph Non-Linear Least Squares}
+The global trajectory cost functional over odometry edges $\mathcal{E}_{\text{odom}}$ and loop-closure constraints $\mathcal{E}_{\text{loop}}$ is:
+\begin{equation}
+F(\mathbf{x}) = \sum_{(i,j) \in \mathcal{E}} \mathbf{e}_{ij}(\mathbf{x}_i, \mathbf{x}_j)^T \mathbf{\Omega}_{ij} \mathbf{e}_{ij}(\mathbf{x}_i, \mathbf{x}_j)
+\end{equation}
+Where the $SE(2)$ relative transformation error is:
+\begin{equation}
+\mathbf{e}_{ij}(\mathbf{x}_i, \mathbf{x}_j) = \begin{bmatrix} \mathbf{R}_i^T (\mathbf{t}_j - \mathbf{t}_i) - \mathbf{t}_{ij}^{\text{meas}} \\ \text{wrap2pi}(\theta_j - \theta_i - \Delta\theta_{ij}^{\text{meas}}) \end{bmatrix}
+\end{equation}
+
+The non-linear system is iteratively solved using the Levenberg-Marquardt trust-region algorithm:
+\begin{equation}
+\left(\mathbf{J}^T \mathbf{\Omega} \mathbf{J} + \lambda \operatorname{diag}(\mathbf{J}^T \mathbf{\Omega} \mathbf{J})\right) \Delta \mathbf{x} = -\mathbf{J}^T \mathbf{\Omega} \mathbf{e}
+\end{equation}
+
+% =========================================================================
+\section{Costmap Inflation \& Potential Fields}
+% =========================================================================
+
+The 2D Nav2 Costmap transforms binary obstacle geometry into continuous navigation risks.
+\begin{equation}
+C(d) = \begin{cases} 
+254 & \text{if } d = 0 \text{ (Lethal Obstacle)} \\
+253 & \text{if } 0 < d \le R_{\text{inscribed}} \text{ (Inscribed Footprint Danger)} \\
+\lfloor 252 \cdot \exp(-k \cdot (d - R_{\text{inscribed}})) \rfloor & \text{if } R_{\text{inscribed}} < d \le R_{\text{inflation}} \\
+0 & \text{if } d > R_{\text{inflation}} \text{ (Free Navigable Space)}
+\end{cases}
+\end{equation}
+
+Platform parameters:
+\begin{itemize}
+    \item $R_{\text{inscribed}} = 0.13\text{ m}$ (enclosing footprint radius $R_{\text{base}} = 0.11\text{ m}$ plus $20\text{ mm}$ margin)
+    \item $R_{\text{inflation}} = 0.25\text{ m}$ (smooth repulsion buffer)
+    \item Inflation decay scale: $k = 3.0\text{ m}^{-1}$
+\end{itemize}
+
+% =========================================================================
+\section{Topological Roadmap \& Graph Theory}
+% =========================================================================
+
+\subsection{Euclidean Distance Transform (EDT)}
+Given binary grid occupancy $M(u,v) \in \{0, 1\}$, the distance to the nearest obstacle boundary is computed via the continuous transform:
+\begin{equation}
+D(u, v) = \min_{(u', v'): M(u', v') = 1} \sqrt{(u - u')^2 + (v - v')^2} \cdot \text{resolution}
+\end{equation}
+
+\subsection{Swept-Circle Clearance Verification}
+For an edge connecting topological nodes $\mathbf{p}_A$ and $\mathbf{p}_B$, collision-free safety is guaranteed by sampling along the parameterized chord:
+\begin{equation}
+\mathbf{p}(s) = (1 - s)\mathbf{p}_A + s\mathbf{p}_B, \quad s \in [0, 1]
+\end{equation}
+\begin{equation}
+\min_{s \in [0, 1]} D(\mathbf{p}(s)) \ge R_{\text{robot\_margin}} = 0.18\text{ m}
+\end{equation}
+
+\subsection{Dijkstra Shortest Path Routing}
+The global planner extracts paths over graph $G = (V, E)$ by minimizing edge traversal distances:
+\begin{equation}
+w(u, v) = \|\mathbf{p}_u - \mathbf{p}_v\|_2 = \sqrt{(x_u - x_v)^2 + (y_u - y_v)^2}
+\end{equation}
+\begin{equation}
+\text{dist}[v] = \min_{(u, v) \in E} \left( \text{dist}[u] + w(u, v) \right)
+\end{equation}
+
+% =========================================================================
+\section{Local Motion Planning: Model Predictive Path Integral (MPPI)}
+% =========================================================================
+
+The AMR uses an Model Predictive Path Integral (MPPI) controller for real-time trajectory optimization under dynamic obstacles.
+
+\subsection{Stochastic Trajectory Rollouts}
+At control cycle $t_k$, $K = 80$ stochastic candidate trajectories are sampled over a prediction horizon $T = 15$ steps ($\Delta t = 0.10\text{ s}$, total lookahead horizon $1.5\text{ s}$):
+\begin{equation}
+v_k^{(i)} = \bar{v}_k + \epsilon_{v, k}^{(i)}, \quad \epsilon_v \sim \mathcal{N}(0, \sigma_v^2), \quad \sigma_v = 0.08\text{ m/s}
+\end{equation}
+\begin{equation}
+\omega_k^{(i)} = \bar{\omega}_k + \epsilon_{\omega, k}^{(i)}, \quad \epsilon_\omega \sim \mathcal{N}(0, \sigma_\omega^2), \quad \sigma_\omega = 0.35\text{ rad/s}
+\end{equation}
+
+Each trajectory is propagated forward using non-holonomic unicycle integration:
+\begin{equation}
+x_{t+1}^{(i)} = x_t^{(i)} + v_t^{(i)} \cos(\theta_t^{(i)}) \Delta t
+\end{equation}
+\begin{equation}
+y_{t+1}^{(i)} = y_t^{(i)} + v_t^{(i)} \sin(\theta_t^{(i)}) \Delta t
+\end{equation}
+\begin{equation}
+\theta_{t+1}^{(i)} = \theta_t^{(i)} + \omega_t^{(i)} \Delta t
+\end{equation}
+
+\subsection{Composite Cost Functional}
+The total cost $S(\tau^{(i)})$ of rollout $\tau^{(i)}$ balances six objective criteria:
+\begin{equation}
+S(\tau^{(i)}) = J_{\text{term}} + J_{\text{heading}} + J_{\text{cte}} + J_{\text{repulsion}} + J_{\text{dyn\_coll}} + J_{\text{effort}}
+\end{equation}
+\begin{enumerate}
+    \item \textbf{Terminal Waypoint Distance Cost:}
+    \begin{equation}
+    J_{\text{term}} = w_{\text{dist}} \cdot \left\| \mathbf{p}_T^{(i)} - \mathbf{p}_{\text{target}} \right\|_2, \quad w_{\text{dist}} = 4.0
+    \end{equation}
+    \item \textbf{Horizon Heading Alignment Cost:}
+    \begin{equation}
+    J_{\text{heading}} = w_{\text{heading}} \cdot \left| \text{wrap2pi}\left(\theta_T^{(i)} - \text{atan2}(y_{\text{tgt}} - y_T^{(i)}, x_{\text{tgt}} - x_T^{(i)})\right) \right|, \quad w_{\text{heading}} = 3.0
+    \end{equation}
+    \item \textbf{Cross-Track Error (CTE) Cost:}
+    \begin{equation}
+    J_{\text{cte}} = w_{\text{cte}} \sum_{t=1}^T d_{\perp}(\mathbf{p}_t^{(i)}, \text{Path Segment}), \quad w_{\text{cte}} = 6.0 \text{ (nominal)}, \quad 2.0 \text{ (evasion)}
+    \end{equation}
+    \item \textbf{Static Obstacle Distance Repulsion:}
+    \begin{equation}
+    J_{\text{repulsion}} = w_{\text{rep}} \sum_{t=1}^T \max\left(0, d_{\text{safe}} - \text{dist}(\mathbf{p}_t^{(i)}, \text{Obstacles})\right)^2
+    \end{equation}
+    \item \textbf{Predictive Dynamic Obstacle Collision Penalty:}
+    \begin{equation}
+    J_{\text{dyn\_coll}} = \sum_{t=1}^T \sum_{m=1}^{M_{\text{obs}}} \begin{cases} 
+    w_{\text{coll}} & \text{if } \|\mathbf{p}_t^{(i)} - \hat{\mathbf{p}}_{m, t}\|_2 < R_{\text{coll}} = 0.28\text{ m} \\
+    0 & \text{otherwise}
+    \end{cases}
+    \end{equation}
+    where $w_{\text{coll}} = 5000.0$.
+\end{enumerate}
+
+\subsection{Softmax Optimal Action Selection}
+The optimal command vector $\mathbf{u}_t^* = (v_t^*, \omega_t^*)^T$ is evaluated as the importance-weighted expectation:
+\begin{equation}
+\beta = \min_{i=1,\dots,K} S(\tau^{(i)})
+\end{equation}
+\begin{equation}
+w^{(i)} = \frac{\exp\left(-\frac{1}{\lambda} (S(\tau^{(i)}) - \beta)\right)}{\sum_{j=1}^K \exp\left(-\frac{1}{\lambda} (S(\tau^{(j)}) - \beta)\right)}, \quad \lambda = 0.50
+\end{equation}
+\begin{equation}
+\mathbf{u}_t^* = \sum_{i=1}^K w^{(i)} \mathbf{u}_t^{(i)}
+\end{equation}
+
+\subsection{Slew-Rate Limiting \& EMA Velocity Smoothing}
+To ensure actuator continuity and eliminate jerking motion:
+\begin{equation}
+v_{\text{slew}} = \begin{cases} 
+\min(v_t^*, v_{t-1} + a_{\text{accel}}\Delta t) & \text{if } v_t^* \ge v_{t-1} \\
+\max(v_t^*, v_{t-1} - a_{\text{decel}}\Delta t) & \text{if } v_t^* < v_{t-1}
+\end{cases}
+\end{equation}
+\begin{equation}
+\omega_{\text{slew}} = \text{clamp}\left(\omega_t^*, \omega_{t-1} - \alpha_{\text{accel}}\Delta t, \omega_{t-1} + \alpha_{\text{accel}}\Delta t\right)
+\end{equation}
+Where $a_{\text{accel}} = 0.60\text{ m/s}^2$, $a_{\text{decel}} = 0.90\text{ m/s}^2$, and $\alpha_{\text{accel}} = 1.60\text{ rad/s}^2$.
+
+Finally, an Exponential Moving Average (EMA) filter is applied:
+\begin{equation}
+v_{\text{final}} = \alpha_v \cdot v_{\text{slew}} + (1 - \alpha_v) \cdot v_{\text{prev}}, \quad \alpha_v = 0.70
+\end{equation}
+\begin{equation}
+\omega_{\text{final}} = \alpha_\omega \cdot \omega_{\text{slew}} + (1 - \alpha_\omega) \cdot \omega_{\text{prev}}, \quad \alpha_\omega = 0.70
+\end{equation}
+
+% =========================================================================
+\section{Dynamic Obstacle Tracking \& Evasion Geometry}
+% =========================================================================
+
+\subsection{Clustering and Velocity Estimation}
+LiDAR scan endpoints are clustered using Euclidean radius filtering ($d_{\text{cluster}} = 0.35\text{ m}$). The cluster centroid is:
+\begin{equation}
+\bar{\mathbf{p}}_k = \frac{1}{|C|} \sum_{p_i \in C} p_i
+\end{equation}
+Obstacle velocity is estimated by finite differences over timestamp separation $\Delta t$:
+\begin{equation}
+\mathbf{v}_{\text{obs}} = \frac{\bar{\mathbf{p}}_k - \bar{\mathbf{p}}_{k-1}}{\Delta t}
+\end{equation}
+
+\subsection{Vector Cross-Product Swerve Decision}
+To commit to a consistent evasion corridor (left versus right avoidance):
+\begin{equation}
+\mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{robot}} - \mathbf{v}_{\text{obs}}
+\end{equation}
+\begin{equation}
+\mathbf{r}_{\text{obs}} = \mathbf{p}_{\text{obs}} - \mathbf{p}_{\text{robot}}
+\end{equation}
+The 2D scalar cross-product defines the evasion commitment sign:
+\begin{equation}
+\zeta = \mathbf{v}_{\text{rel}} \times \mathbf{r}_{\text{obs}} = v_{\text{rel}, x} r_{\text{obs}, y} - v_{\text{rel}, y} r_{\text{obs}, x}
+\end{equation}
+\begin{equation}
+\text{Side} = \begin{cases} +1 \text{ (Left Swerve)} & \text{if } \zeta > 0 \\ -1 \text{ (Right Swerve)} & \text{if } \zeta \le 0 \end{cases}
+\end{equation}
+
+\subsection{$C^1$-Continuous Cubic B\'ezier Detour Trajectory}
+The evasion path is synthesized as a parametric cubic polynomial curve:
+\begin{equation}
+\mathbf{B}(u) = (1-u)^3 \mathbf{P}_0 + 3(1-u)^2 u \mathbf{P}_1 + 3(1-u) u^2 \mathbf{P}_2 + u^3 \mathbf{P}_3, \quad u \in [0, 1]
+\end{equation}
+With control point anchors:
+\begin{itemize}
+    \item $\mathbf{P}_0 = \mathbf{p}_{\text{start}}$
+    \item $\mathbf{P}_1 = \mathbf{P}_0 + \kappa \cdot \mathbf{t}_{\text{start}}$ (satisfying velocity alignment $\mathbf{B}'(0) = 3(\mathbf{P}_1 - \mathbf{P}_0)$)
+    \item $\mathbf{P}_2 = \mathbf{P}_3 - \kappa \cdot \mathbf{t}_{\text{end}}$
+    \item $\mathbf{P}_3 = \mathbf{p}_{\text{rejoin}}$
+\end{itemize}
+
+% =========================================================================
+\section{Autonomous Exploration \& Multi-Robot Map Merging}
+% =========================================================================
+
+\subsection{Wavefront Frontier Detection (WFD)}
+A frontier point $\mathbf{x}_f$ satisfies:
+\begin{equation}
+M(\mathbf{x}_f) = \text{Free} \quad \wedge \quad \exists \mathbf{x}_{\text{nbr}} \in \mathcal{N}_8(\mathbf{x}_f) \text{ s.t. } M(\mathbf{x}_{\text{nbr}}) = \text{Unknown}
+\end{equation}
+
+\subsection{Exploration Utility Function}
+Candidate frontier clusters are scored by trading off expected information gain against navigation cost:
+\begin{equation}
+U(f) = w_{\text{gain}} \cdot \text{Area}(f) - w_{\text{cost}} \cdot \text{Cost}_{\text{Dijkstra}}(\mathbf{p}_{\text{robot}}, \text{centroid}(f))
+\end{equation}
+
+\subsection{Multi-Robot $SE(2)$ Map Merging}
+Given maps $\mathcal{M}_A$ and $\mathcal{M}_B$, the rigid transform $(\mathbf{R}, \mathbf{t})$ aligns features via RANSAC:
+\begin{equation}
+\mathbf{p}_i^A \approx \mathbf{R} \mathbf{p}_i^B + \mathbf{t} = \begin{bmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{bmatrix} \begin{bmatrix} x_i^B \\ y_i^B \end{bmatrix} + \begin{bmatrix} t_x \\ t_y \end{bmatrix}
+\end{equation}
+
+Merged cell values are fused in log-odds space:
+\begin{equation}
+L(m_{x,y}) = \ln\left(\frac{P(m_{x,y})}{1 - P(m_{x,y})}\right)
+\end{equation}
+\begin{equation}
+L_{\text{merged}} = L_A(x,y) + L_B(T(x,y)) - L_0
+\end{equation}
+
+% =========================================================================
+\section{Computer Vision Geometry}
+% =========================================================================
+
+\subsection{Pinhole Camera Intrinsic Projection Matrix}
+A 3D spatial landmark point $\mathbf{P}_c = (X_c, Y_c, Z_c)^T$ in camera coordinates projects to image plane pixel coordinates $(u, v)^T$:
+\begin{equation}
+s \begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = \mathbf{K} \mathbf{P}_c = \begin{bmatrix} f_x & 0 & c_x \\ 0 & f_y & c_y \\ 0 & 0 & 1 \end{bmatrix} \begin{bmatrix} X_c \\ Y_c \\ Z_c \end{bmatrix}
+\end{equation}
+\begin{equation}
+u = f_x \frac{X_c}{Z_c} + c_x, \quad v = f_y \frac{Y_c}{Z_c} + c_y
+\end{equation}
+
+\subsection{Normalized Pixel Offset \& Depth Proxy}
+The horizontal offset angle $\psi$ for detected objects is:
+\begin{equation}
+\Delta u = \frac{u_{\text{bbox\_center}} - c_x}{W / 2} \in [-1, 1]
+\end{equation}
+\begin{equation}
+\psi = \arctan\left(\frac{\Delta u \cdot (W/2)}{f_x}\right)
+\end{equation}
+
+Distance is approximated using known physical height $H_{\text{obj}}$:
+\begin{equation}
+Z_{\text{est}} = \frac{f_y \cdot H_{\text{obj}}}{h_{\text{bbox}}}
+\end{equation}
+
+% =========================================================================
+\section{Web Dashboard Coordinate Transformations}
+% =========================================================================
+
+The HTML5 Canvas dashboard maps continuous ROS world coordinates $(x_w, y_w)$ to display pixels $(p_x, p_y)$:
+\begin{equation}
+p_x = \frac{x_w - x_0}{\text{resolution}}
+\end{equation}
+\begin{equation}
+p_y = H_{\text{map}} - \frac{y_w - y_0}{\text{resolution}}
+\end{equation}
+
+With user zoom scale $s$ and pan translation $(T_x, T_y)$, screen coordinates $(S_x, S_y)$ are:
+\begin{equation}
+\begin{bmatrix} S_x \\ S_y \\ 1 \end{bmatrix} = \begin{bmatrix} s & 0 & T_x \\ 0 & s & T_y \\ 0 & 0 & 1 \end{bmatrix} \begin{bmatrix} p_x \\ p_y \\ 1 \end{bmatrix}
+\end{equation}
+
+Smoothed robot orientation and position render via 60 FPS Linear Interpolation (LERP):
+\begin{equation}
+x(t) = (1 - \gamma) x(t-1) + \gamma x_{\text{new}}, \quad \gamma = 0.25
+\end{equation}
+\begin{equation}
+\theta(t) = \theta(t-1) + \gamma \cdot \text{atan2}\left(\sin(\theta_{\text{new}} - \theta(t-1)), \cos(\theta_{\text{new}} - \theta(t-1))\right)
+\end{equation}
+
+% =========================================================================
+\section{System Constants Reference Table}
+% =========================================================================
+
+\begin{center}
+\begin{tabular}{|l|l|l|l|}
+\hline
+\textbf{Parameter Name} & \textbf{Symbol} & \textbf{Value \& Units} & \textbf{Subsystem Reference} \\
+\hline
+Wheel Radius & $r$ & $0.025\text{ m}$ & URDF Kinematics \\
+Wheel Baseline Track & $L$ & $0.26\text{ m}$ & URDF Kinematics \\
+Chassis Mass & $M$ & $10.0\text{ kg}$ & Rigid Body Dynamics \\
+Chassis Radius & $R_{\text{base}}$ & $0.11\text{ m}$ & Footprint Clearance \\
+Inscribed Radius & $R_{\text{inscribed}}$ & $0.13\text{ m}$ & Nav2 Costmap \\
+Inflation Radius & $R_{\text{inflation}}$ & $0.25\text{ m}$ & Nav2 Potential Field \\
+Costmap Decay Rate & $k$ & $3.0\text{ m}^{-1}$ & Exponential Costmap \\
+Rollout Trajectories & $K$ & $80$ & MPPI Controller \\
+Prediction Steps & $T$ & $15$ & MPPI Controller \\
+Time Step Horizon & $\Delta t$ & $0.10\text{ s}$ & MPPI Controller \\
+Temperature Parameter & $\lambda$ & $0.50$ & MPPI Softmax \\
+Linear Acceleration Limit & $a_{\text{accel}}$ & $0.60\text{ m/s}^2$ & Slew Rate Limiter \\
+Linear Deceleration Limit & $a_{\text{decel}}$ & $0.90\text{ m/s}^2$ & Slew Rate Limiter \\
+Angular Acceleration Limit & $\alpha_{\text{accel}}$ & $1.60\text{ rad/s}^2$ & Slew Rate Limiter \\
+Velocity EMA Filter Alpha & $\alpha_v, \alpha_\omega$ & $0.70$ & Low-Pass Filter \\
+Collision Risk Radius & $R_{\text{coll}}$ & $0.28\text{ m}$ & Dynamic Collision Avoidance \\
+Min Particles & $M_{\text{min}}$ & $500$ & AMCL Particle Filter \\
+Max Particles & $M_{\text{max}}$ & $2000$ & AMCL Particle Filter \\
+Map Resolution & $\text{res}$ & $0.05\text{ m/pixel}$ & SLAM Occupancy Grid \\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{0.5cm}
+\begin{center}
+\footnotesize \textcolor{darkgray}{\textit{End of Autonomous Mobile Robot (AMR) Mathematical Formulations Report.}}
+\end{center}
+
+\end{document}
