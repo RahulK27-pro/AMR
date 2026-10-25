@@ -236,24 +236,14 @@ def generate_hospital_map(ws_root: Path, output_names=['hospital_map']):
         val = final_pgm_arr[py, px]
         print(f"  {cname} at ({cx}, {cy}) -> px=({px}, {py}) = {val} ({'OCCUPIED - SOLID' if val == 0 else 'ERROR'})")
 
-    # Generate Color Maps:
-    # 1. Dark Theme PNG:
-    # 205 -> [26, 32, 46]     (exterior unknown space)
-    # 254 -> [12, 16, 28]     (walkable interior floor)
-    # 0   -> [0, 212, 255]    (solid cyan walls, tables, beds, chairs)
-    dark_rgb = np.zeros((height, width, 3), dtype=np.uint8)
-    dark_rgb[final_pgm_arr == 205] = [26, 32, 46]
-    dark_rgb[final_pgm_arr == 254] = [12, 16, 28]
-    dark_rgb[final_pgm_arr == 0]   = [0, 212, 255]
-
-    # 2. Light Theme PNG:
-    # 205 -> [226, 234, 244]  (soft architectural blueprint ice-blue)
-    # 254 -> [255, 255, 255]  (clean white floor)
-    # 0   -> [15, 23, 42]     (solid deep obsidian navy walls, tables, beds, chairs)
-    light_rgb = np.zeros((height, width, 3), dtype=np.uint8)
-    light_rgb[final_pgm_arr == 205] = [226, 234, 244]
-    light_rgb[final_pgm_arr == 254] = [255, 255, 255]
-    light_rgb[final_pgm_arr == 0]   = [15, 23, 42]
+    # Generate Inverted Color Map (Free space WHITE, Obstacles DARK):
+    # 205 -> [226, 234, 244]  (soft architectural blueprint ice-blue perimeter)
+    # 254 -> [255, 255, 255]  (pure clean white walkable floor)
+    # 0   -> [15, 23, 42]     (solid deep obsidian navy / dark walls, tables, beds, chairs)
+    inverted_rgb = np.zeros((height, width, 3), dtype=np.uint8)
+    inverted_rgb[final_pgm_arr == 205] = [226, 234, 244]
+    inverted_rgb[final_pgm_arr == 254] = [255, 255, 255]
+    inverted_rgb[final_pgm_arr == 0]   = [15, 23, 42]
 
     # Save to disk for each requested output name
     for name in output_names:
@@ -262,7 +252,7 @@ def generate_hospital_map(ws_root: Path, output_names=['hospital_map']):
         png_path = maps_dir / f"{name}.png"
         light_png_path = maps_dir / f"{name}_light.png"
 
-        # 1. Save PGM (ROS standard trinary)
+        # 1. Save PGM (ROS standard trinary: 0 = obstacle, 254 = free space, 205 = unknown)
         cv2.imwrite(str(pgm_path), final_pgm_arr)
         print(f"Saved: {pgm_path} ({pgm_path.stat().st_size} bytes)")
 
@@ -280,12 +270,12 @@ def generate_hospital_map(ws_root: Path, output_names=['hospital_map']):
             f.write(yaml_content)
         print(f"Saved: {yaml_path}")
 
-        # 3. Save Dark PNG
-        cv2.imwrite(str(png_path), cv2.cvtColor(dark_rgb, cv2.COLOR_RGB2BGR))
+        # 3. Save Inverted PNG (Free space WHITE, Obstacles DARK)
+        cv2.imwrite(str(png_path), cv2.cvtColor(inverted_rgb, cv2.COLOR_RGB2BGR))
         print(f"Saved: {png_path} ({png_path.stat().st_size} bytes)")
 
-        # 4. Save Light PNG
-        cv2.imwrite(str(light_png_path), cv2.cvtColor(light_rgb, cv2.COLOR_RGB2BGR))
+        # 4. Save Light PNG (Synchronized inverted colors)
+        cv2.imwrite(str(light_png_path), cv2.cvtColor(inverted_rgb, cv2.COLOR_RGB2BGR))
         print(f"Saved: {light_png_path} ({light_png_path.stat().st_size} bytes)")
 
         # Mirror to app/src/agv_description/maps

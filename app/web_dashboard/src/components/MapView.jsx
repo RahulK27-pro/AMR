@@ -21,7 +21,7 @@ const LERP_FACTOR = 0.18;
  * perimeter padding to architectural ice-blue slate,
  * and cyan walls/furniture to crisp deep obsidian navy (#0f172a).
  */
-function createLightMapCanvas(image) {
+function createLightMapCanvas(image, mapName = '') {
   if (!image) return null;
   const w = image.naturalWidth || image.width;
   const h = image.naturalHeight || image.height;
@@ -34,18 +34,27 @@ function createLightMapCanvas(image) {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(image, 0, 0);
 
+    // If active map is hospital_map, the map image already has light free space and dark obstacles.
+    // Return untouched canvas immediately to prevent double-inverting backwards into dark floor!
+    if (mapName === 'hospital_map') {
+      return canvas;
+    }
+
     const imgData = ctx.getImageData(0, 0, w, h);
     const d = imgData.data;
     const len = d.length;
 
     // Detect if image is already formatted as a light map (e.g. clean white floor [255, 255, 255])
+    // Uniformly sample across the entire image body rather than just the top border margin
     let whiteCount = 0;
-    const sampleLimit = Math.min(len, 4000);
-    for (let i = 0; i < sampleLimit; i += 4) {
+    let totalSamples = 0;
+    const step = Math.max(4, Math.floor(len / 1000) * 4);
+    for (let i = 0; i < len; i += step) {
+      totalSamples++;
       if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) whiteCount++;
     }
-    // If already pre-rendered light map, return canvas directly
-    if (whiteCount > 150) {
+    // If already pre-rendered light map (over 15% white floor), return untouched canvas directly
+    if (totalSamples > 0 && (whiteCount / totalSamples) > 0.15) {
       return canvas;
     }
 
@@ -231,9 +240,9 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       setLightMapCanvas(null);
       return;
     }
-    const canvas = createLightMapCanvas(mapImage);
+    const canvas = createLightMapCanvas(mapImage, activeMap);
     setLightMapCanvas(canvas);
-  }, [mapImage]);
+  }, [mapImage, activeMap]);
 
   // Synchronize namedPlaces live whenever a place is created, renamed, or deleted
   useEffect(() => {
@@ -389,11 +398,13 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       ctx.scale(zoom, zoom);
       ctx.translate(-meta.width / 2, -meta.height / 2);
 
+      const isWhiteFloor = isLight || activeMap === 'hospital_map';
+
       // ── Layer 1: Base Map Image ─────────────────────────────────────────
       const activeDrawable = (isLight && lightMapCanvas) ? lightMapCanvas : mapImage;
 
       if (activeDrawable) {
-        if (isLight && !lightMapCanvas) {
+        if (isLight && !lightMapCanvas && activeMap !== 'hospital_map') {
           // Hardware canvas filter fallback if offscreen canvas was delayed
           ctx.filter = 'invert(0.92) hue-rotate(180deg)';
           ctx.drawImage(activeDrawable, 0, 0, meta.width, meta.height);
@@ -403,9 +414,9 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         }
       } else {
         // Grid placeholder
-        ctx.fillStyle = isLight ? '#f1f5fa' : '#0b0f19';
+        ctx.fillStyle = isWhiteFloor ? '#f1f5fa' : '#0b0f19';
         ctx.fillRect(0, 0, meta.width, meta.height);
-        ctx.strokeStyle = isLight ? '#cbdced' : '#1a2035';
+        ctx.strokeStyle = isWhiteFloor ? '#cbdced' : '#1a2035';
         ctx.lineWidth = 0.5;
         const gridPx = 1 / meta.resolution; // 1 m grid
         for (let gx = 0; gx < meta.width;  gx += gridPx) {
@@ -423,10 +434,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
           const isHover = hoveredNode?.id === n.id;
           ctx.beginPath();
           ctx.arc(n.px, n.py, isSel ? 4 : isHover ? 3.5 : 1.5, 0, Math.PI * 2);
-          ctx.fillStyle = isSel ? (isLight ? '#2563eb' : '#00f0ff') : isHover ? '#ffaa00' : (isLight ? 'rgba(2, 132, 199, 0.7)' : 'rgba(0,240,255,0.45)');
+          ctx.fillStyle = isSel ? (isWhiteFloor ? '#2563eb' : '#00f0ff') : isHover ? '#ffaa00' : (isWhiteFloor ? 'rgba(2, 132, 199, 0.75)' : 'rgba(0,240,255,0.45)');
           ctx.fill();
           if (isSel) {
-            ctx.strokeStyle = isLight ? '#0f172a' : '#ffffff';
+            ctx.strokeStyle = isWhiteFloor ? '#0f172a' : '#ffffff';
             ctx.lineWidth   = 1.2 / zoom;
             ctx.stroke();
           }
@@ -476,14 +487,14 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
           const pillX = px - pillW / 2;
           const pillY = py - 6 / zoom - pillH;
 
-          const isLight = theme === 'light';
-          ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.94)' : 'rgba(15, 23, 42, 0.88)';
+          const isPillLight = isWhiteFloor;
+          ctx.fillStyle = isPillLight ? 'rgba(255, 255, 255, 0.94)' : 'rgba(15, 23, 42, 0.88)';
           ctx.fillRect(pillX, pillY, pillW, pillH);
           ctx.strokeStyle = markerClr;
           ctx.lineWidth = (isNavTarget || isHover ? 1.4 : 0.8) / zoom;
           ctx.strokeRect(pillX, pillY, pillW, pillH);
 
-          ctx.fillStyle = isNavTarget ? (isLight ? '#0284c7' : '#38bdf8') : (isLight ? '#0f172a' : '#f1f5f9');
+          ctx.fillStyle = isNavTarget ? (isPillLight ? '#0284c7' : '#38bdf8') : (isPillLight ? '#0f172a' : '#f1f5f9');
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(label, px, pillY + pillH / 2);
@@ -517,7 +528,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         for (let i = 1; i < trail.length; i++) {
           const alpha = i / trail.length;
           ctx.beginPath();
-          ctx.strokeStyle = isLight ? `rgba(2, 132, 199, ${alpha * 0.75})` : `rgba(0, 212, 255, ${alpha * 0.55})`;
+          ctx.strokeStyle = isWhiteFloor ? `rgba(2, 132, 199, ${alpha * 0.75})` : `rgba(0, 212, 255, ${alpha * 0.55})`;
           ctx.lineWidth   = (1.5 + alpha * 1.5) / zoom;
           ctx.moveTo(trail[i - 1].px, trail[i - 1].py);
           ctx.lineTo(trail[i].px,     trail[i].py);
@@ -527,7 +538,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         const t0 = trail[0];
         ctx.beginPath();
         ctx.arc(t0.px, t0.py, 2 / zoom, 0, Math.PI * 2);
-        ctx.fillStyle = isLight ? 'rgba(2, 132, 199, 0.4)' : 'rgba(0,212,255,0.3)';
+        ctx.fillStyle = isWhiteFloor ? 'rgba(2, 132, 199, 0.4)' : 'rgba(0,212,255,0.3)';
         ctx.fill();
         ctx.restore();
       }
@@ -617,12 +628,12 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       // Robot body disc
       ctx.beginPath();
       ctx.arc(rx, ry, robotRadiusPx * 0.65, 0, Math.PI * 2);
-      ctx.fillStyle   = isLight ? 'rgba(2, 132, 199, 0.25)' : 'rgba(0,212,255,0.22)';
+      ctx.fillStyle   = isWhiteFloor ? 'rgba(2, 132, 199, 0.25)' : 'rgba(0,212,255,0.22)';
       ctx.fill();
-      ctx.strokeStyle = isLight ? '#0284c7' : '#00d4ff';
+      ctx.strokeStyle = isWhiteFloor ? '#0284c7' : '#00d4ff';
       ctx.lineWidth   = 1.8 / zoom;
-      ctx.shadowColor = isLight ? 'rgba(2, 132, 199, 0.4)' : '#00d4ff';
-      ctx.shadowBlur  = isLight ? 8 : 14;
+      ctx.shadowColor = isWhiteFloor ? 'rgba(2, 132, 199, 0.4)' : '#00d4ff';
+      ctx.shadowBlur  = isWhiteFloor ? 8 : 14;
       ctx.stroke();
 
       // Heading direction arrow
@@ -660,7 +671,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       // Centre core dot
       ctx.beginPath();
       ctx.arc(rx, ry, 3 / zoom, 0, Math.PI * 2);
-      ctx.fillStyle = isLight ? '#0f172a' : '#ffffff';
+      ctx.fillStyle = isWhiteFloor ? '#0f172a' : '#ffffff';
       ctx.shadowBlur = 0;
       ctx.fill();
 
