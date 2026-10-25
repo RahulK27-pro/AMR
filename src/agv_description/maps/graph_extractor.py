@@ -133,8 +133,10 @@ def extract_graph(
             ( 2.15, 0.0), ( 2.15, 1.075), ( 2.15, 1.60), ( 3.0, 2.8), ( 3.0, 4.5),
             # SC (Sample Collection): Entry and West Aisle past phlebotomy chair
             ( 5.30, 0.0), ( 5.30, 1.075), ( 5.30, 1.60), ( 5.08, 2.50), ( 5.08, 3.80), ( 6.0, 5.0),
-            # PH (Pharmacy)
-            (-5.10, 0.0), (-5.10, -1.075), (-5.10, -1.60), (-6.0, -2.5), (-6.0, -4.5),
+            # PH (Pharmacy): Doorway and clear transit aisle between counter (X=-5.45) and wall (X=-4.60)
+            (-5.10, 0.0), (-5.10, -1.075), (-5.10, -1.60),
+            (-5.05, -2.20), (-5.05, -2.80), (-5.05, -3.40), (-5.05, -4.00), (-5.05, -4.60),
+            (-5.60, -4.60), (-6.00, -4.60), (-6.00, -2.20),
             # RW (Reception & Waiting)
             (-1.95, 0.0), (-1.95, -1.075), (-1.95, -1.60), (-1.95, -3.0), (-1.95, -4.5),
             # NS (Nurses Station): Entry and Middle Aisle past cabinet
@@ -148,6 +150,15 @@ def extract_graph(
             # Main South Entrance
             (-1.95, -5.20), (-1.95, -5.925),
         ]
+
+        # Continuous corridor central spine along Y = 0.00 from X = -6.80 to +6.80
+        # Spaced at 0.35m intervals to provide a direct, straight-line highway for transit
+        corridor_xs = [round(float(x), 2) for x in np.arange(-6.80, 6.81, 0.35)]
+        if 0.0 not in corridor_xs:
+            corridor_xs.append(0.0)
+            corridor_xs.sort()
+        for cx in corridor_xs:
+            hospital_waypoints.append((cx, 0.0))
         for wx, wy in hospital_waypoints:
             gx = int(round((wx - origin[0]) / resolution))
             gy = int(round((wy - origin[1]) / resolution))

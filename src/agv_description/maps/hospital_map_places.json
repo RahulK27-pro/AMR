@@ -2,7 +2,7 @@
   {
     "id": "place_reception",
     "name": "Reception & Waiting Area",
-    "node_id": "N459",
+    "node_id": "N433",
     "type": "reception",
     "x": -2.1,
     "y": -2.35,
@@ -16,7 +16,7 @@
   {
     "id": "place_r1",
     "name": "Patient Room 1 (R1)",
-    "node_id": "N86",
+    "node_id": "N85",
     "type": "patient_room",
     "x": -6.1,
     "y": 3.65,
@@ -30,7 +30,7 @@
   {
     "id": "place_r2",
     "name": "Patient Room 2 (R2)",
-    "node_id": "N88",
+    "node_id": "N87",
     "type": "patient_room",
     "x": -3.3,
     "y": 3.65,
@@ -42,23 +42,9 @@
     "description": "Patient care room with bed, bedside monitor, and visitor chair"
   },
   {
-    "id": "place_dr",
-    "name": "Doctor's Consultation Room",
-    "node_id": "N67",
-    "type": "doctor_room",
-    "x": 0.3,
-    "y": 4.45,
-    "px": 176,
-    "py": 40,
-    "theta": 0.0,
-    "icon": "\ud83d\udc68\u200d\u2695\ufe0f",
-    "color": "#3b82f6",
-    "description": "Physician desk, diagnostic monitor, and patient examination couch"
-  },
-  {
     "id": "place_lab",
     "name": "Clinical Laboratory",
-    "node_id": "N104",
+    "node_id": "N103",
     "type": "laboratory",
     "x": 3.1,
     "y": 3.25,
@@ -72,7 +58,7 @@
   {
     "id": "place_sc",
     "name": "Sample Collection Room",
-    "node_id": "N107",
+    "node_id": "N106",
     "type": "sample_collection",
     "x": 5.5,
     "y": 3.25,
@@ -84,23 +70,9 @@
     "description": "Blood drawing phlebotomy station and specimen intake counter"
   },
   {
-    "id": "place_ph",
-    "name": "Hospital Pharmacy",
-    "node_id": "N520",
-    "type": "pharmacy",
-    "x": -5.7,
-    "y": -3.95,
-    "px": 56,
-    "py": 208,
-    "theta": 0.0,
-    "icon": "\ud83d\udc8a",
-    "color": "#ec4899",
-    "description": "Prescription dispensing counter, medication shelving, and safe"
-  },
-  {
     "id": "place_ns",
     "name": "Nurses Station",
-    "node_id": "N514",
+    "node_id": "N488",
     "type": "nurses_station",
     "x": 1.9,
     "y": -3.55,
@@ -112,23 +84,9 @@
     "description": "Central nursing counter, task terminals, and charts cabinet"
   },
   {
-    "id": "place_ut",
-    "name": "Utility & Sterilization",
-    "node_id": "N517",
-    "type": "utility",
-    "x": 4.7,
-    "y": -3.55,
-    "px": 264,
-    "py": 200,
-    "theta": 0.0,
-    "icon": "\ud83e\uddf9",
-    "color": "#64748b",
-    "description": "Clean linens storage, sterilization racks, and medical cart supply"
-  },
-  {
     "id": "place_toilet_m",
     "name": "Restroom (M)",
-    "node_id": "N446",
+    "node_id": "N420",
     "type": "restroom",
     "x": 7.1,
     "y": -1.95,
@@ -142,7 +100,7 @@
   {
     "id": "place_toilet_f",
     "name": "Restroom (F)",
-    "node_id": "N567",
+    "node_id": "N541",
     "type": "restroom",
     "x": 6.7,
     "y": -4.75,
@@ -156,7 +114,7 @@
   {
     "id": "place_entrance",
     "name": "Hospital Main Entrance",
-    "node_id": "N660",
+    "node_id": "N638",
     "type": "entrance",
     "x": -1.95,
     "y": -5.2,
@@ -170,15 +128,57 @@
   {
     "id": "place_corridor_center",
     "name": "Corridor Central Spine",
-    "node_id": "N325",
+    "node_id": "N659",
     "type": "corridor",
-    "x": -0.1,
-    "y": -0.35,
-    "px": 168,
-    "py": 136,
+    "x": 0.0,
+    "y": 0.0,
+    "px": 170,
+    "py": 129,
     "theta": 0.0,
     "icon": "\ud83d\udee3\ufe0f",
     "color": "#00d4ff",
     "description": "Central 2.0m transit corridor connecting East and West hospital wings"
+  },
+  {
+    "id": "place_1792909251663",
+    "name": "Doctor Room",
+    "node_id": "N65",
+    "type": "place",
+    "x": -0.9,
+    "y": 4.45,
+    "px": 152,
+    "py": 40,
+    "theta": 0.0,
+    "icon": "\ud83d\udccd",
+    "color": "#06b6d4",
+    "description": ""
+  },
+  {
+    "id": "place_1792909280430",
+    "name": "Pharmacy",
+    "node_id": "N424",
+    "type": "place",
+    "x": -6.1,
+    "y": -2.35,
+    "px": 48,
+    "py": 176,
+    "theta": 0.0,
+    "icon": "\ud83d\udccd",
+    "color": "#06b6d4",
+    "description": ""
+  },
+  {
+    "id": "place_1792909327753",
+    "name": "Utility Room",
+    "node_id": "N448",
+    "type": "place",
+    "x": 5.1,
+    "y": -2.35,
+    "px": 272,
+    "py": 176,
+    "theta": 0.0,
+    "icon": "\ud83d\udccd",
+    "color": "#06b6d4",
+    "description": ""
   }
 ]

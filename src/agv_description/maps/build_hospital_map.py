@@ -203,11 +203,6 @@ def generate_hospital_map(ws_root: Path, output_names=['hospital_map']):
         p2 = world_to_pil(x1, y1)
         draw.rectangle([min(p1[0], p2[0]), min(p1[1], p2[1]), max(p1[0], p2[0]), max(p1[1], p2[1])], fill=254, outline=254)
 
-    # Also clear the main central 2.0m corridor (Y from -0.98 to +0.98, X from -7.70 to +7.70)
-    p1 = world_to_pil(-7.70, -0.98)
-    p2 = world_to_pil(7.70, 0.98)
-    # The central corridor is unobstructed navigation spine
-    draw.rectangle([min(p1[0], p2[0]), min(p1[1], p2[1]), max(p1[0], p2[0]), max(p1[1], p2[1])], fill=254, outline=254)
 
     final_pgm_arr = np.array(im_grid)
 

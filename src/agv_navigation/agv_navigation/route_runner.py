@@ -1,8 +1,8 @@
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data, QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy, QoSReliabilityPolicy
 from ament_index_python.packages import get_package_share_directory
-from nav_msgs.msg import Odometry, Path
+from nav_msgs.msg import Odometry, Path, OccupancyGrid
 from geometry_msgs.msg import Twist, PoseStamped
 from std_msgs.msg import String, Bool
 from sensor_msgs.msg import LaserScan
@@ -12,9 +12,12 @@ import math
 import json
 import os
 import heapq
+import yaml
 
 import numpy as np
 from scipy.spatial import KDTree
+from scipy.ndimage import binary_dilation
+from PIL import Image
 
 
 class RouteRunner(Node):
@@ -47,6 +50,24 @@ class RouteRunner(Node):
         # Load the graph — check active map, warehouse_graph, or map candidates
         self.declare_parameter('map_name', '')
         map_name_param = self.get_parameter('map_name').get_parameter_value().string_value.strip()
+
+        # Static map occupancy grid for filtering ghost dynamic obstacles
+        self.static_map_data = None
+        self.static_map_resolution = 0.05
+        self.static_map_origin_x = 0.0
+        self.static_map_origin_y = 0.0
+        self.static_map_width = 0
+        self.static_map_height = 0
+        self.static_wall_mask = None
+        self._load_static_map_file(map_name_param)
+
+        latched_map_qos = QoSProfile(
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE
+        )
+        self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, latched_map_qos)
 
         candidates = []
         try:
@@ -163,8 +184,8 @@ class RouteRunner(Node):
         self.robot_radius = 0.11       # Cylinder radius 0.11m (diameter 0.22m)
         self.collision_radius = 0.15   # Hard safety clearance (0.11m + 0.04m physical margin)
         self.min_passable_gap = 0.35   # Minimum passage width for 22cm robot (0.22m + 0.13m corridor margin)
-        self.critical_proximity = 0.28 # Distance threshold (m) triggering active reverse escape
-        self.safe_standoff = 0.75      # Target front standoff distance (m) to achieve during reverse escape
+        self.critical_proximity = 0.20 # Distance threshold (m) triggering active reverse escape (chassis radius is 0.11m)
+        self.safe_standoff = 0.50      # Target front standoff distance (m) to achieve during reverse escape
 
         # Smooth Early Detour (Circumnavigation) state
         self.active_detour = None      # Stores {rejoin_idx, created_time, side} when circumnavigating
@@ -217,13 +238,120 @@ class RouteRunner(Node):
         self.swerve_lock_duration = 8     # Ticks (~0.8s at 10 Hz) to hold swerve commitment
         self.swerve_bias_strength = 0.35  # Angular bias magnitude (rad/s)
 
+        # Motion Smoothness & Command Slew-Rate Limiter Parameters
+        self.accel_lim_v = 0.60         # Max forward acceleration: 0.60 m/s^2 (0.060 m/s per 100ms tick)
+        self.decel_lim_v = 0.90         # Max forward deceleration: 0.90 m/s^2 (0.090 m/s per 100ms tick)
+        self.accel_lim_w = 1.60         # Max angular acceleration: 1.60 rad/s^2 (0.160 rad/s per 100ms tick)
+
+        self.last_cmd_v = 0.0          # Last published linear velocity
+        self.last_cmd_w = 0.0          # Last published angular velocity
+        self.last_target_v = 0.0       # EMA smoothed target v
+        self.last_target_w = 0.0       # EMA smoothed target w
+        self.ema_alpha_v = 0.70        # EMA smoothing factor for linear velocity
+        self.ema_alpha_w = 0.65        # EMA smoothing factor for angular velocity
+
+        # Persistent Dynamic Obstacle Tracking state
+        self._tracked_obstacles = {}   # track_id -> dict
+        self._next_track_id = 1
+        self._visited_plan_nodes = set()
+        self._last_dev_alert_time = 0.0
+
         # Control timer
         self.control_timer = self.create_timer(self.dt, self.control_loop)
         self.get_logger().info(f"Route Runner Active with KD-Tree ({len(self.node_ids)} nodes), Proactive Detour & Active Reverse Escape.")
 
     # ------------------------------------------------------------------
-    # App Bridge helpers
+    # Static Map Mask & App Bridge helpers
     # ------------------------------------------------------------------
+
+    def _load_static_map_file(self, map_name_param):
+        """Loads static map YAML and PGM file to construct a binary wall mask."""
+        candidates = []
+        try:
+            pkg_share = get_package_share_directory('agv_description')
+            if map_name_param:
+                candidates.append(os.path.join(pkg_share, 'maps', f'{map_name_param}.yaml'))
+            candidates.append(os.path.join(pkg_share, 'maps', 'hospital_map.yaml'))
+            candidates.append(os.path.join(pkg_share, 'maps', 'warehouse_map.yaml'))
+        except Exception:
+            pass
+
+        ws_maps = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps')
+        if map_name_param:
+            candidates.append(os.path.join(ws_maps, f'{map_name_param}.yaml'))
+        candidates.append(os.path.join(ws_maps, 'hospital_map.yaml'))
+        candidates.append(os.path.join(ws_maps, 'warehouse_map.yaml'))
+
+        yaml_path = None
+        for c in candidates:
+            if os.path.exists(c):
+                yaml_path = c
+                break
+
+        if not yaml_path:
+            self.get_logger().warn("[MAP_MASK] No static map YAML found, waiting for /map topic...")
+            return
+
+        try:
+            with open(yaml_path, 'r') as f:
+                meta = yaml.safe_load(f)
+            pgm_file = meta.get('image', '')
+            if not os.path.isabs(pgm_file):
+                pgm_file = os.path.join(os.path.dirname(yaml_path), pgm_file)
+
+            if not os.path.exists(pgm_file):
+                self.get_logger().warn(f"[MAP_MASK] PGM file not found at {pgm_file}")
+                return
+
+            img = Image.open(pgm_file)
+            arr = np.array(img)
+            # Flip vertically because ROS map origin is bottom-left (y_min)
+            arr = np.flipud(arr)
+            # In ROS map standard: pixel value < 50 indicates occupied cell
+            occ = (arr < 50)
+            # Dilate occupied walls by ~0.22m (approx 4-5 cells at 0.05m resolution)
+            iterations = max(2, int(0.22 / meta.get('resolution', 0.05)))
+            self.static_wall_mask = binary_dilation(occ, iterations=iterations)
+            self.static_map_resolution = float(meta.get('resolution', 0.05))
+            orig = meta.get('origin', [0.0, 0.0, 0.0])
+            self.static_map_origin_x = float(orig[0])
+            self.static_map_origin_y = float(orig[1])
+            self.static_map_height, self.static_map_width = arr.shape
+            self.get_logger().info(
+                f"[MAP_MASK] Loaded static environment mask from {os.path.basename(pgm_file)} "
+                f"({self.static_map_width}x{self.static_map_height}, res={self.static_map_resolution}m, origin=({self.static_map_origin_x:.2f}, {self.static_map_origin_y:.2f}))."
+            )
+        except Exception as e:
+            self.get_logger().warn(f"[MAP_MASK] Failed to load static map image: {e}")
+
+    def map_callback(self, msg: OccupancyGrid):
+        """Dynamic map subscription update from map_server / SLAM."""
+        try:
+            w = msg.info.width
+            h = msg.info.height
+            grid = np.array(msg.data, dtype=np.int8).reshape((h, w))
+            occ = (grid > 50)
+            res = msg.info.resolution
+            iterations = max(2, int(0.22 / res))
+            self.static_wall_mask = binary_dilation(occ, iterations=iterations)
+            self.static_map_resolution = float(res)
+            self.static_map_origin_x = float(msg.info.origin.position.x)
+            self.static_map_origin_y = float(msg.info.origin.position.y)
+            self.static_map_width = w
+            self.static_map_height = h
+            self.get_logger().info(f"[MAP_MASK] Updated static wall mask from /map topic ({w}x{h}).")
+        except Exception as e:
+            self.get_logger().warn(f"[MAP_MASK] Error parsing /map: {e}")
+
+    def is_near_static_wall(self, x, y):
+        """Returns True if world coordinate (x, y) lies on or within ~0.22m of static environment geometry."""
+        if self.static_wall_mask is None:
+            return False
+        gx = int((x - self.static_map_origin_x) / self.static_map_resolution)
+        gy = int((y - self.static_map_origin_y) / self.static_map_resolution)
+        if 0 <= gx < self.static_map_width and 0 <= gy < self.static_map_height:
+            return bool(self.static_wall_mask[gy, gx])
+        return True  # Outside map bounds is treated as non-traversable
 
     def _publish_agv_state(self, state_str: str):
         """Publish the current nav state string to /agv_state for the app bridge."""
@@ -238,13 +366,21 @@ class RouteRunner(Node):
             self.state = "IDLE"
             self.path_plan = []
             self.goal_queue = []
-            self.cmd_pub.publish(Twist())  # zero velocity
+            self._stop_robot()
             self._publish_agv_state("ESTOP")
             self.get_logger().warn("[APP_BRIDGE] E-STOP received — navigation halted.")
         else:
             self._estop_active = False
             self._publish_agv_state("IDLE")
             self.get_logger().info("[APP_BRIDGE] E-STOP cleared.")
+
+    def _stop_robot(self):
+        """Crisp immediate stop resetting command slew rates."""
+        self.last_cmd_v = 0.0
+        self.last_cmd_w = 0.0
+        self.last_target_v = 0.0
+        self.last_target_w = 0.0
+        self.cmd_pub.publish(Twist())
 
     def _now_sec(self):
         """Return current ROS time as float seconds (sim-time aware)."""
@@ -341,99 +477,134 @@ class RouteRunner(Node):
         ranges = ranges[::3]
         angles = angles[::3]
 
+        # Use laser scan timestamp for map transformation to prevent rotational skew artifacts
+        try:
+            t = self.tf_buffer.lookup_transform(
+                'map',
+                msg.header.frame_id if msg.header.frame_id else 'base_link',
+                msg.header.stamp
+            )
+            pose_x = t.transform.translation.x
+            pose_y = t.transform.translation.y
+            pose_yaw = self.get_yaw_from_quaternion(t.transform.rotation)
+        except TransformException:
+            pose_x = self.current_x
+            pose_y = self.current_y
+            pose_yaw = self.current_yaw
+
         # Convert to global map frame
         ox_local = ranges * np.cos(angles)
         oy_local = ranges * np.sin(angles)
 
-        cos_yaw = np.cos(self.current_yaw)
-        sin_yaw = np.sin(self.current_yaw)
+        cos_yaw = np.cos(pose_yaw)
+        sin_yaw = np.sin(pose_yaw)
 
-        ox_global = self.current_x + ox_local * cos_yaw - oy_local * sin_yaw
-        oy_global = self.current_y + ox_local * sin_yaw + oy_local * cos_yaw
+        ox_global = pose_x + ox_local * cos_yaw - oy_local * sin_yaw
+        oy_global = pose_y + ox_local * sin_yaw + oy_local * cos_yaw
 
         self.obstacles = np.column_stack((ox_global, oy_global))
 
         # --- Dynamic Obstacle Velocity Estimation ---
-        # Cluster nearby obstacle points (within 5m) to find moving objects
+        # 1. Spatial pre-filter: Keep obstacle points within 4.5m of the robot
         dists_to_robot = np.sqrt(ox_local**2 + oy_local**2)
-        near_mask = dists_to_robot < 5.0
+        near_mask = dists_to_robot < 4.5
         near_pts = self.obstacles[near_mask]
 
+        # 2. Static Map Background Rejection:
+        # Filter out LiDAR points that fall onto known static walls, partitions, and perimeter geometry
+        if len(near_pts) > 0 and self.static_wall_mask is not None:
+            non_wall_mask = np.array([not self.is_near_static_wall(p[0], p[1]) for p in near_pts], dtype=bool)
+            dyn_candidate_pts = near_pts[non_wall_mask]
+        else:
+            dyn_candidate_pts = near_pts
+
         current_clusters = []
-        if len(near_pts) > 0:
-            # Simple spatial grid clustering (0.4m grid bins)
+        if len(dyn_candidate_pts) > 0:
+            # Cluster candidate points (0.35m grid bins)
             bins = {}
-            for p in near_pts:
-                key = (round(p[0] / 0.4), round(p[1] / 0.4))
+            for p in dyn_candidate_pts:
+                key = (round(p[0] / 0.35), round(p[1] / 0.35))
                 bins.setdefault(key, []).append(p)
 
             for key, pts in bins.items():
-                if len(pts) >= 2:  # Filter noise specks
+                if len(pts) >= 3:  # Require at least 3 points to reject noise specks
                     centroid = np.mean(pts, axis=0)
                     current_clusters.append(centroid)
 
-        # Estimate velocity by matching clusters with previous frame
-        # Enhanced filtering: require persistent translation (net displacement >= 0.18m over age >= 4 frames)
-        # to filter out stationary wall/doorpost discretization jitter
+        # 3. Persistent Object Tracking with Association:
         new_dynamic_obs = []
-        new_age_map = {}
-        new_start_pos_map = {}
-        new_vel_map = {}
+        if self.last_scan_time is not None:
+            dt = max(0.05, min(0.30, now - self.last_scan_time))
+            matched_track_ids = set()
 
-        if self.last_scan_time is not None and len(self.prev_obstacle_clusters) > 0:
-            dt = max(0.05, min(0.3, now - self.last_scan_time))
-            for ci, curr_c in enumerate(current_clusters):
-                best_prev_idx = None
-                min_match_dist = 0.8  # Max jump between scans
-                for pi, prev_c in enumerate(self.prev_obstacle_clusters):
-                    d = np.linalg.norm(curr_c - prev_c)
+            for curr_c in current_clusters:
+                best_track_id = None
+                min_match_dist = 0.35  # Realistic max displacement in 0.1s (< 3.5 m/s)
+
+                for tid, track in self._tracked_obstacles.items():
+                    if tid in matched_track_ids:
+                        continue
+                    d = float(np.linalg.norm(curr_c - track['pos']))
                     if d < min_match_dist:
                         min_match_dist = d
-                        best_prev_idx = pi
+                        best_track_id = tid
 
-                if best_prev_idx is not None:
-                    raw_vel = (curr_c - self.prev_obstacle_clusters[best_prev_idx]) / dt
-                    prev_v = self._obs_vel_map.get(best_prev_idx, raw_vel)
-                    # Low-pass filter velocity (0.6 current, 0.4 historical)
-                    smooth_vel = 0.6 * raw_vel + 0.4 * prev_v
+                if best_track_id is not None:
+                    track = self._tracked_obstacles[best_track_id]
+                    raw_vel = (curr_c - track['pos']) / dt
+                    # Smooth velocity: 0.5 current, 0.5 historical
+                    smooth_vel = 0.5 * raw_vel + 0.5 * track['vel']
                     speed = float(np.linalg.norm(smooth_vel))
 
-                    age = self._obs_age_map.get(best_prev_idx, 0) + 1
-                    start_pos = self._obs_start_pos_map.get(best_prev_idx, self.prev_obstacle_clusters[best_prev_idx])
-                    displacement = float(np.linalg.norm(curr_c - start_pos))
+                    track['pos'] = curr_c
+                    track['vel'] = smooth_vel
+                    track['speed'] = speed
+                    track['age'] += 1
+                    track['misses'] = 0
+                    matched_track_ids.add(best_track_id)
 
-                    new_age_map[ci] = age
-                    new_start_pos_map[ci] = start_pos
-                    new_vel_map[ci] = smooth_vel
+                    disp = float(np.linalg.norm(curr_c - track['start_pos']))
 
-                    # Only classify as dynamic obstacle if:
-                    # 1. Realistic moving speed: 0.30 m/s <= speed <= 2.2 m/s
-                    # 2. Tracked across at least 4 consecutive scans (>= 0.4s)
-                    # 3. Sustained physical displacement >= 0.18m from initial spot (eliminates stationary wall centroid jitter)
-                    if 0.30 <= speed <= 2.2 and age >= 4 and displacement >= 0.18:
+                    # True dynamic obstacle confirmation:
+                    # - Tracked for at least 3 consecutive scans (>= 0.3s)
+                    # - Speed between 0.22 m/s and 2.0 m/s
+                    # - Net displacement >= 0.20m from origin spot
+                    # - Not located on a static wall
+                    if (0.22 <= speed <= 2.0 and track['age'] >= 3 and disp >= 0.20 and
+                            not self.is_near_static_wall(curr_c[0], curr_c[1])):
                         new_dynamic_obs.append({
+                            'id': best_track_id,
                             'pos': curr_c,
                             'vel': smooth_vel,
                             'speed': speed,
                             'radius': 0.35,
-                            'age': age
+                            'age': track['age']
                         })
                 else:
-                    # New unmatched cluster
-                    new_age_map[ci] = 0
-                    new_start_pos_map[ci] = curr_c
-                    new_vel_map[ci] = np.zeros(2)
-        else:
-            for ci in range(len(current_clusters)):
-                new_age_map[ci] = 0
-                new_start_pos_map[ci] = current_clusters[ci]
-                new_vel_map[ci] = np.zeros(2)
+                    # New candidate track (suppress instantiation if robot is rotating fast)
+                    if abs(self.last_cmd_w) < 0.60:
+                        new_tid = self._next_track_id
+                        self._next_track_id += 1
+                        self._tracked_obstacles[new_tid] = {
+                            'pos': curr_c,
+                            'vel': np.zeros(2),
+                            'speed': 0.0,
+                            'start_pos': curr_c,
+                            'age': 1,
+                            'misses': 0
+                        }
 
-        self._obs_age_map = new_age_map
-        self._obs_start_pos_map = new_start_pos_map
-        self._obs_vel_map = new_vel_map
+            # Age out unmatched tracks
+            to_delete = []
+            for tid, track in self._tracked_obstacles.items():
+                if tid not in matched_track_ids:
+                    track['misses'] += 1
+                    if track['misses'] > 2:
+                        to_delete.append(tid)
+            for tid in to_delete:
+                del self._tracked_obstacles[tid]
+
         self.dynamic_obstacles = new_dynamic_obs
-        self.prev_obstacle_clusters = current_clusters
         self.last_scan_time = now
 
         # Real-time LiDAR dynamic obstacle detection logging (rate-limited to 1 Hz)
@@ -442,7 +613,7 @@ class RouteRunner(Node):
             for i, dob in enumerate(self.dynamic_obstacles):
                 d_robot = math.hypot(dob['pos'][0] - self.current_x, dob['pos'][1] - self.current_y)
                 self.get_logger().info(
-                    f"[LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #{i+1} at map({dob['pos'][0]:.2f}, {dob['pos'][1]:.2f}) | "
+                    f"[LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #{dob.get('id', i+1)} at map({dob['pos'][0]:.2f}, {dob['pos'][1]:.2f}) | "
                     f"Vel=({dob['vel'][0]:.2f}, {dob['vel'][1]:.2f}) Speed={dob['speed']:.2f}m/s | "
                     f"DistToRobot={d_robot:.2f}m | RobotPose=({self.current_x:.2f}, {self.current_y:.2f})"
                 )
@@ -557,6 +728,11 @@ class RouteRunner(Node):
         self._publish_agv_state("PLANNING")
         self.get_logger().info(f"Received Goal: ({goal_x:.2f}, {goal_y:.2f})")
 
+        # Reset active recovery and dynamic blockage penalties on new user goal
+        self._recovery_phase = None
+        self._stuck_counter = 0
+        self.blocked_edges.clear()
+
         start_node = self.find_closest_node(self.current_x, self.current_y)
         self.target_node = self.find_closest_node(goal_x, goal_y)
 
@@ -573,6 +749,11 @@ class RouteRunner(Node):
         self.get_logger().info(f"Dijkstra Path: {self.node_path} ({len(self.path_plan)} waypoints)")
 
         self.current_target_index = 1 if len(self.path_plan) > 1 else 0
+        self._visited_plan_nodes = set()
+        self.last_cmd_v = 0.0
+        self.last_cmd_w = 0.0
+        self.last_target_v = 0.0
+        self.last_target_w = 0.0
         self.state = "NAVIGATING"
         self._publish_agv_state("NAVIGATING")
         self.publish_active_path()
@@ -638,12 +819,16 @@ class RouteRunner(Node):
         y_rel = -dx * s_yaw + dy * c_yaw
         dist = np.sqrt(x_rel**2 + y_rel**2)
 
-        # Front 120-degree cone (x_rel > 0.04m, |y_rel| < x_rel * 1.732)
-        front_mask = (x_rel > 0.04) & (np.abs(y_rel) < x_rel * 1.732) & (dist < 6.0)
+        # Front swept body corridor: check obstacles in the forward travel path
+        # Chassis half-width is 0.11m; swept half-width is 0.16m.
+        # Angular expansion accounts for forward trajectory up to +/-25 deg.
+        front_lat_limit = np.maximum(0.16, x_rel * 0.466)
+        front_mask = (x_rel > 0.05) & (np.abs(y_rel) < front_lat_limit) & (dist < 6.0)
         d_front = float(np.min(dist[front_mask])) if np.any(front_mask) else 99.0
 
-        # Rear 120-degree cone (x_rel < -0.04m, |y_rel| < -x_rel * 1.732)
-        rear_mask = (x_rel < -0.04) & (np.abs(y_rel) < -x_rel * 1.732) & (dist < 6.0)
+        # Rear swept body corridor: check obstacles directly behind chassis
+        rear_lat_limit = np.maximum(0.16, -x_rel * 0.466)
+        rear_mask = (x_rel < -0.05) & (np.abs(y_rel) < rear_lat_limit) & (dist < 6.0)
         d_rear = float(np.min(dist[rear_mask])) if np.any(rear_mask) else 99.0
 
         return d_front, d_rear
@@ -989,13 +1174,13 @@ class RouteRunner(Node):
         if self._recovery_phase == "BACKUP":
             elapsed = now - self._recovery_start_time
 
-            # Safety check: if rear obstacle is too close (< 0.28m), abort reverse to prevent collision
-            if d_rear < 0.28:
+            # Safety check: if rear obstacle is too close (< 0.20m), abort reverse to prevent collision
+            if d_rear < 0.20:
                 self.get_logger().warn(
                     f"[BRAIN: RECOVERY] Rear boundary detected ({d_rear:.2f}m < 0.28m)! "
                     f"Halting reverse immediately for safety."
                 )
-                self.cmd_pub.publish(Twist())
+                self._stop_robot()
                 self._recovery_phase = "REROUTE"
             # Standoff check: if front distance is now >= safe_standoff (0.75m), or max duration reached
             elif d_front >= self.safe_standoff or elapsed >= self._recovery_backup_dur:
@@ -1003,10 +1188,12 @@ class RouteRunner(Node):
                     f"[BRAIN: RECOVERY] Standoff distance achieved (front={d_front:.2f}m, elapsed={elapsed:.1f}s). "
                     f"Halting reverse."
                 )
-                self.cmd_pub.publish(Twist())
+                self._stop_robot()
                 self._recovery_phase = "REROUTE"
             else:
                 # Command smooth reverse
+                self.last_cmd_v = -0.15
+                self.last_cmd_w = 0.0
                 cmd = Twist()
                 cmd.linear.x = -0.15  # 0.15 m/s reverse
                 cmd.angular.z = 0.0
@@ -1032,6 +1219,9 @@ class RouteRunner(Node):
         now = self._now_sec()
         self.restore_unblocked_edges()
 
+        snapped_node = self.find_closest_node(self.current_x, self.current_y)
+        self.last_snapped_node = snapped_node
+
         # Handle active recovery maneuver directly before standard control flow
         if self._recovery_phase is not None:
             self._stuck_counter = 0
@@ -1043,7 +1233,7 @@ class RouteRunner(Node):
         d_front, d_rear = self.check_proximity_and_clearance()
         # When following an active detour around the obstacle, the robot intentionally skirts close to R_safe;
         # only engage emergency reverse if distance is critically inside the physical chassis contact zone (< 0.18m).
-        proximity_limit = 0.18 if (self.active_detour is not None) else self.critical_proximity
+        proximity_limit = 0.16 if (self.active_detour is not None) else self.critical_proximity
         if d_front < proximity_limit:
             self.get_logger().warn(
                 f"[BRAIN: PROXIMITY_ESCAPE] Critical front proximity ({d_front:.2f}m < {proximity_limit:.2f}m)! "
@@ -1057,7 +1247,7 @@ class RouteRunner(Node):
         final_x, final_y, _ = self.path_plan[-1]
         dist_to_final = math.sqrt((final_x - self.current_x)**2 + (final_y - self.current_y)**2)
         if dist_to_final < 0.30:
-            self.cmd_pub.publish(Twist())
+            self._stop_robot()
             self.state = "IDLE"
             self.active_detour = None
             self._publish_agv_state("ARRIVED")
@@ -1103,6 +1293,7 @@ class RouteRunner(Node):
                     s_idx = corridor_obs['block_start_idx']
                     r_idx = corridor_obs['block_rejoin_idx']
                     self.path_plan = self.path_plan[:s_idx] + detour + self.path_plan[r_idx+1:]
+                    self.current_target_index = min(self.current_target_index, len(self.path_plan) - 1)
                     self.active_detour = {
                         'rejoin_idx': s_idx + len(detour),
                         'created_time': now,
@@ -1110,7 +1301,7 @@ class RouteRunner(Node):
                         'obs_pos': corridor_obs['obstacle_pos'],
                         'safe_radius': corridor_obs['safe_radius']
                     }
-                    self._detour_cooldown_time = now + 3.0
+                    self._detour_cooldown_time = now + 4.0
                     self.publish_active_path()
                     self.get_logger().info(
                         f"[BRAIN: DETOUR] Planned circular safe zone Bezier detour on {corridor_obs['best_side']} side "
@@ -1122,23 +1313,35 @@ class RouteRunner(Node):
         # Get lookahead target
         (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=0.75)
 
-        # Continuous Node Tracking & Off-Path Deviation Alert
-        snapped_node = self.find_closest_node(self.current_x, self.current_y)
-        if snapped_node != self.last_snapped_node:
-            self.last_snapped_node = snapped_node
-            is_in_plan = (snapped_node in self.node_path)
-            yaw_deg = math.degrees(self.current_yaw)
-            if is_in_plan:
-                node_idx = self.node_path.index(snapped_node)
-                self.get_logger().info(
-                    f"[NODE TRACK] Reached Node {snapped_node} ({node_idx + 1}/{len(self.node_path)} in plan) "
-                    f"at ({self.current_x:.2f}, {self.current_y:.2f}), yaw={yaw_deg:.1f}°"
-                )
-            else:
-                self.get_logger().warn(
-                    f"[DEVIATION ALERT] Robot at Node {snapped_node} at ({self.current_x:.2f}, {self.current_y:.2f}) "
-                    f"— OUTSIDE planned path {self.node_path}!"
-                )
+        # Continuous Path Deviation Monitoring & Milestone Node Tracking
+        if len(self.path_plan) > 0:
+            s_min = max(0, self.current_target_index - 5)
+            s_max = min(len(self.path_plan), self.current_target_index + 12)
+            local_pts = np.array([[self.path_plan[k][0], self.path_plan[k][1]] for k in range(s_min, s_max)])
+            if len(local_pts) > 0:
+                dists_sq = (local_pts[:, 0] - self.current_x)**2 + (local_pts[:, 1] - self.current_y)**2
+                cross_track_err = math.sqrt(float(np.min(dists_sq)))
+                if cross_track_err > 0.45 and (now - self._last_dev_alert_time) > 2.5:
+                    self._last_dev_alert_time = now
+                    self.get_logger().warn(
+                        f"[DEVIATION ALERT] Robot off-path: cross-track error = {cross_track_err:.2f}m (> 0.45m) at "
+                        f"({self.current_x:.2f}, {self.current_y:.2f})."
+                    )
+
+        # Milestone Node Progress Tracking
+        if self.node_path:
+            for ni, nid in enumerate(self.node_path):
+                if nid not in self._visited_plan_nodes:
+                    ndist = math.hypot(self.map_data[nid]["x"] - self.current_x,
+                                      self.map_data[nid]["y"] - self.current_y)
+                    if ndist < 0.35:
+                        self._visited_plan_nodes.add(nid)
+                        yaw_deg = math.degrees(self.current_yaw)
+                        self.get_logger().info(
+                            f"[NODE TRACK] Reached Node {nid} ({ni + 1}/{len(self.node_path)} in plan) "
+                            f"at ({self.current_x:.2f}, {self.current_y:.2f}), yaw={yaw_deg:.1f}°"
+                        )
+                        break
 
         # Check if an obstacle is directly in front on the upcoming path
         upcoming_slice = self.path_plan[self.current_target_index : min(len(self.path_plan), target_idx + 3)]
@@ -1213,13 +1416,20 @@ class RouteRunner(Node):
                     dyn_slowdown = min(dyn_slowdown, max(0.20, d_obs / 1.5))
 
         # Heading-Velocity Coupling:
-        # When heading error is large (> 75 deg), allow in-place rotation (v_mean -> 0) rather than driving forward off-course
+        # Continuous C1-smooth cornering velocity profile without hard step cliff
         abs_h_err = abs(heading_error)
-        if abs_h_err > math.radians(75):
-            v_mean = 0.0
+        heading_alignment = max(0.0, math.cos(heading_error))
+
+        if abs_h_err <= math.radians(45):
+            corner_scale = 1.0
+        elif abs_h_err <= math.radians(90):
+            frac = (abs_h_err - math.radians(45)) / math.radians(45)
+            corner_scale = 0.15 + 0.85 * 0.5 * (1.0 + math.cos(math.pi * frac))
         else:
-            heading_alignment = max(0.0, math.cos(heading_error))
-            v_mean = max(0.08, 0.45 * (heading_alignment ** 1.5) * approach_scale * dyn_slowdown)
+            corner_scale = 0.0  # In-place pivot for acute / reverse turns
+
+        base_v = 0.45 * (heading_alignment ** 1.5) * corner_scale * approach_scale * dyn_slowdown
+        v_mean = max(0.0, base_v) if corner_scale == 0.0 else max(0.08, base_v)
 
         v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
 
@@ -1382,7 +1592,7 @@ class RouteRunner(Node):
                     f"Holding position up to {current_yield_timeout:.1f}s before re-routing..."
                 )
                 self._last_block_log_time = now
-                self.cmd_pub.publish(Twist())
+                self._stop_robot()
                 return
             elif self.state == "YIELDING":
                 elapsed = now - self.yield_start_time
@@ -1403,7 +1613,7 @@ class RouteRunner(Node):
                             f"Obstacle at map({ox:.3f}, {oy:.3f}), dist_path={dp:.3f}m, dist_robot={dr:.3f}m."
                         )
                         self._last_block_log_time = now
-                    self.cmd_pub.publish(Twist())
+                    self._stop_robot()
                     return
 
         # Path is clear — exit YIELDING only when BOTH MPPI and path-blocker agree
@@ -1477,9 +1687,35 @@ class RouteRunner(Node):
                 self._execute_recovery()
                 return
 
+        # 1. EMA Low-Pass Filter on raw MPPI Monte Carlo outputs to eliminate tick-to-tick flutter
+        target_v = self.ema_alpha_v * optimal_v + (1.0 - self.ema_alpha_v) * self.last_target_v
+        target_w = self.ema_alpha_w * optimal_w + (1.0 - self.ema_alpha_w) * self.last_target_w
+        self.last_target_v = target_v
+        self.last_target_w = target_w
+
+        # 2. Acceleration / Deceleration Slew-Rate Limiting for smooth physical motion
+        dv = target_v - self.last_cmd_v
+        if dv > 0.0:
+            max_dv = self.accel_lim_v * self.dt
+            cmd_v = self.last_cmd_v + min(dv, max_dv)
+        else:
+            max_dv = self.decel_lim_v * self.dt
+            cmd_v = self.last_cmd_v + max(dv, -max_dv)
+
+        dw = target_w - self.last_cmd_w
+        max_dw = self.accel_lim_w * self.dt
+        cmd_w = self.last_cmd_w + float(np.clip(dw, -max_dw, max_dw))
+
+        # Clamp within global physical limits
+        cmd_v = float(np.clip(cmd_v, self.v_min, self.v_max))
+        cmd_w = float(np.clip(cmd_w, -self.w_max, self.w_max))
+
+        self.last_cmd_v = cmd_v
+        self.last_cmd_w = cmd_w
+
         twist = Twist()
-        twist.linear.x = optimal_v
-        twist.angular.z = optimal_w
+        twist.linear.x = cmd_v
+        twist.angular.z = cmd_w
         self.cmd_pub.publish(twist)
 
 

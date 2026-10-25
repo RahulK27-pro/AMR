@@ -70,8 +70,8 @@ places_spec = [
     {
         "id": "place_ph",
         "name": "Hospital Pharmacy",
-        "target_x": -6.00,
-        "target_y": -3.50,
+        "target_x": -5.05,
+        "target_y": -3.20,
         "type": "pharmacy",
         "icon": "💊",
         "color": "#ec4899",
