@@ -190,6 +190,7 @@ class RouteRunner(Node):
         # Smooth Early Detour (Circumnavigation) state
         self.active_detour = None      # Stores {rejoin_idx, created_time, side} when circumnavigating
         self._detour_cooldown_time = 0.0
+        self._reroute_cooldown_time = 0.0
         self._last_detour_log_time = 0.0
 
         # Stuck detector & Active Reverse Recovery
@@ -1006,76 +1007,209 @@ class RouteRunner(Node):
             'block_rejoin_idx': block_rejoin_idx,
         }
 
-    def generate_bezier_detour(self, start_idx, rejoin_idx, lateral_offset, block_idx=None):
-        """Generates a smooth C1-continuous cubic Bezier detour tangent to the circular safe zone."""
-        if rejoin_idx <= start_idx + 1:
-            return None
+    @staticmethod
+    def _dist_point_to_segment(px, py, x1, y1, x2, y2):
+        """Calculates perpendicular Euclidean distance from point (px, py) to segment (x1, y1)-(x2, y2)."""
+        dx = x2 - x1
+        dy = y2 - y1
+        l2 = dx * dx + dy * dy
+        if l2 == 0.0:
+            return math.hypot(px - x1, py - y1)
+        t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / l2))
+        proj_x = x1 + t * dx
+        proj_y = y1 + t * dy
+        return math.hypot(px - proj_x, py - proj_y)
 
-        p_start = self.path_plan[start_idx]
-        p_end = self.path_plan[rejoin_idx]
-        
-        # Position apex exactly at the obstacle's longitudinal index
-        apex_idx = block_idx if (block_idx is not None and start_idx < block_idx < rejoin_idx) else ((start_idx + rejoin_idx) // 2)
-        p_mid = self.path_plan[apex_idx]
+    def _get_edge_cost(self, u, v):
+        """Gets original edge distance between u and v."""
+        if u in self.map_data:
+            for edge in self.map_data[u]["edges"]:
+                if edge["to_node"] == v:
+                    return edge.get("distance_m", 1.0)
+        return 1.0
 
-        theta_mid = p_mid[2]
-        nx = -math.sin(theta_mid)
-        ny = math.cos(theta_mid)
+    def find_best_reroute_start_node(self, rx, ry, ryaw, blocked_nodes):
+        """Finds the best unblocked candidate start node near the robot,
+        preferring nodes ahead of or alongside the robot heading to avoid 180 deg turnaround."""
+        candidates = []
+        for nid, data in self.map_data.items():
+            if nid in blocked_nodes:
+                continue
+            dist = math.hypot(data["x"] - rx, data["y"] - ry)
+            if dist < 1.2:
+                # Forward projection along current heading vector
+                fwd_proj = (data["x"] - rx) * math.cos(ryaw) + (data["y"] - ry) * math.sin(ryaw)
+                candidates.append((dist, fwd_proj, nid))
 
-        crest_x = p_mid[0] + lateral_offset * nx
-        crest_y = p_mid[1] + lateral_offset * ny
+        if not candidates:
+            # Fallback to closest unblocked node in whole map
+            best_nid = None
+            min_dist = float('inf')
+            for nid, data in self.map_data.items():
+                if nid in blocked_nodes:
+                    continue
+                dist = math.hypot(data["x"] - rx, data["y"] - ry)
+                if dist < min_dist:
+                    min_dist = dist
+                    best_nid = nid
+            return best_nid
 
-        t_start = (math.cos(p_start[2]), math.sin(p_start[2]))
-        t_mid = (math.cos(theta_mid), math.sin(theta_mid))
-        t_end = (math.cos(p_end[2]), math.sin(p_end[2]))
+        # Sort: prefer nodes with forward_proj >= -0.15m (ahead or alongside), then by distance
+        candidates.sort(key=lambda c: (0 if c[1] >= -0.15 else 1, c[0]))
+        return candidates[0][2]
 
-        # Arc 1: start -> crest
-        d1 = math.hypot(crest_x - p_start[0], crest_y - p_start[1])
-        b0 = (p_start[0], p_start[1])
-        b1 = (p_start[0] + 0.35 * d1 * t_start[0], p_start[1] + 0.35 * d1 * t_start[1])
-        b2 = (crest_x - 0.35 * d1 * t_mid[0], crest_y - 0.35 * d1 * t_mid[1])
-        b3 = (crest_x, crest_y)
+    def calculate_dijkstra_avoiding(self, start_node, target_node, blocked_nodes, blocked_edges):
+        """Calculates shortest topological node path avoiding blocked nodes and edges."""
+        if start_node == target_node:
+            return [start_node]
 
-        # Arc 2: crest -> end
-        d2 = math.hypot(p_end[0] - crest_x, p_end[1] - crest_y)
-        c0 = (crest_x, crest_y)
-        c1 = (crest_x + 0.35 * d2 * t_mid[0], crest_y + 0.35 * d2 * t_mid[1])
-        c2 = (p_end[0] - 0.35 * d2 * t_end[0], p_end[1] - 0.35 * d2 * t_end[1])
-        c3 = (p_end[0], p_end[1])
+        distances = {node: float('infinity') for node in self.map_data}
+        distances[start_node] = 0.0
+        previous_nodes = {node: None for node in self.map_data}
+        pq = [(0.0, start_node)]
 
-        num_pts = max(8, (rejoin_idx - start_idx) + 2)
-        pts_arc1 = num_pts // 2
-        pts_arc2 = num_pts - pts_arc1
+        while pq:
+            current_distance, current_node = heapq.heappop(pq)
+            if current_node == target_node:
+                break
+            if current_distance > distances[current_node]:
+                continue
+            for edge in self.map_data[current_node]["edges"]:
+                neighbor = edge["to_node"]
+                if neighbor in blocked_nodes and neighbor != target_node:
+                    continue
+                e_pair = (min(current_node, neighbor), max(current_node, neighbor))
+                if e_pair in blocked_edges:
+                    continue
+                weight = edge["distance_m"]
+                distance = current_distance + weight
+                if distance < distances[neighbor]:
+                    distances[neighbor] = distance
+                    previous_nodes[neighbor] = current_node
+                    heapq.heappush(pq, (distance, neighbor))
 
-        detour_pts = []
-        for i in range(pts_arc1):
-            u = i / float(pts_arc1)
-            x = (1-u)**3 * b0[0] + 3*(1-u)**2 * u * b1[0] + 3*(1-u) * u**2 * b2[0] + u**3 * b3[0]
-            y = (1-u)**3 * b0[1] + 3*(1-u)**2 * u * b1[1] + 3*(1-u) * u**2 * b2[1] + u**3 * b3[1]
-            detour_pts.append((x, y))
+        path = []
+        current = target_node
+        while current is not None:
+            path.append(current)
+            current = previous_nodes[current]
+        path.reverse()
+        if not path or path[0] != start_node:
+            return []
+        return path
 
-        for i in range(pts_arc2 + 1):
-            u = i / float(pts_arc2)
-            x = (1-u)**3 * c0[0] + 3*(1-u)**2 * u * c1[0] + 3*(1-u) * u**2 * c2[0] + u**3 * c3[0]
-            y = (1-u)**3 * c0[1] + 3*(1-u)**2 * u * c1[1] + 3*(1-u) * u**2 * c2[1] + u**3 * c3[1]
-            detour_pts.append((x, y))
+    def replan_around_obstacle(self, ox, oy, r_safe=0.42):
+        """Computes a connected topological node path from the warehouse graph around the obstacle."""
+        now = self._now_sec()
 
-        dense_detour = []
-        for i in range(len(detour_pts)):
-            if i < len(detour_pts) - 1:
-                th = math.atan2(detour_pts[i+1][1] - detour_pts[i][1], detour_pts[i+1][0] - detour_pts[i][0])
-            else:
-                th = p_end[2]
-            dense_detour.append((detour_pts[i][0], detour_pts[i][1], th))
+        # Try with requested r_safe, fall back to tighter safe radius if graph is narrow
+        for safe_radius in [max(0.35, min(0.45, r_safe)), 0.35]:
+            # 1. Identify all nodes within safe radius
+            blocked_nodes = set()
+            for nid, data in self.map_data.items():
+                if math.hypot(data["x"] - ox, data["y"] - oy) < safe_radius:
+                    blocked_nodes.add(nid)
 
-        return dense_detour
+            # 2. Identify all edges intersecting safe zone
+            blocked_edges = set()
+            # Fast filter: only examine edges connected to nodes within 2.5m of obstacle
+            for nid, data in self.map_data.items():
+                if math.hypot(data["x"] - ox, data["y"] - oy) < 2.5:
+                    x1, y1 = data["x"], data["y"]
+                    for edge in data["edges"]:
+                        v = edge["to_node"]
+                        x2, y2 = self.map_data[v]["x"], self.map_data[v]["y"]
+                        if self._dist_point_to_segment(ox, oy, x1, y1, x2, y2) < safe_radius:
+                            blocked_edges.add((min(nid, v), max(nid, v)))
+
+            # 3. Find candidate start nodes near the robot
+            candidates = []
+            for nid, data in self.map_data.items():
+                if nid in blocked_nodes:
+                    continue
+                dist = math.hypot(data["x"] - self.current_x, data["y"] - self.current_y)
+                if dist < 1.2:
+                    fwd_proj = (data["x"] - self.current_x) * math.cos(self.current_yaw) + (data["y"] - self.current_y) * math.sin(self.current_yaw)
+                    candidates.append((dist, fwd_proj, nid))
+
+            candidates.sort(key=lambda c: (0 if c[1] >= -0.15 else 1, c[0]))
+
+            # Try planning from the best candidate start node to target_node
+            new_path = []
+            chosen_start = None
+            for dist, fwd_proj, s_node in candidates:
+                path = self.calculate_dijkstra_avoiding(s_node, self.target_node, blocked_nodes, blocked_edges)
+                if path and len(path) > 1:
+                    new_path = path
+                    chosen_start = s_node
+                    break
+
+            if not new_path:
+                fallback_start = self.find_best_reroute_start_node(self.current_x, self.current_y, self.current_yaw, blocked_nodes)
+                if fallback_start:
+                    path = self.calculate_dijkstra_avoiding(fallback_start, self.target_node, blocked_nodes, blocked_edges)
+                    if path and len(path) > 1:
+                        new_path = path
+                        chosen_start = fallback_start
+
+            if new_path and len(new_path) > 1:
+                # Temporarily penalize blocked edges in self.blocked_edges so other routines respect them
+                for (u, v) in blocked_edges:
+                    if (u, v) not in self.blocked_edges:
+                        self.blocked_edges[(u, v)] = (self._get_edge_cost(u, v), now + 25.0)
+
+                self.node_path = new_path
+                self.path_plan = self.densify_path(self.node_path, step_m=0.30)
+                self.current_target_index = 1 if len(self.path_plan) > 1 else 0
+                self._visited_plan_nodes = set()
+                self._reroute_cooldown_time = now + 3.5  # Lock path for 3.5s to prevent flip-flopping
+                self.active_detour = None
+                self._swerve_bias = 0.0
+                self._swerve_lock_ticks = 0
+                self.publish_active_path()
+                self.state = "NAVIGATING"
+                self.yield_start_time = None
+                self.get_logger().info(
+                    f"[BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at "
+                    f"({ox:.2f}, {oy:.2f}) [R_safe={safe_radius:.2f}m]: {self.node_path} "
+                    f"({len(self.path_plan)} waypoints starting from {chosen_start}). Resuming navigation."
+                )
+                return True
+
+        self.get_logger().warn(
+            f"[BRAIN: TOPOLOGICAL_AVOIDANCE] No clear connected node path found around obstacle at ({ox:.2f}, {oy:.2f}) "
+            f"to {self.target_node}!"
+        )
+        return False
 
     def trigger_reroute(self):
-        """Dynamically penalizes the blocked edge and computes an alternate path."""
+        """Dynamically penalizes the blockage and computes an alternate connected node path."""
         now = self._now_sec()
         self.active_detour = None
 
-        # Robustly identify which edge in self.node_path is currently blocked
+        # Try to locate the obstacle causing this reroute
+        ox, oy = None, None
+        if len(self.obstacles) > 0:
+            c_yaw = math.cos(self.current_yaw)
+            s_yaw = math.sin(self.current_yaw)
+            dx = self.obstacles[:, 0] - self.current_x
+            dy = self.obstacles[:, 1] - self.current_y
+            x_rel = dx * c_yaw + dy * s_yaw
+            y_rel = -dx * s_yaw + dy * c_yaw
+            front_mask = (x_rel > 0.0) & (x_rel < 2.5) & (np.abs(y_rel) < 0.8)
+            if np.any(front_mask):
+                front_pts = self.obstacles[front_mask]
+                ox = float(np.mean(front_pts[:, 0]))
+                oy = float(np.mean(front_pts[:, 1]))
+
+        if ox is not None and oy is not None:
+            self.get_logger().warn(
+                f"[BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance around obstacle at ({ox:.2f}, {oy:.2f})..."
+            )
+            if self.replan_around_obstacle(ox, oy, r_safe=0.45):
+                return
+
+        # Fallback if no specific obstacle cluster was found or replan_around_obstacle failed:
         best_idx = 0
         min_d = float('inf')
         for i, nid in enumerate(self.node_path):
@@ -1095,9 +1229,9 @@ class RouteRunner(Node):
             v = self.node_path[best_idx]
 
         if u and v:
+            orig_cost = self._get_edge_cost(u, v)
             for edge in self.map_data[u]["edges"]:
                 if edge["to_node"] == v:
-                    orig_cost = edge["distance_m"]
                     edge["distance_m"] = 999.0
                     self.blocked_edges[(u, v)] = (orig_cost, now + 25.0)
 
@@ -1109,16 +1243,22 @@ class RouteRunner(Node):
 
             self.get_logger().warn(
                 f"[BRAIN: DIJKSTRA_ROUTER] Commanded ROUTE CHANGE to avoid blockage! "
-                f"Blocked edge ({u} <-> {v}) temporarily penalized (+999.0 for 25s). "
-                f"Recalculating global topological path to {self.target_node}..."
+                f"Blocked edge ({u} <-> {v}) temporarily penalized (+999.0 for 25s)."
             )
 
-        start_node = self.find_closest_node(self.current_x, self.current_y)
+        start_node = self.find_best_reroute_start_node(self.current_x, self.current_y, self.current_yaw, set())
+        if not start_node:
+            start_node = self.find_closest_node(self.current_x, self.current_y)
+
         new_path = self.calculate_dijkstra(start_node, self.target_node)
         if new_path and len(new_path) > 1:
             self.node_path = new_path
             self.path_plan = self.densify_path(self.node_path, step_m=0.30)
-            self.current_target_index = 0
+            self.current_target_index = 1 if len(self.path_plan) > 1 else 0
+            self._visited_plan_nodes = set()
+            self._reroute_cooldown_time = now + 3.5
+            self._swerve_bias = 0.0
+            self._swerve_lock_ticks = 0
             self.publish_active_path()
             self.state = "NAVIGATING"
             self.yield_start_time = None
@@ -1281,34 +1421,17 @@ class RouteRunner(Node):
         # Proactive ahead-of-path corridor scan (up to 2.8m ahead on path)
         corridor_obs = self.get_corridor_obstacle_analysis(lookahead_horizon=2.8)
         if corridor_obs is not None and dist_to_final > 0.8:
-            # If passable and no active detour, generate smooth Bezier detour waypoints ahead of reaching the close zone
-            if corridor_obs['passable'] and self.active_detour is None and (now > self._detour_cooldown_time):
-                detour = self.generate_bezier_detour(
-                    corridor_obs['block_start_idx'],
-                    corridor_obs['block_rejoin_idx'],
-                    corridor_obs['lateral_offset'],
-                    block_idx=corridor_obs.get('block_idx')
-                )
-                if detour and len(detour) >= 4:
-                    s_idx = corridor_obs['block_start_idx']
-                    r_idx = corridor_obs['block_rejoin_idx']
-                    self.path_plan = self.path_plan[:s_idx] + detour + self.path_plan[r_idx+1:]
-                    self.current_target_index = min(self.current_target_index, len(self.path_plan) - 1)
-                    self.active_detour = {
-                        'rejoin_idx': s_idx + len(detour),
-                        'created_time': now,
-                        'side': corridor_obs['best_side'],
-                        'obs_pos': corridor_obs['obstacle_pos'],
-                        'safe_radius': corridor_obs['safe_radius']
-                    }
-                    self._detour_cooldown_time = now + 4.0
-                    self.publish_active_path()
+            # Proactively re-route via connected graph nodes around the obstacle ahead of reaching its close zone
+            if now > self._reroute_cooldown_time:
+                ox, oy = corridor_obs['obstacle_pos']
+                r_safe = max(0.35, corridor_obs.get('safe_radius', 0.42))
+                if not corridor_obs.get('is_dynamic', False):
                     self.get_logger().info(
-                        f"[BRAIN: DETOUR] Planned circular safe zone Bezier detour on {corridor_obs['best_side']} side "
-                        f"(lateral_offset={corridor_obs['lateral_offset']:+.2f}m, R_safe={corridor_obs['safe_radius']:.2f}m) around obstacle at "
-                        f"({corridor_obs['obstacle_pos'][0]:.2f}, {corridor_obs['obstacle_pos'][1]:.2f}) "
-                        f"[dist_along={corridor_obs['dist_along_path']:.2f}m, dist_to_robot={corridor_obs['min_dist_to_robot']:.2f}m]."
+                        f"[BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at ({ox:.2f}, {oy:.2f}) "
+                        f"[dist_along={corridor_obs['dist_along_path']:.2f}m, dist_robot={corridor_obs['min_dist_to_robot']:.2f}m]. "
+                        f"Re-planning route via connected roadmap nodes..."
                     )
+                    self.replan_around_obstacle(ox, oy, r_safe=r_safe)
 
         # Get lookahead target
         (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=0.75)
@@ -1433,44 +1556,30 @@ class RouteRunner(Node):
 
         v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
 
-        # Swerve side commitment: guides MPPI sampling prior toward the clear bypass side
-        if self.active_detour is not None:
-            # Active detour is underway: bias angular velocity into the detour curve during lead-in phase
-            detour_side = self.active_detour.get('side', 'LEFT')
-            rejoin_idx = self.active_detour.get('rejoin_idx', len(self.path_plan))
-            if self.current_target_index < rejoin_idx - 2:
-                bias_sign = 1.0 if detour_side == 'LEFT' else -1.0
-                self._swerve_bias = bias_sign * 0.25
-            else:
-                self._swerve_bias = 0.0
-        elif (len(close_dyn) > 0 or (corridor_obs is not None and corridor_obs['passable'])) and is_evading:
+        # Swerve side commitment: guides MPPI sampling prior only for unexpected close dynamic obstacles
+        if len(close_dyn) > 0 and is_evading:
             # If already deviating (> 45 deg) from target heading, cancel swerve bias to prioritize path realignment
             if abs_h_err > math.radians(45):
                 self._swerve_bias = 0.0
                 self._swerve_lock_ticks = 0
             elif self._swerve_lock_ticks <= 0:
-                if corridor_obs is not None and corridor_obs['passable']:
-                    proposed_bias_sign = 1.0 if corridor_obs['best_side'] == 'LEFT' else -1.0
-                    obs_dist = corridor_obs['min_dist_to_robot']
-                    side_str = corridor_obs['best_side']
-                else:
-                    nearest = min(close_dyn, key=lambda d: math.hypot(
-                        d['pos'][0] - self.current_x, d['pos'][1] - self.current_y))
-                    dx_t = target_x - self.current_x
-                    dy_t = target_y - self.current_y
-                    dx_o = nearest['pos'][0] - self.current_x
-                    dy_o = nearest['pos'][1] - self.current_y
-                    cross = dx_t * dy_o - dy_t * dx_o  # >0 = obstacle on left -> swerve right
-                    obs_dist = math.hypot(dx_o, dy_o)
-                    proposed_bias_sign = -1.0 if cross > 0 else 1.0
-                    side_str = "RIGHT (obs on LEFT)" if cross > 0 else "LEFT (obs on RIGHT)"
+                nearest = min(close_dyn, key=lambda d: math.hypot(
+                    d['pos'][0] - self.current_x, d['pos'][1] - self.current_y))
+                dx_t = target_x - self.current_x
+                dy_t = target_y - self.current_y
+                dx_o = nearest['pos'][0] - self.current_x
+                dy_o = nearest['pos'][1] - self.current_y
+                cross = dx_t * dy_o - dy_t * dx_o  # >0 = obstacle on left -> swerve right
+                obs_dist = math.hypot(dx_o, dy_o)
+                proposed_bias_sign = -1.0 if cross > 0 else 1.0
+                side_str = "RIGHT (obs on LEFT)" if cross > 0 else "LEFT (obs on RIGHT)"
 
                 raw_bias = self.swerve_bias_strength * (self.evasion_range / max(0.20, obs_dist))
-                bias_mag = min(0.50, max(0.20, raw_bias))
+                bias_mag = min(0.35, max(0.15, raw_bias))
                 self._swerve_bias = proposed_bias_sign * bias_mag
                 self._swerve_lock_ticks = self.swerve_lock_duration
                 self.get_logger().info(
-                    f"[BRAIN: SWERVE] Committed swerve {side_str} for {self.swerve_lock_duration} ticks | "
+                    f"[BRAIN: SWERVE] Committed dynamic evasion swerve {side_str} for {self.swerve_lock_duration} ticks | "
                     f"bias={self._swerve_bias:+.2f} rad/s (dist={obs_dist:.2f}m)"
                 )
             else:

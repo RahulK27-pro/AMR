@@ -1,0 +1,969 @@
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.7.29)  29 OCT 2026 02:38
+entering extended mode
+ restricted \write18 enabled.
+ %&-line parsing enabled.
+**AMR_Comprehensive_Technical_Report.tex
+(./AMR_Comprehensive_Technical_Report.tex
+LaTeX2e <2023-11-01> patch level 1
+L3 programming layer <2024-01-22>
+(/usr/share/texlive/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2023/05/17 v1.4n Standard LaTeX document class
+(/usr/share/texlive/texmf-dist/tex/latex/base/size10.clo
+File: size10.clo 2023/05/17 v1.4n Standard LaTeX file (size option)
+)
+\c@part=\count187
+\c@section=\count188
+\c@subsection=\count189
+\c@subsubsection=\count190
+\c@paragraph=\count191
+\c@subparagraph=\count192
+\c@figure=\count193
+\c@table=\count194
+\abovecaptionskip=\skip48
+\belowcaptionskip=\skip49
+\bibindent=\dimen140
+)
+(/usr/share/texlive/texmf-dist/tex/latex/geometry/geometry.sty
+Package: geometry 2020/01/02 v5.9 Page Geometry
+
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/keyval.sty
+Package: keyval 2022/05/29 v1.15 key=value parser (DPC)
+\KV@toks@=\toks17
+)
+(/usr/share/texlive/texmf-dist/tex/generic/iftex/ifvtex.sty
+Package: ifvtex 2019/10/25 v1.7 ifvtex legacy package. Use iftex instead.
+
+(/usr/share/texlive/texmf-dist/tex/generic/iftex/iftex.sty
+Package: iftex 2022/02/03 v1.0f TeX engine tests
+))
+\Gm@cnth=\count195
+\Gm@cntv=\count196
+\c@Gm@tempcnt=\count197
+\Gm@bindingoffset=\dimen141
+\Gm@wd@mp=\dimen142
+\Gm@odd@mp=\dimen143
+\Gm@even@mp=\dimen144
+\Gm@layoutwidth=\dimen145
+\Gm@layoutheight=\dimen146
+\Gm@layouthoffset=\dimen147
+\Gm@layoutvoffset=\dimen148
+\Gm@dimlist=\toks18
+)
+(/usr/share/texlive/texmf-dist/tex/latex/amsmath/amsmath.sty
+Package: amsmath 2023/05/13 v2.17o AMS math features
+\@mathmargin=\skip50
+
+For additional information on amsmath, use the `?' option.
+(/usr/share/texlive/texmf-dist/tex/latex/amsmath/amstext.sty
+Package: amstext 2021/08/26 v2.01 AMS text
+
+(/usr/share/texlive/texmf-dist/tex/latex/amsmath/amsgen.sty
+File: amsgen.sty 1999/11/30 v2.0 generic functions
+\@emptytoks=\toks19
+\ex@=\dimen149
+))
+(/usr/share/texlive/texmf-dist/tex/latex/amsmath/amsbsy.sty
+Package: amsbsy 1999/11/29 v1.2d Bold Symbols
+\pmbraise@=\dimen150
+)
+(/usr/share/texlive/texmf-dist/tex/latex/amsmath/amsopn.sty
+Package: amsopn 2022/04/08 v2.04 operator names
+)
+\inf@bad=\count198
+LaTeX Info: Redefining \frac on input line 234.
+\uproot@=\count199
+\leftroot@=\count266
+LaTeX Info: Redefining \overline on input line 399.
+LaTeX Info: Redefining \colon on input line 410.
+\classnum@=\count267
+\DOTSCASE@=\count268
+LaTeX Info: Redefining \ldots on input line 496.
+LaTeX Info: Redefining \dots on input line 499.
+LaTeX Info: Redefining \cdots on input line 620.
+\Mathstrutbox@=\box51
+\strutbox@=\box52
+LaTeX Info: Redefining \big on input line 722.
+LaTeX Info: Redefining \Big on input line 723.
+LaTeX Info: Redefining \bigg on input line 724.
+LaTeX Info: Redefining \Bigg on input line 725.
+\big@size=\dimen151
+LaTeX Font Info:    Redeclaring font encoding OML on input line 743.
+LaTeX Font Info:    Redeclaring font encoding OMS on input line 744.
+\macc@depth=\count269
+LaTeX Info: Redefining \bmod on input line 905.
+LaTeX Info: Redefining \pmod on input line 910.
+LaTeX Info: Redefining \smash on input line 940.
+LaTeX Info: Redefining \relbar on input line 970.
+LaTeX Info: Redefining \Relbar on input line 971.
+\c@MaxMatrixCols=\count270
+\dotsspace@=\muskip16
+\c@parentequation=\count271
+\dspbrk@lvl=\count272
+\tag@help=\toks20
+\row@=\count273
+\column@=\count274
+\maxfields@=\count275
+\andhelp@=\toks21
+\eqnshift@=\dimen152
+\alignsep@=\dimen153
+\tagshift@=\dimen154
+\tagwidth@=\dimen155
+\totwidth@=\dimen156
+\lineht@=\dimen157
+\@envbody=\toks22
+\multlinegap=\skip51
+\multlinetaggap=\skip52
+\mathdisplay@stack=\toks23
+LaTeX Info: Redefining \[ on input line 2953.
+LaTeX Info: Redefining \] on input line 2954.
+)
+(/usr/share/texlive/texmf-dist/tex/latex/amsfonts/amssymb.sty
+Package: amssymb 2013/01/14 v3.01 AMS font symbols
+
+(/usr/share/texlive/texmf-dist/tex/latex/amsfonts/amsfonts.sty
+Package: amsfonts 2013/01/14 v3.01 Basic AMSFonts support
+\symAMSa=\mathgroup4
+\symAMSb=\mathgroup5
+LaTeX Font Info:    Redeclaring math symbol \hbar on input line 98.
+LaTeX Font Info:    Overwriting math alphabet `\mathfrak' in version `bold'
+(Font)                  U/euf/m/n --> U/euf/b/n on input line 106.
+))
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/color.sty
+Package: color 2022/01/06 v1.3d Standard LaTeX Color (DPC)
+
+(/usr/share/texlive/texmf-dist/tex/latex/graphics-cfg/color.cfg
+File: color.cfg 2016/01/02 v1.6 sample color configuration
+)
+Package color Info: Driver file: pdftex.def on input line 149.
+
+(/usr/share/texlive/texmf-dist/tex/latex/graphics-def/pdftex.def
+File: pdftex.def 2022/09/22 v1.2b Graphics/color driver for pdftex
+)
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/mathcolor.ltx))
+(/usr/share/texlive/texmf-dist/tex/latex/fancyhdr/fancyhdr.sty
+Package: fancyhdr 2022/11/09 v4.1 Extensive control of page headers and footers
+
+\f@nch@headwidth=\skip53
+\f@nch@O@elh=\skip54
+\f@nch@O@erh=\skip55
+\f@nch@O@olh=\skip56
+\f@nch@O@orh=\skip57
+\f@nch@O@elf=\skip58
+\f@nch@O@erf=\skip59
+\f@nch@O@olf=\skip60
+\f@nch@O@orf=\skip61
+)
+(/usr/share/texlive/texmf-dist/tex/latex/tools/array.sty
+Package: array 2023/10/16 v2.5g Tabular extension package (FMi)
+\col@sep=\dimen158
+\ar@mcellbox=\box53
+\extrarowheight=\dimen159
+\NC@list=\toks24
+\extratabsurround=\skip62
+\backup@length=\skip63
+\ar@cellbox=\box54
+)
+(/usr/share/texlive/texmf-dist/tex/latex/url/url.sty
+\Urlmuskip=\muskip17
+Package: url 2013/09/16  ver 3.4  Verb mode for urls, etc.
+)
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/graphicx.sty
+Package: graphicx 2021/09/16 v1.2d Enhanced LaTeX Graphics (DPC,SPQR)
+
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/graphics.sty
+Package: graphics 2022/03/10 v1.4e Standard LaTeX Graphics (DPC,SPQR)
+
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/trig.sty
+Package: trig 2021/08/11 v1.11 sin cos tan (DPC)
+)
+(/usr/share/texlive/texmf-dist/tex/latex/graphics-cfg/graphics.cfg
+File: graphics.cfg 2016/06/04 v1.11 sample graphics configuration
+)
+Package graphics Info: Driver file: pdftex.def on input line 107.
+)
+\Gin@req@height=\dimen160
+\Gin@req@width=\dimen161
+)
+(/usr/share/texlive/texmf-dist/tex/latex/tools/multicol.sty
+Package: multicol 2023/03/30 v1.9f multicolumn formatting (FMi)
+\c@tracingmulticols=\count276
+\mult@box=\box55
+\multicol@leftmargin=\dimen162
+\c@unbalance=\count277
+\c@collectmore=\count278
+\doublecol@number=\count279
+\multicoltolerance=\count280
+\multicolpretolerance=\count281
+\full@width=\dimen163
+\page@free=\dimen164
+\premulticols=\dimen165
+\postmulticols=\dimen166
+\multicolsep=\skip64
+\multicolbaselineskip=\skip65
+\partial@page=\box56
+\last@line=\box57
+\mc@boxedresult=\box58
+\maxbalancingoverflow=\dimen167
+\mult@rightbox=\box59
+\mult@grightbox=\box60
+\mult@firstbox=\box61
+\mult@gfirstbox=\box62
+\@tempa=\box63
+\@tempa=\box64
+\@tempa=\box65
+\@tempa=\box66
+\@tempa=\box67
+\@tempa=\box68
+\@tempa=\box69
+\@tempa=\box70
+\@tempa=\box71
+\@tempa=\box72
+\@tempa=\box73
+\@tempa=\box74
+\@tempa=\box75
+\@tempa=\box76
+\@tempa=\box77
+\@tempa=\box78
+\@tempa=\box79
+\@tempa=\box80
+\@tempa=\box81
+\@tempa=\box82
+\@tempa=\box83
+\@tempa=\box84
+\@tempa=\box85
+\@tempa=\box86
+\@tempa=\box87
+\@tempa=\box88
+\@tempa=\box89
+\@tempa=\box90
+\@tempa=\box91
+\@tempa=\box92
+\@tempa=\box93
+\@tempa=\box94
+\@tempa=\box95
+\@tempa=\box96
+\@tempa=\box97
+\@tempa=\box98
+\c@minrows=\count282
+\c@columnbadness=\count283
+\c@finalcolumnbadness=\count284
+\last@try=\dimen168
+\multicolovershoot=\dimen169
+\multicolundershoot=\dimen170
+\mult@nat@firstbox=\box99
+\colbreak@box=\box100
+\mc@col@check@num=\count285
+)
+(/usr/share/texlive/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def
+File: l3backend-pdftex.def 2024-01-04 L3 backend support: PDF output (pdfTeX)
+\l__color_backend_stack_int=\count286
+\l__pdf_internal_box=\box101
+)
+(./AMR_Comprehensive_Technical_Report.aux)
+\openout1 = `AMR_Comprehensive_Technical_Report.aux'.
+
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 30.
+LaTeX Font Info:    ... okay on input line 30.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 30.
+LaTeX Font Info:    ... okay on input line 30.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 30.
+LaTeX Font Info:    ... okay on input line 30.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 30.
+LaTeX Font Info:    ... okay on input line 30.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 30.
+LaTeX Font Info:    ... okay on input line 30.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 30.
+LaTeX Font Info:    ... okay on input line 30.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 30.
+LaTeX Font Info:    ... okay on input line 30.
+
+*geometry* driver: auto-detecting
+*geometry* detected driver: pdftex
+*geometry* verbose mode - [ preamble ] result:
+* driver: pdftex
+* paper: a4paper
+* layout: <same size as paper>
+* layoutoffset:(h,v)=(0.0pt,0.0pt)
+* modes: 
+* h-part:(L,W,R)=(54.2025pt, 489.10287pt, 54.2025pt)
+* v-part:(T,H,B)=(61.42993pt, 722.18698pt, 61.42993pt)
+* \paperwidth=597.50787pt
+* \paperheight=845.04684pt
+* \textwidth=489.10287pt
+* \textheight=722.18698pt
+* \oddsidemargin=-18.06749pt
+* \evensidemargin=-18.06749pt
+* \topmargin=-47.84006pt
+* \headheight=12.0pt
+* \headsep=25.0pt
+* \topskip=10.0pt
+* \footskip=30.0pt
+* \marginparwidth=57.0pt
+* \marginparsep=11.0pt
+* \columnsep=10.0pt
+* \skip\footins=9.0pt plus 4.0pt minus 2.0pt
+* \hoffset=0.0pt
+* \voffset=0.0pt
+* \mag=1000
+* \@twocolumnfalse
+* \@twosidefalse
+* \@mparswitchfalse
+* \@reversemarginfalse
+* (1in=72.27pt=25.4mm, 1cm=28.453pt)
+
+(/usr/share/texlive/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
+[Loading MPS to PDF converter (version 2006.09.02).]
+\scratchcounter=\count287
+\scratchdimen=\dimen171
+\scratchbox=\box102
+\nofMPsegments=\count288
+\nofMParguments=\count289
+\everyMPshowfont=\toks25
+\MPscratchCnt=\count290
+\MPscratchDim=\dimen172
+\MPnumerator=\count291
+\makeMPintoPDFobject=\count292
+\everyMPtoPDFconversion=\toks26
+) (/usr/share/texlive/texmf-dist/tex/latex/epstopdf-pkg/epstopdf-base.sty
+Package: epstopdf-base 2020-01-24 v2.11 Base part for package epstopdf
+Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 4
+85.
+
+(/usr/share/texlive/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
+File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Liv
+e
+))
+LaTeX Font Info:    Trying to load font information for U+msa on input line 42.
+
+
+(/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd
+File: umsa.fd 2013/01/14 v3.01 AMS symbols A
+)
+LaTeX Font Info:    Trying to load font information for U+msb on input line 42.
+
+
+(/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
+File: umsb.fd 2013/01/14 v3.01 AMS symbols B
+)
+(./AMR_Comprehensive_Technical_Report.toc [1{/var/lib/texmf/fonts/map/pdftex/up
+dmap/pdftex.map}
+
+]
+! Missing $ inserted.
+<inserted text> 
+                $
+l.40 ... Bridge (\texttt {bridge_server.py})}{9}{}
+                                                  %
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+! Extra }, or forgotten $.
+<recently read> \egroup 
+                        
+l.40 ... Bridge (\texttt {bridge_server.py})}{9}{}
+                                                  %
+I've deleted a group-closing symbol because it seems to be
+spurious, as in `$x}$'. But perhaps the } is legitimate and
+you forgot something else, as in `\hbox{$x}'. In such cases
+the way to recover is to insert both the forgotten and the
+deleted material, e.g., by typing `I$}'.
+
+! Extra }, or forgotten $.
+\@dottedtocline ...\nobreak \hskip -\leftskip {#4}
+                                                  \nobreak \leaders \hbox {$...
+l.40 ... Bridge (\texttt {bridge_server.py})}{9}{}
+                                                  %
+I've deleted a group-closing symbol because it seems to be
+spurious, as in `$x}$'. But perhaps the } is legitimate and
+you forgot something else, as in `\hbox{$x}'. In such cases
+the way to recover is to insert both the forgotten and the
+deleted material, e.g., by typing `I$}'.
+
+! Missing $ inserted.
+<inserted text> 
+                $
+l.40 ... Bridge (\texttt {bridge_server.py})}{9}{}
+                                                  %
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+)
+\tf@toc=\write3
+\openout3 = `AMR_Comprehensive_Technical_Report.toc'.
+
+
+! Missing } inserted.
+<inserted text> 
+                }
+l.57 \tableofcontents
+                     
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+! Missing } inserted.
+<inserted text> 
+                }
+l.57 \tableofcontents
+                     
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+LaTeX Font Info:    Font shape `OT1/cmtt/bx/n' in size <10> not available
+(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 73.
+
+Overfull \hbox (8.8538pt too wide) in paragraph at lines 74--75
+[]\OT1/cmr/bx/n/10 Operator Bridge & Full-Stack HMI Layer: \OT1/cmr/m/n/10 An a
+syn-chronous FastAPI bridge server (\OT1/cmtt/m/n/10 bridge[]server.py\OT1/cmr/
+m/n/10 )
+ []
+
+
+Overfull \hbox (7.07393pt too wide) detected at line 81
+[][] [] [] [] [] [] \OMS/cmsy/m/n/10 f[]\OML/cmm/m/it/10 ; []; []; []; []\OMS/c
+msy/m/n/10 g
+ []
+
+[2] [3]
+Overfull \hbox (30.0676pt too wide) in paragraph at lines 166--167
+\OT1/cmr/m/n/10 The map-ping pipeline uti-lizes \OT1/cmtt/m/n/10 slam[]toolbox 
+\OT1/cmr/m/n/10 in on-line asyn-chronous map-ping mode, con-fig-ured via \OT1/c
+mtt/m/n/10 mapper[]params.yaml\OT1/cmr/m/n/10 . 
+ []
+
+
+Overfull \hbox (0.70909pt too wide) in paragraph at lines 176--177
+[]\OT1/cmr/m/n/10 High-density mo-tion trig-gers: \OT1/cmtt/m/n/10 minimum[]tra
+vel[]distance: 0.05 m \OT1/cmr/m/n/10 and \OT1/cmtt/m/n/10 minimum[]travel[]hea
+ding: 0.05
+ []
+
+[4] [5]
+Overfull \hbox (0.68999pt too wide) in paragraph at lines 252--253
+[]\OT1/cmr/bx/n/10 Local Con-troller: \OT1/cmr/m/n/10 Nav2 MPPI run-ning at $20
+[]$ ($\OML/cmm/m/it/10 v[] \OT1/cmr/m/n/10 = 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10
+ 65[]\OML/cmm/m/it/10 ; v[] \OT1/cmr/m/n/10 = \OMS/cmsy/m/n/10 ^^@\OT1/cmr/m/n/
+10 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 15[]\OML/cmm/m/it/10 ; ![] \OT1/cmr/m/n/1
+0 = 1\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 40[]$).
+ []
+
+! Missing $ inserted.
+<inserted text> 
+                $
+l.308 ...n pipeline in \texttt{graph_extractor.py}
+                                                   converts static occupancy...
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+! Extra }, or forgotten $.
+<recently read> \egroup 
+                        
+l.308 ...n pipeline in \texttt{graph_extractor.py}
+                                                   converts static occupancy...
+I've deleted a group-closing symbol because it seems to be
+spurious, as in `$x}$'. But perhaps the } is legitimate and
+you forgot something else, as in `\hbox{$x}'. In such cases
+the way to recover is to insert both the forgotten and the
+deleted material, e.g., by typing `I$}'.
+
+! Missing $ inserted.
+<inserted text> 
+                $
+l.309 
+      
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+[6]
+Overfull \hbox (5.31302pt too wide) in paragraph at lines 325--326
+\OT1/cmtt/m/n/10 For all candidate pairs $\OT1/cmr/m/n/10 (\OML/cmm/m/it/10 u; 
+v\OT1/cmr/m/n/10 )$ \OT1/cmtt/m/n/10 within search radius $\OML/cmm/m/it/10 R[]
+ \OT1/cmr/m/n/10 = 2\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 5[]$\OT1/cmtt/m/n/10 , th
+e straight connecting chord
+ []
+
+
+Overfull \hbox (14.64279pt too wide) in paragraph at lines 332--333
+\OT1/cmtt/m/n/10 Nodes with degree $\OT1/cmr/m/n/10 0$ \OT1/cmtt/m/n/10 are del
+eted. Breadth-First Search (BFS) identifies all disjoint sub-graphs,
+ []
+
+
+Overfull \hbox (11.75478pt too wide) in paragraph at lines 332--333
+\OT1/cmtt/m/n/10 retaining strictly the largest connected component $[] [][] \O
+MS/cmsy/m/n/10 j\OML/cmm/m/it/10 C[]\OMS/cmsy/m/n/10 j$ \OT1/cmtt/m/n/10 (produ
+cing $\OT1/cmr/m/n/10 756$ \OT1/cmtt/m/n/10 verified nodes for
+ []
+
+
+Overfull \hbox (4.66371pt too wide) in paragraph at lines 339--340
+\OT1/cmtt/m/n/10 Graph node coordinates are indexed into a spatial $\OML/cmm/m/
+it/10 k$\OT1/cmtt/m/n/10 -d tree (scipy.spatial.KDTree). Continuous
+ []
+
+
+Overfull \hbox (36.81757pt too wide) in paragraph at lines 339--340
+\OT1/cmtt/m/n/10 coordinates $\OT1/cmr/m/n/10 (\OML/cmm/m/it/10 x; y\OT1/cmr/m/
+n/10 )$ \OT1/cmtt/m/n/10 snapped to nearest roadmap nodes execute in $\OML/cmm/
+m/it/10 O\OT1/cmr/m/n/10 ([] \OML/cmm/m/it/10 N\OT1/cmr/m/n/10 )$ \OT1/cmtt/m/n
+/10 time ($\OML/cmm/m/it/10 < \OT1/cmr/m/n/10 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/1
+0 05[]$ \OT1/cmtt/m/n/10 for $\OT1/cmr/m/n/10 756$ \OT1/cmtt/m/n/10 nodes). 
+ []
+
+
+Overfull \hbox (21.90028pt too wide) in paragraph at lines 349--350
+\OT1/cmtt/m/n/10 Topological edges are interpolated into fine waypoints spaced 
+at $\OT1/cmr/m/n/10 ^^A\OML/cmm/m/it/10 s[] \OT1/cmr/m/n/10 = 0\OML/cmm/m/it/10
+ :\OT1/cmr/m/n/10 30[]$\OT1/cmtt/m/n/10 . Tangent headings
+ []
+
+
+Overfull \hbox (14.89273pt too wide) in paragraph at lines 352--354
+\OT1/cmtt/m/n/10 At the final goal node, the heading smoothly blends into the u
+ser-specified terminal orientation
+ []
+
+
+Overfull \hbox (8.72879pt too wide) in paragraph at lines 359--360
+\OT1/cmtt/m/n/10 The local planner executes at $\OT1/cmr/m/n/10 10[]$ \OT1/cmtt
+/m/n/10 ($\OT1/cmr/m/n/10 ^^A\OML/cmm/m/it/10 t \OT1/cmr/m/n/10 = 0\OML/cmm/m/i
+t/10 :\OT1/cmr/m/n/10 10[]$\OT1/cmtt/m/n/10 ) in NumPy vectorization inside rou
+te[]runner.py. 
+ []
+
+
+Overfull \hbox (12.72293pt too wide) in paragraph at lines 362--363
+\OT1/cmtt/m/n/10 At each cycle, $\OML/cmm/m/it/10 K \OT1/cmr/m/n/10 = 80$ \OT1/
+cmtt/m/n/10 candidate velocity sequences are sampled over a prediction horizon 
+of $\OML/cmm/m/it/10 T \OT1/cmr/m/n/10 =
+ []
+
+[7]
+LaTeX Font Info:    Font shape `OT1/cmtt/bx/n' in size <7> not available
+(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 386.
+LaTeX Font Info:    Font shape `OT1/cmtt/bx/n' in size <5> not available
+(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 386.
+
+Overfull \hbox (6.22017pt too wide) in paragraph at lines 388--389
+[]\OT1/cmtt/m/n/10 Cross-Track Cost: $\OML/cmm/m/it/10 J[] \OT1/cmr/m/n/10 = \O
+ML/cmm/m/it/10 w[] [][] d[]\OT1/cmr/m/n/10 (\OT1/cmr/bx/n/10 p[]\OML/cmm/m/it/1
+0 ; []\OT1/cmr/m/n/10 )$\OT1/cmtt/m/n/10 , with $\OML/cmm/m/it/10 w[] \OT1/cmr/
+m/n/10 = 6\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 0$ \OT1/cmtt/m/n/10 (nominal) and $
+\OT1/cmr/m/n/10 2\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 0$ \OT1/cmtt/m/n/10 (active
+ []
+
+
+Overfull \hbox (10.57553pt too wide) in paragraph at lines 410--413
+\OT1/cmtt/m/n/10 Actuator acceleration limits: $\OML/cmm/m/it/10 a[] \OT1/cmr/m
+/n/10 = 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 60[][]\OML/cmm/m/it/10 ; a[] \OT1/cm
+r/m/n/10 = 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 90[][]\OML/cmm/m/it/10 ; [] \OT1
+/cmr/m/n/10 = 1\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 60[][]$\OT1/cmtt/m/n/10 . Expo
+nential
+ []
+
+[8]
+Overfull \hbox (26.17087pt too wide) in paragraph at lines 424--425
+[]\OT1/cmtt/m/n/10 Static Map Dilation Masking: Clusters within $\OT1/cmr/m/n/1
+0 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 22[]$ \OT1/cmtt/m/n/10 of static walls are
+ stripped, eliminating
+ []
+
+
+Overfull \hbox (8.1987pt too wide) in paragraph at lines 425--426
+[]\OT1/cmtt/m/n/10 Multi-Scan Age Filter: Obstacles require detection in $\OMS/
+cmsy/m/n/10 ^^U \OT1/cmr/m/n/10 2$ \OT1/cmtt/m/n/10 consecutive scans (age >= 2
+) to
+ []
+
+
+Overfull \hbox (9.31041pt too wide) in paragraph at lines 426--427
+[]\OT1/cmtt/m/n/10 Velocity Bounds Gating: Velocity estimated by finite differe
+nce $\OT1/cmr/bx/n/10 v \OT1/cmr/m/n/10 = (\OT1/cmr/bx/n/10 p[] \OMS/cmsy/m/n/1
+0 ^^@ \OT1/cmr/bx/n/10 p[]\OT1/cmr/m/n/10 )\OML/cmm/m/it/10 =\OT1/cmr/m/n/10 ^^
+A\OML/cmm/m/it/10 t$\OT1/cmtt/m/n/10 . Speeds
+ []
+
+
+Overfull \hbox (24.75627pt too wide) in paragraph at lines 438--440
+\OT1/cmtt/m/n/10 Where $\OML/cmm/m/it/10 b[] \OT1/cmr/m/n/10 = [](0\OML/cmm/m/i
+t/10 :\OT1/cmr/m/n/10 35 \OMS/cmsy/m/n/10 ^^A []\OML/cmm/m/it/10 ; \OT1/cmr/m/n
+/10 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 25\OML/cmm/m/it/10 ; \OT1/cmr/m/n/10 0\O
+ML/cmm/m/it/10 :\OT1/cmr/m/n/10 80)[]$\OT1/cmtt/m/n/10 , held locked for $\OT1/
+cmr/m/n/10 8[]$ \OT1/cmtt/m/n/10 ($\OT1/cmr/m/n/10 0\OML/cmm/m/it/10 :\OT1/cmr/
+m/n/10 8[]$\OT1/cmtt/m/n/10 ) to prevent direction
+ []
+
+
+Overfull \hbox (36.72638pt too wide) in paragraph at lines 440--441
+[]\OT1/cmtt/m/n/10 Tier 2 | Constrained Aisle Yield & Wait: In aisles with clea
+rance $\OML/cmm/m/it/10 < \OT1/cmr/m/n/10 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 35
+[]$\OT1/cmtt/m/n/10 , the AMR decelerates
+ []
+
+
+Overfull \hbox (44.2659pt too wide) in paragraph at lines 440--441
+\OT1/cmtt/m/n/10 to $\OML/cmm/m/it/10 v \OT1/cmr/m/n/10 = 0\OML/cmm/m/it/10 :\O
+T1/cmr/m/n/10 0[]$\OT1/cmtt/m/n/10 , holding heading. Timeout: $\OT1/cmr/m/n/10
+ 4\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 0[]$ \OT1/cmtt/m/n/10 for moving obstacles,
+ $\OT1/cmr/m/n/10 1\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 0[]$ \OT1/cmtt/m/n/10 for 
+static blockages. 
+ []
+
+
+Overfull \hbox (38.4488pt too wide) in paragraph at lines 441--442
+[]\OT1/cmtt/m/n/10 Tier 3 | Dynamic Dijkstra Re-Routing: If blocked past timeou
+t, the edge is penalized ($\OT1/cmr/m/n/10 +10000\OML/cmm/m/it/10 :\OT1/cmr/m/n
+/10 0$\OT1/cmtt/m/n/10 )
+ []
+
+
+Overfull \hbox (10.67094pt too wide) in paragraph at lines 441--442
+\OT1/cmtt/m/n/10 and Dijkstra re-routes around adjacent aisles. Blocked edges r
+estore after $\OT1/cmr/m/n/10 8\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 0[]$ \OT1/cmtt
+/m/n/10 cooldown. 
+ []
+
+
+Overfull \hbox (31.22649pt too wide) in paragraph at lines 442--443
+[]\OT1/cmtt/m/n/10 Active Reverse Escape & Stuck Detection: If stuck for $\OMS/
+cmsy/m/n/10 ^^U \OT1/cmr/m/n/10 20[]$ \OT1/cmtt/m/n/10 ($\OT1/cmr/m/n/10 2\OML/
+cmm/m/it/10 :\OT1/cmr/m/n/10 0[]$\OT1/cmtt/m/n/10 ) or obstacle proximity
+ []
+
+
+Overfull \hbox (8.8384pt too wide) in paragraph at lines 442--443
+\OML/cmm/m/it/10 < \OT1/cmr/m/n/10 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 20[]$\OT1
+/cmtt/m/n/10 , the AMR reverses at $\OMS/cmsy/m/n/10 ^^@\OT1/cmr/m/n/10 0\OML/c
+mm/m/it/10 :\OT1/cmr/m/n/10 15[]$ \OT1/cmtt/m/n/10 for up to $\OT1/cmr/m/n/10 2
+\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 2[]$ \OT1/cmtt/m/n/10 to restore $\OT1/cmr/m/
+n/10 0\OML/cmm/m/it/10 :\OT1/cmr/m/n/10 50[]$ \OT1/cmtt/m/n/10 standoff, follow
+ed
+ []
+
+! Missing $ inserted.
+<inserted text> 
+                $
+l.449 ... is implemented in \texttt{bt_manager.py}
+                                                   via \texttt{py\_trees}:
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+! Extra }, or forgotten $.
+<recently read> \egroup 
+                        
+l.449 ... is implemented in \texttt{bt_manager.py}
+                                                   via \texttt{py\_trees}:
+I've deleted a group-closing symbol because it seems to be
+spurious, as in `$x}$'. But perhaps the } is legitimate and
+you forgot something else, as in `\hbox{$x}'. In such cases
+the way to recover is to insert both the forgotten and the
+deleted material, e.g., by typing `I$}'.
+
+! Missing $ inserted.
+<inserted text> 
+                $
+l.450 \begin{itemize}
+                     
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+! Missing \endgroup inserted.
+<inserted text> 
+                \endgroup 
+l.450 \begin{itemize}
+                     
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+
+! LaTeX Error: Lonely \item--perhaps a missing list environment.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.451     \item \textbf
+                       {Condition Leaves:} \texttt{CheckLocalization} (verif...
+
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Underfull \hbox (badness 10000) detected at line 451
+[][]
+ []
+
+
+Overfull \hbox (54.17262pt too wide) in paragraph at lines 451--452
+[]\OT1/cmtt/m/n/10 Condition Leaves: CheckLocalization (verifies map -> base[]l
+ink TF availability) and CheckGoalQueue
+ []
+
+
+! LaTeX Error: Lonely \item--perhaps a missing list environment.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.452     \item \textbf
+                       {Action Leaves:} \texttt{PlanTopologicalPath} (dispat...
+
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Underfull \hbox (badness 10000) detected at line 452
+[][]
+ []
+
+
+Overfull \hbox (87.14235pt too wide) in paragraph at lines 452--453
+[]\OT1/cmtt/m/n/10 Action Leaves: PlanTopologicalPath (dispatches coordinates t
+o roadmap planner) and ExecuteMPPINavigation
+ []
+
+
+! LaTeX Error: Lonely \item--perhaps a missing list environment.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.453     \item \textbf
+                       {Recovery Leaves:} \texttt{BackUpRecovery} ($0.30\tex...
+
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+Underfull \hbox (badness 10000) detected at line 453
+[][]
+ []
+
+
+Overfull \hbox (4.01845pt too wide) in paragraph at lines 453--454
+[]\OT1/cmtt/m/n/10 Recovery Leaves: BackUpRecovery ($\OT1/cmr/m/n/10 0\OML/cmm/
+m/it/10 :\OT1/cmr/m/n/10 30[]$ \OT1/cmtt/m/n/10 reverse motion) and SpinRecover
+y ($\OT1/cmr/m/n/10 60[]$ \OT1/cmtt/m/n/10 rotation to
+ []
+
+
+! LaTeX Error: \begin{document} ended by \end{itemize}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.454 \end{itemize}
+                   
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+! Missing } inserted.
+<inserted text> 
+                }
+l.454 \end{itemize}
+                   
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+! Missing } inserted.
+<inserted text> 
+                }
+l.454 \end{itemize}
+                   
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+! Extra \endgroup.
+<recently read> \endgroup 
+                          
+l.454 \end{itemize}
+                   
+Things are pretty mixed up, but I think the worst is over.
+
+LaTeX Font Info:    Font shape `OT1/cmtt/bx/n' in size <12> not available
+(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 460.
+! Missing $ inserted.
+<inserted text> 
+                $
+l.460 ...ntrol Bridge (\texttt{bridge_server.py})}
+                                                  
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+! Extra }, or forgotten $.
+<recently read> \egroup 
+                        
+l.460 ...ntrol Bridge (\texttt{bridge_server.py})}
+                                                  
+I've deleted a group-closing symbol because it seems to be
+spurious, as in `$x}$'. But perhaps the } is legitimate and
+you forgot something else, as in `\hbox{$x}'. In such cases
+the way to recover is to insert both the forgotten and the
+deleted material, e.g., by typing `I$}'.
+
+! Missing $ inserted.
+<inserted text> 
+                $
+l.460 ...ntrol Bridge (\texttt{bridge_server.py})}
+                                                  
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+! Missing } inserted.
+<inserted text> 
+                }
+l.460 ...ntrol Bridge (\texttt{bridge_server.py})}
+                                                  
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+
+Overfull \hbox (35.87715pt too wide) in paragraph at lines 462--463
+[]\OT1/cmr/m/n/10 Dual-threaded ar-chi-tec-ture: Thread 1 runs Uvi-corn on Port
+ $8000$; Thread 2 runs a ROS 2 \OT1/cmtt/m/n/10 SingleThreadedExecutor\OT1/cmr/
+m/n/10 . 
+ []
+
+[9]
+Underfull \hbox (badness 3907) in paragraph at lines 561--561
+[]|\OT1/cmr/bx/n/8 Pathological Be-hav-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 563--563
+[]|\OT1/cmr/m/n/8 Spin-in-Place Freezes
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 563--563
+[]|$[][]\OT1/cmr/m/n/8 (^^A\OML/cmm/m/it/8 ^^R\OT1/cmr/m/n/8 )$ cou-pling col-l
+apsed
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 563--563
+[]|\OT1/cmr/m/n/8 Hard min-i-mum ve-loc-ity floor
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 563--564
+[]|\OT1/cmtt/m/n/8 [BRAIN: STUCK]\OT1/cmr/m/n/8 ,
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 565--565
+[]|\OT1/cmr/m/n/8 Rapid L/R Swerve
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 565--565
+[]|\OT1/cmr/m/n/8 Symmetric cost land-scape
+ []
+
+
+Underfull \hbox (badness 8132) in paragraph at lines 565--565
+\OT1/cmr/m/n/8 flipped an-gu-lar mean ev-ery
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 567--568
+[]|\OT1/cmtt/m/n/8 [MAP[]MASK]\OT1/cmr/m/n/8 , \OT1/cmtt/m/n/8 [BRAIN:
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 569--569
+[]|\OT1/cmr/m/n/8 Premature Path De-
+ []
+
+
+Underfull \hbox (badness 1248) in paragraph at lines 569--569
+[]|\OT1/cmr/m/n/8 Distance-gated trig-ger: $\OML/cmm/m/it/8 w[]$ \OT1/cmr/m/n/8
+ only
+ []
+
+
+Underfull \hbox (badness 1005) in paragraph at lines 571--571
+[]|\OT1/cmr/m/n/8 Static wall re-pul-sion ($0\OML/cmm/m/it/8 :\OT1/cmr/m/n/8 45
+[]$)
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 571--571
+[]|\OT1/cmr/m/n/8 Decreased re-pul-sion dis-tance to
+ []
+
+[10] [11] (./AMR_Comprehensive_Technical_Report.aux)
+ ***********
+LaTeX2e <2023-11-01> patch level 1
+L3 programming layer <2024-01-22>
+ ***********
+ ) 
+Here is how much of TeX's memory you used:
+ 3721 strings out of 476182
+ 54542 string characters out of 5795595
+ 1966975 words of memory out of 5000000
+ 25666 multiletter control sequences out of 15000+600000
+ 573296 words of font info for 94 fonts, out of 8000000 for 9000
+ 14 hyphenation exceptions out of 8191
+ 57i,15n,65p,1756b,432s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ </home/rahul/.texlive2023/texmf-var/fonts/pk/ljfour/jknappen/ec/tcrm1000.600
+pk></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb></u
+sr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx12.pfb></usr/sha
+re/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx7.pfb></usr/share/texl
+ive/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx8.pfb></usr/share/texlive/tex
+mf-dist/fonts/type1/public/amsfonts/cm/cmbx9.pfb></usr/share/texlive/texmf-dist
+/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/share/texlive/texmf-dist/fonts
+/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/texlive/texmf-dist/fonts/type1
+/public/amsfonts/cm/cmmi12.pfb></usr/share/texlive/texmf-dist/fonts/type1/publi
+c/amsfonts/cm/cmmi5.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfo
+nts/cm/cmmi6.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/
+cmmi7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi8.p
+fb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi9.pfb></us
+r/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmib10.pfb></usr/sha
+re/texlive/texmf-dist/fonts/type1/public/amsfonts/cmextra/cmmib7.pfb></usr/shar
+e/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/share/texli
+ve/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb></usr/share/texlive/texm
+f-dist/fonts/type1/public/amsfonts/cm/cmr5.pfb></usr/share/texlive/texmf-dist/f
+onts/type1/public/amsfonts/cm/cmr6.pfb></usr/share/texlive/texmf-dist/fonts/typ
+e1/public/amsfonts/cm/cmr7.pfb></usr/share/texlive/texmf-dist/fonts/type1/publi
+c/amsfonts/cm/cmr8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfon
+ts/cm/cmr9.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cm
+sy10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pf
+b></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr
+/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/share/
+texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/share/texlive
+/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/share/texlive/texmf-
+dist/fonts/type1/public/amsfonts/cm/cmti8.pfb></usr/share/texlive/texmf-dist/fo
+nts/type1/public/amsfonts/cm/cmtt10.pfb></usr/share/texlive/texmf-dist/fonts/ty
+pe1/public/amsfonts/cm/cmtt12.pfb></usr/share/texlive/texmf-dist/fonts/type1/pu
+blic/amsfonts/cm/cmtt8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/am
+sfonts/symbols/msbm10.pfb>
+Output written on AMR_Comprehensive_Technical_Report.pdf (11 pages, 453631 byte
+s).
+PDF statistics:
+ 212 PDF objects out of 1000 (max. 8388607)
+ 129 compressed objects within 2 object streams
+ 0 named destinations out of 1000 (max. 500000)
+ 1 words of extra memory for PDF output out of 10000 (max. 10000000)
+

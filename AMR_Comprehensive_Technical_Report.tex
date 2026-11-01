@@ -1,0 +1,581 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[a4paper, top=0.85in, bottom=0.85in, left=0.75in, right=0.75in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{color}
+\usepackage{fancyhdr}
+\usepackage{array}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{multicol}
+
+% Palette definition
+\definecolor{primary}{rgb}{0.08, 0.28, 0.52}
+\definecolor{secondary}{rgb}{0.15, 0.40, 0.65}
+\definecolor{darkgray}{rgb}{0.25, 0.25, 0.25}
+\definecolor{lightgray}{rgb}{0.94, 0.94, 0.94}
+\definecolor{codebg}{rgb}{0.96, 0.96, 0.96}
+\definecolor{accent}{rgb}{0.80, 0.15, 0.15}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\textcolor{darkgray}{\footnotesize \textbf{Autonomous Mobile Robot (AMR)} $|$ Architectural \& Operational Report}}
+\rhead{\textcolor{darkgray}{\footnotesize Comprehensive Technical Report 2026}}
+\cfoot{\textcolor{darkgray}{\footnotesize Page \thepage}}
+
+\renewcommand{\headrulewidth}{0.5pt}
+\renewcommand{\footrulewidth}{0.5pt}
+
+\newcommand{\sectionbreak}{\vspace{0.35cm}}
+
+\begin{document}
+
+% =========================================================================
+% Title Banner
+% =========================================================================
+\begin{center}
+    {\Huge \textcolor{primary}{\textbf{Autonomous Mobile Robot (AMR)}}}\\[0.20cm]
+    {\LARGE \textcolor{secondary}{\textbf{End-to-End Architectural Specification, Algorithmic Formulations,}}}\\[0.10cm]
+    {\LARGE \textcolor{secondary}{\textbf{and Operational Lifecycle Report}}}\\[0.30cm]
+    {\large \textbf{Exhaustive Systems Breakdown: Mapping, Exploration, Dual-Stage Localization,}}\\[0.10cm]
+    {\large \textbf{Topological Roadmap Routing, Vectorized MPPI Control, and 3-Tier Dynamic Evasion}}\\[0.20cm]
+    {\normalsize \textcolor{darkgray}{Target Audience: Autonomous Systems AI, Robotics Verification, and Systems Engineering}}\\[0.15cm]
+    {\footnotesize \textcolor{darkgray}{Platform: ROS 2 Jazzy Jalisco $|$ Gazebo Harmonic 8.x $|$ Python 3.12 / C++17 $|$ Ubuntu 24.04 LTS}}
+\end{center}
+
+\vspace{0.2cm}
+\hrule height 1pt
+\vspace{0.3cm}
+
+\begin{abstract}
+\noindent This report delivers a publication-grade, mathematically complete, and systems-exhaustive technical specification of the Autonomous Mobile Robot (AMR) industrial warehouse navigation stack. The document covers every operational phase across the vehicle lifecycle: non-holonomic differential-drive kinematics, 3D rigid-body spatial inertia tensors, and exact circular arc odometry dead-reckoning; $50\text{ Hz}$ continuous-discrete Extended Kalman Filter (EKF) sensor fusion and Adaptive Monte Carlo Localization (AMCL) state estimation; Ceres-based non-linear pose-graph SLAM with Huber loss and anti-false loop closure verification; wavefront frontier detection (WFD) with metric homogeneous cost scaling ($d^{1.25}$) and local section prioritization; distance-transform adaptive multi-resolution topological roadmap extraction; $O(\log N)$ KD-Tree snapping with priority-queue Dijkstra routing and $0.30\text{ m}$ path densification; a $10\text{ Hz}$ vectorized Model Predictive Path Integral (MPPI) local trajectory controller evaluating $80$ stochastic rollouts over a $15$-step ($1.5\text{ s}$) horizon; a 3-tier predictive dynamic obstacle avoidance architecture incorporating multi-scan age filtering, static map wall dilation masks, vector cross-product swerve side commitment, constrained aisle yielding, dynamic re-routing, and active reverse escape recovery; py\_trees behavior tree mission orchestration; and a dual-threaded FastAPI bridge streaming $5\text{ Hz}$ JSON telemetry snapshots to HTML5 Canvas web and Flutter mobile operator interfaces. Complete parameter tables, mathematical derivations, failure mode analyses, and empirical benchmark comparisons are included.
+\end{abstract}
+
+\vspace{0.2cm}
+\hrule
+\vspace{0.3cm}
+
+\tableofcontents
+\vspace{0.4cm}
+\hrule height 1pt
+\vspace{0.5cm}
+
+% =========================================================================
+\section{System Architecture \& Hardware-Software Topology}
+% =========================================================================
+
+The AMR stack is engineered to decouple high-level topological facility routing from high-frequency predictive local collision avoidance, operating under a strict single-velocity-authority paradigm.
+
+\subsection{Computational Partitioning}
+The system architecture spans four distinct execution domains:
+\begin{enumerate}
+    \item \textbf{Physics \& Sensor Simulation Layer (Gazebo Harmonic):} Simulates rigid-body dynamics, wheel-ground contact mechanics, a $360^\circ$ planar LiDAR ($10\text{ Hz}$), a $6$-DOF IMU ($50\text{ Hz}$), differential-drive wheel encoders ($50\text{ Hz}$), and independent dynamic obstacle agents.
+    \item \textbf{State Estimation \& Global Localization Layer:} Executes a $50\text{ Hz}$ continuous-discrete Extended Kalman Filter (\texttt{robot\_localization}) fusing wheel dead-reckoning with IMU rotational dynamics to generate \texttt{/odometry/filtered}, coupled with a probabilistic particle filter (\texttt{nav2\_amcl}) providing global map-frame referencing.
+    \item \textbf{Autonomous Navigation \& Evasion Engine (\texttt{route\_runner.py}):} Retains exclusive publish authority over \texttt{/cmd\_vel}. Solves global graph routes via Dijkstra's algorithm, densifies waypoints, and executes a custom vectorized NumPy MPPI controller at $10\text{ Hz}$ with predictive dynamic obstacle evasion.
+    \item \textbf{Operator Bridge \& Full-Stack HMI Layer:} An asynchronous FastAPI bridge server (\texttt{bridge\_server.py}) runs an internal ROS 2 \texttt{SingleThreadedExecutor} thread, exposing a $5\text{ Hz}$ JSON telemetry WebSocket stream and REST dispatch endpoints to a React 18 Canvas web dashboard and a Flutter cross-platform mobile client.
+\end{enumerate}
+
+\subsection{Coordinate Transform Tree (TF2 Hierarchy)}
+The coordinate transform topology conforms to REP-105:
+\begin{equation}
+\text{map} \xrightarrow[\text{AMCL (0.5 s / scan)}]{} \text{odom} \xrightarrow[\text{EKF (50 Hz)}]{} \text{base\_link} \xrightarrow[\text{Static URDF}]{} \{\text{laser\_link}, \text{imu\_link}, \text{camera\_link}, \text{wheels}, \text{casters}\}
+\end{equation}
+
+\subsection{Single Velocity Command Authority Principle}
+Conventional mobile robot architectures combining standard Nav2 DWB/TEB controllers with high-level mission nodes frequently suffer from velocity command race conditions, where competing nodes interleave contradictory twist packets on \texttt{/cmd\_vel}. In this stack, \texttt{route\_runner.py} is the sole entity with publish authority over \texttt{/cmd\_vel}. All external entities (behavior trees, web teleop, dispatch APIs, emergency stop switches) feed intentions into \texttt{route\_runner}'s internal state machine, guaranteeing zero heading oscillation or deadlocks.
+
+% =========================================================================
+\section{Vehicle Kinematics, Dynamics \& Spatial Inertial Modeling}
+% =========================================================================
+
+\subsection{Differential Drive Non-Holonomic Kinematics}
+The platform operates on the planar Euclidean group $SE(2)$ with configuration pose $\mathbf{q} = [x, y, \theta]^T$. The physical geometry defined in \texttt{warehouse\_agv.urdf} is:
+\begin{itemize}
+    \item Drive wheel radius: $r = 0.025\text{ m}$ (nominal diameter $50\text{ mm}$, thickness $0.02\text{ m}$)
+    \item Wheel track baseline: $L = 0.26\text{ m}$ (symmetric lateral offset $y = \pm 0.13\text{ m}$)
+    \item Chassis cylindrical footprint radius: $R_{\text{base}} = 0.11\text{ m}$ (diameter $0.22\text{ m}$, height $0.10\text{ m}$)
+    \item Ground clearance: Enforced $z = 0.01\text{ m}$ ($1\text{ cm}$) gap under chassis to prevent Gazebo ground contact friction artifacts; wheels and casters interface at $z = 0\text{ m}$.
+    \item Total vehicle gross mass: $M = 10.4\text{ kg}$ (Chassis $8.0\text{ kg}$, wheels $2 \times 0.8\text{ kg}$, casters $2 \times 0.4\text{ kg}$)
+\end{itemize}
+
+Given individual right and left wheel angular rotational velocities $\omega_R, \omega_L$:
+\begin{equation}
+\begin{bmatrix} v \\ \omega \end{bmatrix} = \begin{bmatrix} \frac{r}{2} & \frac{r}{2} \\ \frac{r}{L} & -\frac{r}{L} \end{bmatrix} \begin{bmatrix} \omega_R \\ \omega_L \end{bmatrix}
+\end{equation}
+
+The forward kinematic state evolution model in continuous time is:
+\begin{equation}
+\dot{\mathbf{q}}(t) = \begin{bmatrix} \dot{x}(t) \\ \dot{y}(t) \\ \dot{\theta}(t) \end{bmatrix} = \begin{bmatrix} \cos\theta(t) & 0 \\ \sin\theta(t) & 0 \\ 0 & 1 \end{bmatrix} \begin{bmatrix} v(t) \\ \omega(t) \end{bmatrix}
+\end{equation}
+Subject to the non-holonomic zero-lateral-slip velocity constraint:
+\begin{equation}
+-\dot{x}(t)\sin\theta(t) + \dot{y}(t)\cos\theta(t) = 0
+\end{equation}
+
+The inverse kinematic mapping from commanded body twist $(v, \omega)^T$ to wheel angular velocities is:
+\begin{equation}
+\omega_R = \frac{2v + L\omega}{2r}, \quad \omega_L = \frac{2v - L\omega}{2r}
+\end{equation}
+
+\subsection{Exact Circular Arc Odometry Dead-Reckoning}
+Over discrete sampling interval $\Delta t$, with wheel linear displacements $\Delta s_R = r \Delta\theta_R$ and $\Delta s_L = r \Delta\theta_L$:
+\begin{equation}
+\Delta s = \frac{\Delta s_R + \Delta s_L}{2}, \quad \Delta\theta = \frac{\Delta s_R - \Delta s_L}{L}
+\end{equation}
+When $\Delta\theta \neq 0$, the trajectory follows an instantaneous circular arc of radius $R_{\text{arc}} = \frac{\Delta s}{\Delta\theta}$. The exact closed-form integral over $[t_k, t_{k+1}]$ is:
+\begin{equation}
+x_{k+1} = x_k + \Delta s \cdot \frac{\sin(\Delta\theta)}{\Delta\theta}\cos\left(\theta_k + \frac{\Delta\theta}{2}\right)
+\end{equation}
+\begin{equation}
+y_{k+1} = y_k + \Delta s \cdot \frac{\sin(\Delta\theta)}{\Delta\theta}\sin\left(\theta_k + \frac{\Delta\theta}{2}\right)
+\end{equation}
+\begin{equation}
+\theta_{k+1} = \text{wrap2pi}(\theta_k + \Delta\theta)
+\end{equation}
+For near-straight trajectories where $|\Delta\theta| < 10^{-6}\text{ rad}$, a third-order Taylor series avoids division by zero:
+\begin{equation}
+\frac{\sin(\Delta\theta)}{\Delta\theta} \approx 1 - \frac{(\Delta\theta)^2}{6} + \mathcal{O}((\Delta\theta)^4)
+\end{equation}
+
+\subsection{Rigid-Body Spatial Mass \& Inertia Tensors}
+The 3D inertia tensors incorporated into the URDF physics model are:
+\begin{enumerate}
+    \item \textbf{Cylindrical Chassis Body} ($M_{\text{base}} = 8.0\text{ kg}, R = 0.11\text{ m}, H = 0.08\text{ m}$):
+    \begin{equation}
+    I_{xx} = I_{yy} = \frac{1}{12}M(3R^2 + H^2) = \frac{8.0}{12}(3(0.11)^2 + (0.08)^2) = 0.02847\text{ kg}\cdot\text{m}^2
+    \end{equation}
+    \begin{equation}
+    I_{zz} = \frac{1}{2}M R^2 = \frac{1}{2}(8.0)(0.11)^2 = 0.04840\text{ kg}\cdot\text{m}^2
+    \end{equation}
+    \item \textbf{Drive Wheels} ($m_w = 0.8\text{ kg}, r = 0.025\text{ m}, w = 0.02\text{ m}$):
+    \begin{equation}
+    I_{zz} = \frac{1}{2}m_w r^2 = \frac{1}{2}(0.8)(0.025)^2 = 2.50 \times 10^{-4}\text{ kg}\cdot\text{m}^2
+    \end{equation}
+    \begin{equation}
+    I_{xx} = I_{yy} = \frac{1}{12}m_w(3r^2 + w^2) = \frac{0.8}{12}(3(0.025)^2 + (0.02)^2) = 1.517 \times 10^{-4}\text{ kg}\cdot\text{m}^2
+    \end{equation}
+    \item \textbf{Passive Caster Spheres} ($m_c = 0.4\text{ kg}, r_c = 0.015\text{ m}$):
+    \begin{equation}
+    I_{xx} = I_{yy} = I_{zz} = \frac{2}{5}m_c r_c^2 = \frac{2}{5}(0.4)(0.015)^2 = 3.60 \times 10^{-5}\text{ kg}\cdot\text{m}^2
+    \end{equation}
+\end{enumerate}
+
+% =========================================================================
+\section{Phase 1: Simultaneous Localization and Mapping (SLAM)}
+% =========================================================================
+
+The mapping pipeline utilizes \texttt{slam\_toolbox} in online asynchronous mapping mode, configured via \texttt{mapper\_params.yaml}.
+
+\subsection{Correlative Scan Matching}
+Incoming planar LiDAR scans $P = \{\mathbf{p}_i\}_{i=1}^{|P|}$ ($640$ range samples across $360^\circ$ at $10\text{ Hz}$) are matched against the rasterized local probability grid $\mathcal{M}$ to extract the optimal rigid $SE(2)$ displacement $\hat{\boldsymbol{\xi}} = [\hat{t}_x, \hat{t}_y, \hat{\theta}]^T$:
+\begin{equation}
+\hat{\boldsymbol{\xi}} = \arg\max_{\boldsymbol{\xi}} \sum_{i=1}^{|P|} \mathcal{M}\left(\mathbf{T}(\boldsymbol{\xi}) \cdot \mathbf{p}_i\right)
+\end{equation}
+The correlative search space is configured with:
+\begin{itemize}
+    \item Search space dimension: $0.80\text{ m}$, resolution: $0.01\text{ m}$, smear deviation: $0.10\text{ m}$.
+    \item High-density motion triggers: \texttt{minimum\_travel\_distance: 0.05 m} and \texttt{minimum\_travel\_heading: 0.05 rad} ($2.86^\circ$). This prevents scan starvation during in-place pivot turns in warehouse aisle intersections.
+\end{itemize}
+
+\subsection{Ceres Non-Linear Pose-Graph Optimization}
+The global trajectory graph consists of pose vertices $\mathbf{x} = \{\mathbf{x}_1, \dots, \mathbf{x}_N\} \subset SE(2)$ interconnected by odometry edges $\mathcal{E}_{\text{odom}}$ and loop-closure constraints $\mathcal{E}_{\text{loop}}$. The objective function minimizes:
+\begin{equation}
+F(\mathbf{x}) = \sum_{(i,j) \in \mathcal{E}} \rho\left( \mathbf{e}_{ij}(\mathbf{x}_i, \mathbf{x}_j)^T \mathbf{\Omega}_{ij} \mathbf{e}_{ij}(\mathbf{x}_i, \mathbf{x}_j) \right)
+\end{equation}
+Where:
+\begin{equation}
+\mathbf{e}_{ij}(\mathbf{x}_i, \mathbf{x}_j) = \begin{bmatrix} \mathbf{R}_i^T (\mathbf{t}_j - \mathbf{t}_i) - \Delta\mathbf{t}_{ij}^{\text{meas}} \\ \text{wrap2pi}(\theta_j - \theta_i - \Delta\theta_{ij}^{\text{meas}}) \end{bmatrix}
+\end{equation}
+\begin{itemize}
+    \item \textbf{Loss Function $\rho(s)$:} Robust **Huber Loss** attenuates quadratic error growth for large residuals caused by transient dynamic obstacles or moving personnel.
+    \item \textbf{Optimization Algorithm:} Solved via Levenberg-Marquardt with traditional dogleg steps:
+    \begin{equation}
+    \left(\mathbf{J}^T \mathbf{\Omega} \mathbf{J} + \lambda \operatorname{diag}(\mathbf{J}^T \mathbf{\Omega} \mathbf{J})\right) \Delta\mathbf{x} = -\mathbf{J}^T \mathbf{\Omega} \mathbf{e}
+    \end{equation}
+    Using the \texttt{SPARSE\_NORMAL\_CHOLESKY} linear solver with \texttt{SCHUR\_JACOBI} preconditioning.
+\end{itemize}
+
+\subsection{Anti-False Loop Closure Guard}
+Narrow, visually repetitive warehouse aisles with structural metal racking induce perceptual aliasing. To eliminate catastrophic map corruption ("double/ghost walls"), strict verification thresholds are enforced:
+\begin{itemize}
+    \item \texttt{loop\_match\_minimum\_response\_coarse: 0.65}
+    \item \texttt{loop\_match\_minimum\_response\_fine: 0.80} (strict fine scan-correlation threshold)
+    \item \texttt{loop\_match\_minimum\_chain\_size: 15} (requires 15 consecutive verified constraints)
+    \item \texttt{loop\_search\_maximum\_distance: 4.0 m}
+\end{itemize}
+
+\subsection{Map Persistence Schema}
+Once mapping converges, the environment is serialized at $0.05\text{ m/pixel}$ resolution into:
+\begin{itemize}
+    \item \texttt{warehouse\_map.pgm}: Grayscale 8-bit image ($254$ = free space, $0$ = lethal obstacle, $205$ = unknown).
+    \item \texttt{warehouse\_map.yaml}: Metadata specifying \texttt{resolution: 0.05}, origin $[x_0, y_0, 0.0]$, and thresholds.
+    \item \texttt{clean\_warehouse\_map.png}: Inverted high-contrast floorplan generated for Web Dashboard Canvas rendering.
+\end{itemize}
+
+% =========================================================================
+\section{Phase 2: Frontier Exploration \& Autonomous Mapping}
+% =========================================================================
+
+Autonomous exploration is executed using \texttt{explore\_lite} (\texttt{m-explore-ros2}) coupled with Nav2 controllers configured in \texttt{nav2\_params\_explore.yaml}.
+
+\subsection{Wavefront Frontier Detection (WFD)}
+Frontier cells $\mathbf{x}_f$ on the global costmap satisfy:
+\begin{equation}
+M(\mathbf{x}_f) = \text{Free} \quad \wedge \quad \exists \mathbf{x}_{\text{nbr}} \in \mathcal{N}_8(\mathbf{x}_f) \text{ s.t. } M(\mathbf{x}_{\text{nbr}}) = \text{Unknown}
+\end{equation}
+Frontier cells are clustered into connected components $\{F_1, F_2, \dots\}$. Clusters with physical length $< 0.30\text{ m}$ (\texttt{min\_frontier\_size}) are culled.
+
+\subsection{Exploration Utility Function \& Room Prioritization}
+Candidate frontiers are ranked using a multi-criteria utility function balancing information gain against travel distance:
+\begin{equation}
+U(F_k) = w_{\text{gain}} \cdot \text{Length}(F_k) - w_{\text{dist}} \cdot d(\mathbf{p}_{\text{robot}}, \mathbf{c}_k)^{1.25} + B_{\text{local}}(F_k)
+\end{equation}
+Where:
+\begin{itemize}
+    \item $d(\mathbf{p}_{\text{robot}}, \mathbf{c}_k)$ is the metric path distance from the current robot pose to the frontier cluster centroid $\mathbf{c}_k$.
+    \item Metric homogeneous cost scaling ($d^{1.25}$) non-linearly suppresses distant frontiers, preventing erratic transit across unfinished spaces.
+    \item \textbf{Local Section Prioritization Bonus:}
+    \begin{equation}
+    B_{\text{local}}(F_k) = \begin{cases} +100.0 & \text{if } d(\mathbf{p}_{\text{robot}}, \mathbf{c}_k) \le R_{\text{local}} = 3.5\text{ m} \\ 0.0 & \text{otherwise} \end{cases}
+    \end{equation}
+    This mathematical condition guarantees that the active warehouse room or aisle is 100\% mapped before the robot transitions to adjacent sections.
+\end{itemize}
+
+\subsection{Safe Free-Space Goal Projection}
+To prevent planner failures caused by goal points landing on lethal costmap walls or in unknown cells, exploration targets are projected $0.25\text{ m}$ back into confirmed free space:
+\begin{equation}
+\mathbf{p}_{\text{goal}} = \mathbf{c}_k + 0.25 \cdot \frac{\mathbf{p}_{\text{robot}} - \mathbf{c}_k}{\|\mathbf{p}_{\text{robot}} - \mathbf{c}_k\|_2}
+\end{equation}
+
+\subsection{Exploration Motion Engine (SmacPlanner2D + MPPI)}
+\begin{itemize}
+    \item \textbf{Global Planner:} \texttt{SmacPlanner2D} (A* 2D grid planner with Euclidean heuristic). Replaces NavfnPlanner, eliminating potential gradient traps in narrow doorways ($0.9\text{ m}$).
+    \item \textbf{Local Controller:} Nav2 MPPI running at $20\text{ Hz}$ ($v_{\text{max}} = 0.65\text{ m/s}, v_{\text{min}} = -0.15\text{ m/s}, \omega_{\text{max}} = 1.40\text{ rad/s}$). Critics: \texttt{PathAlignCritic} (weight $5.0$) and \texttt{TwirlingCritic} (weight $1.0$) ensure rapid heading alignment without hesitation.
+    \item \textbf{Re-evaluation Frequency:} Configured at $0.33\text{ Hz}$ ($3.0\text{ s}$ period), eliminating replanning churn while maintaining responsive adaptation.
+\end{itemize}
+
+% =========================================================================
+\section{Phase 3: Dual-Stage State Estimation \& Global Localization}
+% =========================================================================
+
+\subsection{Continuous-Discrete Extended Kalman Filter (EKF)}
+Configured in \texttt{ekf.yaml} via \texttt{robot\_localization}:
+\begin{itemize}
+    \item Update rate: $50.0\text{ Hz}$, operational mode: \texttt{two\_d\_mode: true}.
+    \item State vector $\mathbf{x}_{2D} = [x, y, \psi, \dot{x}, \dot{y}, \dot{\psi}, \ddot{x}, \ddot{y}]^T \in \mathbb{R}^8$.
+    \item Odometry (\texttt{/odom}): Fuses $x, y, \psi, \dot{x}, \dot{\psi}$.
+    \item IMU (\texttt{/imu/data}): Fuses yaw rate $\dot{\psi}$ with gravity compensation enabled.
+\end{itemize}
+State prediction over sampling period $\Delta t$:
+\begin{equation}
+\hat{\mathbf{x}}_{k|k-1} = \hat{\mathbf{x}}_{k-1|k-1} + \int_{t_{k-1}}^{t_k} \mathbf{f}(\hat{\mathbf{x}}(\tau)) d\tau
+\end{equation}
+\begin{equation}
+\mathbf{P}_{k|k-1} = \mathbf{\Phi}_k \mathbf{P}_{k-1|k-1} \mathbf{\Phi}_k^T + \mathbf{Q}_k, \quad \mathbf{\Phi}_k \approx \mathbf{I} + \left.\frac{\partial\mathbf{f}}{\partial\mathbf{x}}\right|_{\hat{\mathbf{x}}_{k-1|k-1}} \Delta t
+\end{equation}
+Measurement updates for observation $\mathbf{z}_k$ with covariance $\mathbf{R}_k$:
+\begin{equation}
+\mathbf{y}_k = \mathbf{z}_k - \mathbf{H}_k \hat{\mathbf{x}}_{k|k-1}, \quad \mathbf{S}_k = \mathbf{H}_k \mathbf{P}_{k|k-1} \mathbf{H}_k^T + \mathbf{R}_k
+\end{equation}
+\begin{equation}
+\mathbf{K}_k = \mathbf{P}_{k|k-1} \mathbf{H}_k^T \mathbf{S}_k^{-1}, \quad \hat{\mathbf{x}}_{k|k} = \hat{\mathbf{x}}_{k|k-1} + \mathbf{K}_k \mathbf{y}_k
+\end{equation}
+\begin{equation}
+\mathbf{P}_{k|k} = (\mathbf{I} - \mathbf{K}_k \mathbf{H}_k) \mathbf{P}_{k|k-1} (\mathbf{I} - \mathbf{K}_k \mathbf{H}_k)^T + \mathbf{K}_k \mathbf{R}_k \mathbf{K}_k^T \quad \text{(Joseph Form Covariance)}
+\end{equation}
+Output: Publishes \texttt{/odometry/filtered} and dynamic transform \texttt{odom -> base\_link}.
+
+\subsection{Adaptive Monte Carlo Localization (AMCL)}
+Configured in \texttt{nav2\_params.yaml}:
+\begin{itemize}
+    \item Motion model: \texttt{nav2\_amcl::DifferentialMotionModel} ($\alpha_1 = \alpha_2 = \alpha_3 = \alpha_4 = \alpha_5 = 0.2$).
+    \item Likelihood Field Sensor Model:
+    \begin{equation}
+    p(z_t^k | \mathbf{x}_t, m) = z_{\text{hit}} \cdot \frac{1}{\sqrt{2\pi\sigma_{\text{hit}}^2}}\exp\left(-\frac{\text{dist}^2}{2\sigma_{\text{hit}}^2}\right) + \frac{z_{\text{rand}}}{z_{\text{max}}}
+    \end{equation}
+    Parameters: $z_{\text{hit}} = 0.5, z_{\text{rand}} = 0.5, \sigma_{\text{hit}} = 0.2\text{ m}, \text{max beams} = 60$.
+    \item KLD-Adaptive Particle Bounds: Dynamic particles $M$ bounded between $M_{\text{min}} = 500$ and $M_{\text{max}} = 2000$:
+    \begin{equation}
+    M \approx \frac{k - 1}{2\epsilon} \left(1 - \frac{2}{9(k-1)} + \sqrt{\frac{2}{9(k-1)}} z_{1-\delta}\right)^3, \quad \epsilon = 0.05, \, 1-\delta = 0.99
+    \end{equation}
+    \item Autonomous Spawn Initialization: \texttt{set\_initial\_pose: true} initializes the filter at $(0, 0, 0)$, removing any need for manual 2D pose estimation in RViz.
+    \item Transform Broadcast: Publishes \texttt{map -> odom} transform at $2.0\text{ Hz}$.
+\end{itemize}
+
+% =========================================================================
+\section{Phase 4: Distance-Transform Topological Graph Extraction}
+% =========================================================================
+
+The offline extraction pipeline in \texttt{graph_extractor.py} converts static occupancy grids into lightweight roadmaps.
+
+\subsection{Euclidean Distance Transform (EDT)}
+Given binary thresholded occupancy $M(u,v) \in \{0, 1\}$ ($1$ = obstacle/unknown, $0$ = free space):
+\begin{equation}
+D(u, v) = \min_{(u', v'): M(u', v') = 1} \sqrt{(u - u')^2 + (v - v')^2} \cdot \text{resolution}
+\end{equation}
+
+\subsection{Adaptive Multi-Resolution Grid Seeding}
+Pixels with $D(u, v) < (R_{\text{base}} + \text{margin}) = 0.11\text{ m} + 0.09\text{ m} = 0.20\text{ m}$ are discarded. Candidate nodes are sampled across three clearance tiers:
+\begin{itemize}
+    \item Narrow Corridors ($D(u, v) < 1.0\text{ m}$): Grid step $\Delta s = 0.40\text{ m}$.
+    \item Medium Aisles ($1.0\text{ m} \le D(u, v) \le 2.0\text{ m}$): Grid step $\Delta s = 0.55\text{ m}$.
+    \item Open Spaces ($D(u, v) > 2.0\text{ m}$): Grid step $\Delta s = 0.85\text{ m}$.
+\end{itemize}
+
+\subsection{Bresenham Swept-Circle Clearance Verification}
+For all candidate pairs $(u, v)$ within search radius $R_{\text{search}} = 2.5\text{ m}$, the straight connecting chord is evaluated pixel-by-pixel using Bresenham's line algorithm:
+\begin{equation}
+\min_{\mathbf{p} \in \text{Bresenham}(u, v)} D(\mathbf{p}) \ge 0.20\text{ m}
+\end{equation}
+If satisfied, a bidirectional edge is created with Euclidean edge weight $w(u, v) = \|\mathbf{p}_u - \mathbf{p}_v\|_2$.
+
+\subsection{Graph Pruning \& Connected Component Extraction}
+Nodes with degree $0$ are deleted. Breadth-First Search (BFS) identifies all disjoint sub-graphs, retaining strictly the largest connected component $\arg\max_i |C_i|$ (producing $756$ verified nodes for standard warehouse), serializing to \texttt{warehouse\_map\_graph.json}.
+
+% =========================================================================
+\section{Phase 5: Global Topological Planning \& Waypoint Synthesis}
+% =========================================================================
+
+\subsection{KD-Tree Spatial Snapping}
+Graph node coordinates are indexed into a spatial $k$-d tree (\texttt{scipy.spatial.KDTree}). Continuous coordinates $(x, y)$ snapped to nearest roadmap nodes execute in $O(\log N)$ time ($< 0.05\text{ ms}$ for $756$ nodes).
+
+\subsection{Priority-Queue Dijkstra Pathfinding}
+Global routing minimizes total edge weights over graph $G = (V, E)$:
+\begin{equation}
+\text{dist}[v] = \min_{(u, v) \in E} \left(\text{dist}[u] + w(u, v) + C_{\text{blocked}}(u, v)\right)
+\end{equation}
+Where $C_{\text{blocked}}(u, v) = +10000.0$ if the edge is flagged as blocked by dynamic obstacles.
+
+\subsection{Waypoint Densification \& Tangent Heading Synthesis}
+Topological edges are interpolated into fine waypoints spaced at $\Delta s_{\text{step}} = 0.30\text{ m}$. Tangent headings $\theta_k$ are assigned continuously:
+\begin{equation}
+\theta_k = \text{atan2}(y_{k+1} - y_k, x_{k+1} - x_k)
+\end{equation}
+At the final goal node, the heading smoothly blends into the user-specified terminal orientation $\theta_{\text{goal}}$. The dense path is published on \texttt{/agv\_dense\_path}.
+
+% =========================================================================
+\section{Phase 6: Vectorized MPPI Local Controller}
+% =========================================================================
+
+The local planner executes at $10\text{ Hz}$ ($\Delta t = 0.10\text{ s}$) in NumPy vectorization inside \texttt{route\_runner.py}.
+
+\subsection{Stochastic Trajectory Rollouts}
+At each cycle, $K = 80$ candidate velocity sequences are sampled over a prediction horizon of $T = 15$ steps ($1.5\text{ s}$ preview):
+\begin{equation}
+v_t^{(k)} = \bar{v}_t + \epsilon_{v, t}^{(k)}, \quad \epsilon_v \sim \mathcal{N}(0, \sigma_v^2), \quad \sigma_v = 0.30\text{ m/s}
+\end{equation}
+\begin{equation}
+\omega_t^{(k)} = \bar{\omega}_t + \omega_{\text{bias}} + \epsilon_{\omega, t}^{(k)}, \quad \epsilon_\omega \sim \mathcal{N}(0, \sigma_\omega^2), \quad \sigma_\omega = 0.50\text{ rad/s}
+\end{equation}
+Kinematic rollout propagation:
+\begin{equation}
+x_{t+1}^{(k)} = x_t^{(k)} + v_t^{(k)} \cos(\theta_t^{(k)}) \Delta t
+\end{equation}
+\begin{equation}
+y_{t+1}^{(k)} = y_t^{(k)} + v_t^{(k)} \sin(\theta_t^{(k)}) \Delta t
+\end{equation}
+\begin{equation}
+\theta_{t+1}^{(k)} = \theta_t^{(k)} + \omega_t^{(k)} \Delta t
+\end{equation}
+
+\subsection{Multi-Objective Cost Functional}
+The objective cost $S(\tau^{(k)})$ evaluates six terms:
+\begin{equation}
+S(\tau^{(k)}) = J_{\text{term}} + J_{\text{heading}} + J_{\text{cte}} + J_{\text{static\_rep}} + J_{\text{dyn\_rep}} + J_{\text{dyn\_coll}}
+\end{equation}
+\begin{enumerate}
+    \item \textbf{Terminal Distance Cost ($w_{\text{dist}} = 4.0$):} $J_{\text{term}} = w_{\text{dist}} \|\mathbf{p}_T^{(k)} - \mathbf{p}_{\text{lookahead}}\|_2$ ($1.2\text{ m}$ lookahead).
+    \item \textbf{Heading Cost ($w_{\text{heading}} = 3.0$):} $J_{\text{heading}} = w_{\text{heading}} |\text{wrap2pi}(\theta_T^{(k)} - \theta_{\text{lookahead}})|$.
+    \item \textbf{Cross-Track Cost:} $J_{\text{cte}} = w_{\text{cte}} \sum_{t=1}^T d_{\perp}(\mathbf{p}_t^{(k)}, \text{segment})$, with $w_{\text{cte}} = 6.0$ (nominal) and $2.0$ (active evasion).
+    \item \textbf{Static Wall Repulsion ($d_{\text{safe}} = 0.26\text{ m}, w_{\text{rep}} = 50.0$):}
+    \begin{equation}
+    J_{\text{static\_rep}} = w_{\text{rep}} \sum_{t=1}^T \max\left(0, d_{\text{safe}} - \min_j \|\mathbf{p}_t^{(k)} - \mathbf{o}_j\|\right)^2
+    \end{equation}
+    \item \textbf{Dynamic Obstacle Proactive Repulsion ($d_{\text{bubble}} = 0.65\text{ m}, w_{\text{dyn\_rep}} = 45.0$):}
+    \begin{equation}
+    J_{\text{dyn\_rep}} = w_{\text{dyn\_rep}} \sum_{t=1}^T \sum_{m=1}^{M_{\text{dyn}}} \max\left(0, d_{\text{bubble}} - \|\mathbf{p}_t^{(k)} - \hat{\mathbf{p}}_{m, t}\|\right)^2
+    \end{equation}
+    \item \textbf{Lethal Collision Penalty ($R_{\text{coll}} = 0.28\text{ m}, w_{\text{coll}} = 5000.0$):}
+    \begin{equation}
+    J_{\text{dyn\_coll}} = \sum_{t=1}^T \sum_{m=1}^{M_{\text{dyn}}} \begin{cases} 5000.0 & \text{if } \|\mathbf{p}_t^{(k)} - \hat{\mathbf{p}}_{m, t}\|_2 < R_{\text{coll}} \\ 0 & \text{otherwise} \end{cases}
+    \end{equation}
+\end{enumerate}
+
+\subsection{Softmax Weighting, Slew Limiting \& Filtering}
+Optimal velocity synthesis:
+\begin{equation}
+\beta = \min_{k} S(\tau^{(k)}), \quad \omega^{(k)} = \frac{\exp\left(-\frac{1}{\lambda}(S(\tau^{(k)}) - \beta)\right)}{\sum_j \exp\left(-\frac{1}{\lambda}(S(\tau^{(j)}) - \beta)\right)}, \quad \lambda = 0.50
+\end{equation}
+\begin{equation}
+\mathbf{u}^* = [v^*, \omega^*]^T = \sum_{k=1}^K \omega^{(k)} \mathbf{u}_1^{(k)}
+\end{equation}
+Actuator acceleration limits: $a_{\text{accel}} = 0.60\text{ m/s}^2, a_{\text{decel}} = 0.90\text{ m/s}^2, \alpha_{\text{accel}} = 1.60\text{ rad/s}^2$.
+Exponential Moving Average (EMA) smoothing:
+\begin{equation}
+v_{\text{pub}} = 0.70 \cdot v_{\text{slew}} + 0.30 \cdot v_{\text{prev}}, \quad \omega_{\text{pub}} = 0.65 \cdot \omega_{\text{slew}} + 0.35 \cdot \omega_{\text{prev}}
+\end{equation}
+
+% =========================================================================
+\section{Phase 7: Perception, Tracking \& 3-Tier Dynamic Obstacle Avoidance}
+% =========================================================================
+
+\subsection{Perception \& Ghost Rejection Pipeline}
+\begin{enumerate}
+    \item \textbf{Clustering:} LiDAR endpoints clustered with radius $d_{\text{cluster}} = 0.35\text{ m}$.
+    \item \textbf{Static Map Dilation Masking:} Clusters within $0.22\text{ m}$ of static walls are stripped, eliminating false wall-grazing obstacle triggers.
+    \item \textbf{Multi-Scan Age Filter:} Obstacles require detection in $\ge 2$ consecutive scans (\texttt{age >= 2}) to be confirmed, filtering single-frame sensor noise spikes.
+    \item \textbf{Velocity Bounds Gating:} Velocity estimated by finite difference $\mathbf{v} = (\mathbf{p}_k - \mathbf{p}_{k-1})/\Delta t$. Speeds are accepted only within $0.22\text{ m/s} \le \|\mathbf{v}\| \le 2.0\text{ m/s}$, filtering out stationary sensor drift and teleportation noise.
+\end{enumerate}
+
+\subsection{3-Tier Avoidance Architecture}
+\begin{itemize}
+    \item \textbf{Tier 1 — Predictive MPPI Evasion (Open Corridors):} Obstacle positions projected $\hat{\mathbf{p}}_m(t) = \mathbf{p}_m + \mathbf{v}_m (t\Delta t)$. Cross-track weight relaxes ($6.0 \to 2.0$) only within $1.2\text{ m}$.
+    \item \textbf{Vector Cross-Product Swerve Side Commitment:}
+    \begin{equation}
+    \mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{robot}} - \mathbf{v}_{\text{obs}}, \quad \mathbf{r}_{\text{obs}} = \mathbf{p}_{\text{obs}} - \mathbf{p}_{\text{robot}}, \quad \zeta = v_{\text{rel}, x} r_{\text{obs}, y} - v_{\text{rel}, y} r_{\text{obs}, x}
+    \end{equation}
+    \begin{equation}
+    \omega_{\text{bias}} = \begin{cases} -b_{\text{mag}} & \text{if } \zeta > 0 \text{ (Obstacle on left } \to \text{swerve RIGHT)} \\ +b_{\text{mag}} & \text{if } \zeta \le 0 \text{ (Obstacle on right } \to \text{swerve LEFT)} \end{cases}
+    \end{equation}
+    Where $b_{\text{mag}} = \text{clamp}(0.35 \cdot \frac{1.0}{\text{dist}}, 0.25, 0.80)\text{ rad/s}$, held locked for $8\text{ ticks}$ ($0.8\text{ s}$) to prevent direction churn.
+    \item \textbf{Tier 2 — Constrained Aisle Yield \& Wait:} In aisles with clearance $< 0.35\text{ m}$, the AMR decelerates to $v = 0.0\text{ m/s}$, holding heading. Timeout: $4.0\text{ s}$ for moving obstacles, $1.0\text{ s}$ for static blockages.
+    \item \textbf{Tier 3 — Dynamic Dijkstra Re-Routing:} If blocked past timeout, the edge is penalized ($+10000.0$) and Dijkstra re-routes around adjacent aisles. Blocked edges restore after $8.0\text{ s}$ cooldown.
+    \item \textbf{Active Reverse Escape \& Stuck Detection:} If stuck for $\ge 20\text{ ticks}$ ($2.0\text{ s}$) or obstacle proximity $< 0.20\text{ m}$, the AMR reverses at $-0.15\text{ m/s}$ for up to $2.2\text{ s}$ to restore $0.50\text{ m}$ standoff, followed by Dijkstra rerouting.
+\end{itemize}
+
+% =========================================================================
+\section{Phase 8: Behavior Tree Mission Orchestration}
+% =========================================================================
+
+Orchestration is implemented in \texttt{bt_manager.py} via \texttt{py\_trees}:
+\begin{itemize}
+    \item \textbf{Condition Leaves:} \texttt{CheckLocalization} (verifies \texttt{map -> base\_link} TF availability) and \texttt{CheckGoalQueue} (monitors active/queued goals).
+    \item \textbf{Action Leaves:} \texttt{PlanTopologicalPath} (dispatches coordinates to roadmap planner) and \texttt{ExecuteMPPINavigation} (tracks navigation execution).
+    \item \textbf{Recovery Leaves:} \texttt{BackUpRecovery} ($0.30\text{ m}$ reverse motion) and \texttt{SpinRecovery} ($60^\circ$ rotation to re-clear LiDAR blind spots).
+\end{itemize}
+
+% =========================================================================
+\section{Phase 9: Operator Bridge \& Full-Stack HMI Ecosystem}
+% =========================================================================
+
+\subsection{FastAPI Control Bridge (\texttt{bridge_server.py})}
+\begin{itemize}
+    \item Dual-threaded architecture: Thread 1 runs Uvicorn on Port $8000$; Thread 2 runs a ROS 2 \texttt{SingleThreadedExecutor}.
+    \item Telemetry WebSocket (\texttt{/ws/telemetry}): Pushes $5\text{ Hz}$ JSON snapshots of pose, twist, IMU, LiDAR ranges, active state, and mission status.
+    \item REST API: Exposes \texttt{/api/cmd\_vel}, \texttt{/api/goal}, \texttt{/api/goal\_sequence}, \texttt{/api/stop}, \texttt{/api/mapping/*}.
+\end{itemize}
+
+\subsection{Frontends}
+\begin{itemize}
+    \item \textbf{React 18 + Vite Web Dashboard:} Interactive HTML5 Canvas floorplan, Nipple.js touch/mouse virtual joystick, 6-stage mapping studio, 360° radar ring, and one-touch E-Stop.
+    \item \textbf{Flutter Client:} Native cross-platform mobile/tablet client with D-pad navigation and instant hardware-style E-Stop.
+\end{itemize}
+
+% =========================================================================
+\section{Master Numerical Parameter \& Constants Matrix}
+% =========================================================================
+
+\begin{center}
+\footnotesize
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+\textbf{Subsystem} & \textbf{Parameter} & \textbf{Code Variable} & \textbf{Value \& Units} & \textbf{Source File} \\
+\hline
+Physical & Chassis Radius & \texttt{robot\_radius} & $0.11\text{ m}$ & \texttt{warehouse\_agv.urdf} \\
+Physical & Wheel Radius & \texttt{r} & $0.025\text{ m}$ & \texttt{warehouse\_agv.urdf} \\
+Physical & Wheel Track & \texttt{L} & $0.26\text{ m}$ & \texttt{warehouse\_agv.urdf} \\
+Physical & Vehicle Mass & \texttt{m\_total} & $10.4\text{ kg}$ & \texttt{warehouse\_agv.urdf} \\
+Physical & Collision Margin & \texttt{collision\_radius} & $0.15\text{ m}$ & \texttt{route\_runner.py} \\
+Physical & Min Passable Gap & \texttt{min\_passable\_gap} & $0.35\text{ m}$ & \texttt{route\_runner.py} \\
+\hline
+EKF & Update Rate & \texttt{frequency} & $50.0\text{ Hz}$ & \texttt{ekf.yaml} \\
+AMCL & Particle Limits & \texttt{min/max\_particles} & $500 / 2000$ & \texttt{nav2\_params.yaml} \\
+AMCL & Sensor Beams & \texttt{max\_beams} & $60$ & \texttt{nav2\_params.yaml} \\
+AMCL & Hit Dispersion & \texttt{sigma\_hit} & $0.20\text{ m}$ & \texttt{nav2\_params.yaml} \\
+\hline
+SLAM & Map Resolution & \texttt{resolution} & $0.05\text{ m/px}$ & \texttt{mapper\_params.yaml} \\
+SLAM & Travel Distance Trigger & \texttt{min\_travel\_dist} & $0.05\text{ m}$ & \texttt{mapper\_params.yaml} \\
+SLAM & Heading Trigger & \texttt{min\_travel\_head} & $0.05\text{ rad}$ & \texttt{mapper\_params.yaml} \\
+SLAM & Fine Loop Match & \texttt{loop\_match\_fine} & $0.80$ & \texttt{mapper\_params.yaml} \\
+Explore & Local Section Radius & \texttt{local\_radius} & $3.5\text{ m}$ & \texttt{nav2\_params\_explore.yaml} \\
+Explore & Local Section Bonus & \texttt{local\_bonus} & $+100.0$ & \texttt{m-explore-ros2} \\
+\hline
+Roadmap & Corridor Grid Step & \texttt{step\_corridor} & $0.40\text{ m}$ & \texttt{graph\_extractor.py} \\
+Roadmap & Medium Grid Step & \texttt{step\_medium} & $0.55\text{ m}$ & \texttt{graph\_extractor.py} \\
+Roadmap & Open Grid Step & \texttt{step\_open} & $0.85\text{ m}$ & \texttt{graph\_extractor.py} \\
+Roadmap & Clearance Barrier & \texttt{min\_clearance} & $0.20\text{ m}$ & \texttt{graph\_extractor.py} \\
+Densifier & Waypoint Resolution & \texttt{step\_m} & $0.30\text{ m}$ & \texttt{route\_runner.py} \\
+\hline
+MPPI & Control Frequency & \texttt{dt} & $10.0\text{ Hz } (0.10\text{ s})$ & \texttt{route\_runner.py} \\
+MPPI & Trajectory Samples & \texttt{num\_samples} & $80$ & \texttt{route\_runner.py} \\
+MPPI & Prediction Horizon & \texttt{horizon} & $15\text{ steps } (1.5\text{ s})$ & \texttt{route\_runner.py} \\
+MPPI & Velocity Limits & \texttt{v\_max / w\_max} & $0.75\text{ m/s } / 1.80\text{ rad/s}$ & \texttt{route\_runner.py} \\
+MPPI & Temperature Parameter & \texttt{lambda\_weight} & $0.50$ & \texttt{route\_runner.py} \\
+MPPI & Linear Accel / Decel & \texttt{accel/decel\_lim\_v} & $0.60 / 0.90\text{ m/s}^2$ & \texttt{route\_runner.py} \\
+MPPI & Angular Slew Limit & \texttt{accel\_lim\_w} & $1.60\text{ rad/s}^2$ & \texttt{route\_runner.py} \\
+MPPI & EMA Smoothing Alpha & \texttt{ema\_alpha\_v/w} & $0.70 / 0.65$ & \texttt{route\_runner.py} \\
+\hline
+Evasion & Obstacle Cluster Radius & \texttt{cluster\_dist} & $0.35\text{ m}$ & \texttt{route\_runner.py} \\
+Evasion & Minimum Cluster Age & \texttt{min\_age} & $2\text{ frames}$ & \texttt{route\_runner.py} \\
+Evasion & Valid Obstacle Speeds & \texttt{speed\_bounds} & $[0.22, 2.0]\text{ m/s}$ & \texttt{route\_runner.py} \\
+Evasion & Wall Mask Dilation & \texttt{wall\_dilation} & $0.22\text{ m}$ & \texttt{route\_runner.py} \\
+Evasion & Swerve Lock Duration & \texttt{swerve\_lock\_dur} & $8\text{ ticks } (0.8\text{ s})$ & \texttt{route\_runner.py} \\
+Evasion & Yield Timeout Dynamic & \texttt{yield\_dyn} & $4.0\text{ s}$ & \texttt{route\_runner.py} \\
+Evasion & Yield Timeout Static & \texttt{yield\_static} & $1.0\text{ s}$ & \texttt{route\_runner.py} \\
+Evasion & Reroute Penalty Weight & \texttt{blocked\_penalty} & $+10000.0$ & \texttt{route\_runner.py} \\
+Evasion & Stuck Detector Ticks & \texttt{stuck\_threshold} & $20\text{ ticks } (2.0\text{ s})$ & \texttt{route\_runner.py} \\
+Evasion & Reverse Escape Speed & \texttt{backup\_speed} & $-0.15\text{ m/s}$ & \texttt{route\_runner.py} \\
+\hline
+\end{tabular}
+\end{center}
+
+% =========================================================================
+\section{Empirical Benchmarks \& Failure Mode Resolutions}
+% =========================================================================
+
+\subsection{Standardized Literature Comparative Metrics}
+Derived from repository telemetry rosbags and formal benchmark logs (\texttt{docs/Metric\_Comparison\_Report.md}):
+\begin{center}
+\small
+\begin{tabular}{|l|l|l|l|}
+\hline
+\textbf{Metric Dimension} & \textbf{AMR Stack} & \textbf{Literature Baseline} & \textbf{Outcome / Ratio} \\
+\hline
+Exploration Coverage Rate & $0.311\text{ \%/s}$ & $0.185\text{ \%/s}$ & $\mathbf{1.68\times}\text{ Faster Coverage}$ \\
+Time Cost per Coverage Point & $3.21\text{ s/\%}$ & $5.41\text{ s/\%}$ & $\mathbf{40.7\%}\text{ Less Time Spent}$ \\
+Path Directness per Cov. Point & $6.04\text{ m/\%}$ & $8.76\text{ m/\%}$ & $\mathbf{31.1\%}\text{ Less Driven Distance}$ \\
+Global Planning Latency & $50\text{ ms } (0.084\text{ ms/m})$ & $240\text{ ms}$ & $\mathbf{4.8\times}\text{ Lower Latency}$ \\
+Memory Scaling Footprint & $180\text{ MB } (0.304\text{ MB/m})$ & $225\text{ MB}$ & $\mathbf{20.0\%}\text{ Lower Memory}$ \\
+Local Control Loop Frequency & $10.0\text{ Hz } (20\text{ ms calc})$ & $10.0\text{ Hz}$ & $\text{Real-Time Compliant}$ \\
+Nominal Path Tracking RMSE & $0.1055\text{ m}$ & $0.0940\text{ m}$ & $\text{Parity } (1.12\times\text{ SOTA})$ \\
+Active Swerve Evasion RMSE & $1.5971\text{ m}$ & $\text{Collided}$ & $\text{Controlled De-weighting}$ \\
+Mission Collision Rate & $\mathbf{0.0\%}$ & $4.2\% - 12.5\%$ & $\mathbf{Zero Collisions Recorded}$ \\
+\hline
+\end{tabular}
+\end{center}
+
+\subsection{Pathological Edge Cases \& Codebase Resolutions}
+\begin{center}
+\footnotesize
+\begin{tabular}{|p{3.2cm}|p{4.2cm}|p{4.8cm}|p{3.0cm}|}
+\hline
+\textbf{Pathological Behavior} & \textbf{Root Cause Diagnosed} & \textbf{Engineered Code Solution} & \textbf{Log Tag Verified} \\
+\hline
+Spin-in-Place Freezes (up to $12.4\text{ s}$) & $\cos^2(\Delta\theta)$ coupling collapsed $v_{\text{mean}} \to 0$ when heading error $> 60^\circ$. & Hard minimum velocity floor ($v_{\text{mean}} \ge 0.10\text{ m/s}$) + active reverse recovery. & \texttt{[BRAIN: STUCK]}, \texttt{[BRAIN: RECOVERY]} \\
+\hline
+Rapid L/R Swerve Churn & Symmetric cost landscape flipped angular mean every $100\text{ ms}$. & Vector cross-product swerve commitment locked for $8\text{ ticks}$ ($0.8\text{ s}$). & \texttt{[BRAIN: SWERVE]} \\
+\hline
+$5 - 29$ Ghost Obstacles & Single-frame noise and wall grazing during turn acceleration. & Consecutive scan age filter ($\ge 2$) + velocity gating + $0.22\text{ m}$ dilated wall mask. & \texttt{[MAP\_MASK]}, \texttt{[BRAIN: TRACKER]} \\
+\hline
+Premature Path De-weighting & Any obstacle anywhere relaxed $w_{\text{cte}}$ from $6.0 \to 0.5$. & Distance-gated trigger: $w_{\text{cte}}$ only softens to $2.0$ for obstacles $\le 1.2\text{ m}$. & \texttt{[BRAIN: MPPI]} \\
+\hline
+Narrow Aisle Deadlocks & Static wall repulsion ($0.45\text{ m}$) overlapped in $1.0\text{ m}$ aisles. & Decreased repulsion distance to $0.26\text{ m}$, leaving a clean $0.48\text{ m}$ passage. & \texttt{[CORRIDOR: CLEAR]} \\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{0.4cm}
+\begin{center}
+\footnotesize \textcolor{darkgray}{\textit{--- End of Comprehensive Technical Report ---}}
+\end{center}
+
+\end{document}

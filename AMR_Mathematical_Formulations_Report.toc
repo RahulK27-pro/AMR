@@ -1,0 +1,39 @@
+\contentsline {section}{\numberline {1}Robot Kinematics, Dynamics \& Inertial Physics}{1}{}%
+\contentsline {subsection}{\numberline {1.1}Differential Drive Forward Kinematics}{1}{}%
+\contentsline {subsection}{\numberline {1.2}Inverse Kinematics}{2}{}%
+\contentsline {subsection}{\numberline {1.3}Exact Circular Arc Odometry Dead-Reckoning}{2}{}%
+\contentsline {subsection}{\numberline {1.4}Rigid-Body Mass \& Moment of Inertia Tensors}{2}{}%
+\contentsline {section}{\numberline {2}State Estimation \& Sensor Fusion}{2}{}%
+\contentsline {subsection}{\numberline {2.1}Extended Kalman Filter (EKF Fusion)}{2}{}%
+\contentsline {subsubsection}{\numberline {2.1.1}Continuous-Discrete Time State Prediction}{3}{}%
+\contentsline {subsubsection}{\numberline {2.1.2}Discrete Measurement Updates}{3}{}%
+\contentsline {subsection}{\numberline {2.2}Adaptive Monte Carlo Localization (AMCL)}{3}{}%
+\contentsline {subsubsection}{\numberline {2.2.1}Sampling Odometry Motion Model}{3}{}%
+\contentsline {subsubsection}{\numberline {2.2.2}Likelihood Field Sensor Model}{3}{}%
+\contentsline {subsubsection}{\numberline {2.2.3}Kullback-Leibler Divergence (KLD) Particle Bounds}{4}{}%
+\contentsline {section}{\numberline {3}SLAM \& Pose-Graph Optimization}{4}{}%
+\contentsline {subsection}{\numberline {3.1}Correlative Scan Matching}{4}{}%
+\contentsline {subsection}{\numberline {3.2}Ceres Pose-Graph Non-Linear Least Squares}{4}{}%
+\contentsline {section}{\numberline {4}Costmap Inflation \& Potential Fields}{4}{}%
+\contentsline {section}{\numberline {5}Topological Roadmap \& Graph Theory}{4}{}%
+\contentsline {subsection}{\numberline {5.1}Euclidean Distance Transform (EDT)}{4}{}%
+\contentsline {subsection}{\numberline {5.2}Swept-Circle Clearance Verification}{5}{}%
+\contentsline {subsection}{\numberline {5.3}Dijkstra Shortest Path Routing}{5}{}%
+\contentsline {section}{\numberline {6}Local Motion Planning: Model Predictive Path Integral (MPPI)}{5}{}%
+\contentsline {subsection}{\numberline {6.1}Stochastic Trajectory Rollouts}{5}{}%
+\contentsline {subsection}{\numberline {6.2}Composite Cost Functional}{5}{}%
+\contentsline {subsection}{\numberline {6.3}Softmax Optimal Action Selection}{6}{}%
+\contentsline {subsection}{\numberline {6.4}Slew-Rate Limiting \& EMA Velocity Smoothing}{6}{}%
+\contentsline {section}{\numberline {7}Dynamic Obstacle Tracking \& Evasion Geometry}{6}{}%
+\contentsline {subsection}{\numberline {7.1}Clustering and Velocity Estimation}{6}{}%
+\contentsline {subsection}{\numberline {7.2}Vector Cross-Product Swerve Decision}{6}{}%
+\contentsline {subsection}{\numberline {7.3}$C^1$-Continuous Cubic B\'ezier Detour Trajectory}{7}{}%
+\contentsline {section}{\numberline {8}Autonomous Exploration \& Multi-Robot Map Merging}{7}{}%
+\contentsline {subsection}{\numberline {8.1}Wavefront Frontier Detection (WFD)}{7}{}%
+\contentsline {subsection}{\numberline {8.2}Exploration Utility Function}{7}{}%
+\contentsline {subsection}{\numberline {8.3}Multi-Robot $SE(2)$ Map Merging}{7}{}%
+\contentsline {section}{\numberline {9}Computer Vision Geometry}{7}{}%
+\contentsline {subsection}{\numberline {9.1}Pinhole Camera Intrinsic Projection Matrix}{7}{}%
+\contentsline {subsection}{\numberline {9.2}Normalized Pixel Offset \& Depth Proxy}{7}{}%
+\contentsline {section}{\numberline {10}Web Dashboard Coordinate Transformations}{8}{}%
+\contentsline {section}{\numberline {11}System Constants Reference Table}{8}{}%

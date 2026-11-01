@@ -1,0 +1,45 @@
+\contentsline {section}{\numberline {1}System Architecture \& Hardware-Software Topology}{2}{}%
+\contentsline {subsection}{\numberline {1.1}Computational Partitioning}{2}{}%
+\contentsline {subsection}{\numberline {1.2}Coordinate Transform Tree (TF2 Hierarchy)}{3}{}%
+\contentsline {subsection}{\numberline {1.3}Single Velocity Command Authority Principle}{3}{}%
+\contentsline {section}{\numberline {2}Vehicle Kinematics, Dynamics \& Spatial Inertial Modeling}{3}{}%
+\contentsline {subsection}{\numberline {2.1}Differential Drive Non-Holonomic Kinematics}{3}{}%
+\contentsline {subsection}{\numberline {2.2}Exact Circular Arc Odometry Dead-Reckoning}{3}{}%
+\contentsline {subsection}{\numberline {2.3}Rigid-Body Spatial Mass \& Inertia Tensors}{4}{}%
+\contentsline {section}{\numberline {3}Phase 1: Simultaneous Localization and Mapping (SLAM)}{4}{}%
+\contentsline {subsection}{\numberline {3.1}Correlative Scan Matching}{4}{}%
+\contentsline {subsection}{\numberline {3.2}Ceres Non-Linear Pose-Graph Optimization}{4}{}%
+\contentsline {subsection}{\numberline {3.3}Anti-False Loop Closure Guard}{5}{}%
+\contentsline {subsection}{\numberline {3.4}Map Persistence Schema}{5}{}%
+\contentsline {section}{\numberline {4}Phase 2: Frontier Exploration \& Autonomous Mapping}{5}{}%
+\contentsline {subsection}{\numberline {4.1}Wavefront Frontier Detection (WFD)}{5}{}%
+\contentsline {subsection}{\numberline {4.2}Exploration Utility Function \& Room Prioritization}{5}{}%
+\contentsline {subsection}{\numberline {4.3}Safe Free-Space Goal Projection}{5}{}%
+\contentsline {subsection}{\numberline {4.4}Exploration Motion Engine (SmacPlanner2D + MPPI)}{6}{}%
+\contentsline {section}{\numberline {5}Phase 3: Dual-Stage State Estimation \& Global Localization}{6}{}%
+\contentsline {subsection}{\numberline {5.1}Continuous-Discrete Extended Kalman Filter (EKF)}{6}{}%
+\contentsline {subsection}{\numberline {5.2}Adaptive Monte Carlo Localization (AMCL)}{6}{}%
+\contentsline {section}{\numberline {6}Phase 4: Distance-Transform Topological Graph Extraction}{7}{}%
+\contentsline {subsection}{\numberline {6.1}Euclidean Distance Transform (EDT)}{7}{}%
+\contentsline {subsection}{\numberline {6.2}Adaptive Multi-Resolution Grid Seeding}{7}{}%
+\contentsline {subsection}{\numberline {6.3}Bresenham Swept-Circle Clearance Verification}{7}{}%
+\contentsline {subsection}{\numberline {6.4}Graph Pruning \& Connected Component Extraction}{7}{}%
+\contentsline {section}{\numberline {7}Phase 5: Global Topological Planning \& Waypoint Synthesis}{7}{}%
+\contentsline {subsection}{\numberline {7.1}KD-Tree Spatial Snapping}{7}{}%
+\contentsline {subsection}{\numberline {7.2}Priority-Queue Dijkstra Pathfinding}{7}{}%
+\contentsline {subsection}{\numberline {7.3}Waypoint Densification \& Tangent Heading Synthesis}{7}{}%
+\contentsline {section}{\numberline {8}Phase 6: Vectorized MPPI Local Controller}{8}{}%
+\contentsline {subsection}{\numberline {8.1}Stochastic Trajectory Rollouts}{8}{}%
+\contentsline {subsection}{\numberline {8.2}Multi-Objective Cost Functional}{8}{}%
+\contentsline {subsection}{\numberline {8.3}Softmax Weighting, Slew Limiting \& Filtering}{8}{}%
+\contentsline {section}{\numberline {9}Phase 7: Perception, Tracking \& 3-Tier Dynamic Obstacle Avoidance}{9}{}%
+\contentsline {subsection}{\numberline {9.1}Perception \& Ghost Rejection Pipeline}{9}{}%
+\contentsline {subsection}{\numberline {9.2}3-Tier Avoidance Architecture}{9}{}%
+\contentsline {section}{\numberline {10}Phase 8: Behavior Tree Mission Orchestration}{9}{}%
+\contentsline {section}{\numberline {11}Phase 9: Operator Bridge \& Full-Stack HMI Ecosystem}{9}{}%
+\contentsline {subsection}{\numberline {11.1}FastAPI Control Bridge (\texttt {bridge_server.py})}{9}{}%
+\contentsline {subsection}{\numberline {11.2}Frontends}{10}{}%
+\contentsline {section}{\numberline {12}Master Numerical Parameter \& Constants Matrix}{10}{}%
+\contentsline {section}{\numberline {13}Empirical Benchmarks \& Failure Mode Resolutions}{10}{}%
+\contentsline {subsection}{\numberline {13.1}Standardized Literature Comparative Metrics}{10}{}%
+\contentsline {subsection}{\numberline {13.2}Pathological Edge Cases \& Codebase Resolutions}{11}{}%
