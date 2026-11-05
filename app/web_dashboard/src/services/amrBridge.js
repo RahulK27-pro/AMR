@@ -201,7 +201,9 @@ class AmrBridgeService {
     return this._get('/api/obstacle/status');
   }
 
-  async getMapImage(mapName = '')    { return this._get(`/api/map${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
+  async getMapImage(mapName = '', clean = true) { 
+    return this._get(`/api/map?clean=${clean ? 'true' : 'false'}${mapName ? `&map_name=${encodeURIComponent(mapName)}` : ''}`); 
+  }
   async getMapMetadata(mapName = '') { return this._get(`/api/map/metadata${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
   async getGraphData(mapName = '')   { return this._get(`/api/graph${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
   async getStatus()                  { return this._get('/api/status'); }

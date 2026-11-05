@@ -53,7 +53,7 @@ from PIL import Image, ImageDraw
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor, MultiThreadedExecutor
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, qos_profile_sensor_data
 from geometry_msgs.msg import Twist, PoseStamped, PoseWithCovarianceStamped, Quaternion
 from nav_msgs.msg import Odometry, Path as NavPath, OccupancyGrid
@@ -1055,16 +1055,18 @@ class AmrBridgeNode(Node):
                 MarkerArray, '/explore/frontiers', self._explore_frontiers_cb, 10
             )
 
-        # TF2 buffer for map->base_link lookups (bound to node clock for time-jump handling)
+        # TF2 buffer for map->base_link lookups (real-time localization in map frame)
         self._amcl_pose_received = False
+        self._using_map_tf = False
+        self._last_map_tf_time = 0.0
         self._last_sim_time = 0.0
         self._tf_buffer   = None
         self._tf_listener = None
         if _TF2_AVAILABLE:
             try:
-                self._tf_buffer   = tf2_ros.Buffer(node=self)
+                self._tf_buffer   = tf2_ros.Buffer()
                 self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
-                # Timer: try TF lookup at 10 Hz when no AMCL yet
+                # Timer: TF lookup at 10 Hz
                 self.create_timer(0.1, self._tf_pose_cb)
             except Exception as e:
                 self.get_logger().warn(f'tf2_ros init failed: {e} — falling back to /odometry/filtered')
@@ -1132,6 +1134,8 @@ class AmrBridgeNode(Node):
         self._obs_spawn_y = None
         self._obs_spawn_yaw = 0.0
         self._amcl_pose_received = False
+        self._using_map_tf = False
+        self._last_map_tf_time = 0.0
         self._last_sim_time = 0.0
         if self._tf_buffer is not None:
             try:
@@ -1210,18 +1214,23 @@ class AmrBridgeNode(Node):
                 self.reset_simulation_state()
         self._last_sim_time = stamp_sec
 
-        # Fallback: update pose from odom only if AMCL has never fired
-        if not self._amcl_pose_received:
-            self.pose['x']   = msg.pose.pose.position.x
-            self.pose['y']   = msg.pose.pose.position.y
+        # Update velocity always from odom
+        self.velocity['linear']  = round(float(msg.twist.twist.linear.x), 3)
+        self.velocity['angular'] = round(float(msg.twist.twist.angular.z), 3)
+
+        # Fallback: update pose from odom ONLY if map TF has not been received recently (<2s) and no AMCL
+        has_recent_map_tf = (time.time() - getattr(self, '_last_map_tf_time', 0.0)) < 2.0
+        if not has_recent_map_tf and not self._amcl_pose_received:
+            self.pose['x']   = round(float(msg.pose.pose.position.x), 3)
+            self.pose['y']   = round(float(msg.pose.pose.position.y), 3)
             q = msg.pose.pose.orientation
             self.pose['yaw'] = self._quat_to_yaw(q)
 
     def _amcl_cb(self, msg):
         """AMCL pose — map-frame, highest-confidence source for robot position."""
         self._amcl_pose_received = True
-        self.pose['x']   = msg.pose.pose.position.x
-        self.pose['y']   = msg.pose.pose.position.y
+        self.pose['x']   = round(float(msg.pose.pose.position.x), 3)
+        self.pose['y']   = round(float(msg.pose.pose.position.y), 3)
         self.pose['yaw'] = self._quat_to_yaw(msg.pose.pose.orientation)
 
     def _tf_pose_cb(self):
@@ -1230,15 +1239,17 @@ class AmrBridgeNode(Node):
             return
         try:
             tf = self._tf_buffer.lookup_transform(
-                'map', 'base_link', rclpy.time.Time()
+                'map', 'base_link', rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=0.05)
             )
             t = tf.transform.translation
-            self.pose['x']   = t.x
-            self.pose['y']   = t.y
+            self.pose['x']   = round(float(t.x), 3)
+            self.pose['y']   = round(float(t.y), 3)
             self.pose['yaw'] = self._quat_to_yaw(tf.transform.rotation)
-            self._amcl_pose_received = True
+            self._using_map_tf = True
+            self._last_map_tf_time = time.time()
         except Exception:
-            pass  # Quietly fall through to odom fallback
+            self._using_map_tf = False
 
     def _scan_cb(self, msg):
         self.scan_ranges    = list(msg.ranges)
@@ -1367,36 +1378,10 @@ class AmrBridgeNode(Node):
                 pil_img.save(clean_buf, format='PNG')
                 self._clean_map_b64 = base64.b64encode(clean_buf.getvalue()).decode()
 
-                # Overlay active frontiers and robot pose on the live map
-                overlay_img = pil_img.copy()
-                draw = ImageDraw.Draw(overlay_img)
-
-                # Draw frontiers as bright gold diamond targets
-                for f in self.frontiers:
-                    f_px = self._world_to_map_px(f.get('x', 0), f.get('y', 0))
-                    if f_px:
-                        fx, fy = f_px
-                        draw.rectangle([fx - 2, fy - 2, fx + 2, fy + 2], fill=(255, 215, 0), outline=(255, 255, 255))
-
-                # Draw robot pose (prominent glowing cyan/emerald beacon with heading pointer)
-                r_px = self._world_to_map_px(self.pose['x'], self.pose['y'])
-                if r_px:
-                    rx, ry = r_px
-                    rad = max(8, int(0.35 / max(0.01, self._live_map_resolution)))
-                    # Outer cyan halo
-                    draw.ellipse([rx - (rad + 4), ry - (rad + 4), rx + (rad + 4), ry + (rad + 4)], outline=(0, 212, 255), width=2)
-                    # Core emerald robot body
-                    draw.ellipse([rx - rad, ry - rad, rx + rad, ry + rad], fill=(0, 255, 157), outline=(255, 255, 255), width=2)
-                    # Forward heading pointer
-                    yaw = self.pose.get('yaw', 0.0)
-                    hx = rx + int((rad + 8) * math.cos(yaw))
-                    hy = ry - int((rad + 8) * math.sin(yaw))
-                    draw.line([rx, ry, hx, hy], fill=(0, 212, 255), width=3)
-                    draw.ellipse([hx - 2, hy - 2, hx + 2, hy + 2], fill=(255, 255, 255))
-
-                buf = io.BytesIO()
-                overlay_img.save(buf, format='PNG')
-                self._live_map_b64 = base64.b64encode(buf.getvalue()).decode()
+                # Dynamic elements (robot pose, frontiers) are rendered cleanly in real time
+                # by the web dashboard SVG overlay. Keeping the live map base clean prevents
+                # duplicate/stale robot circles.
+                self._live_map_b64 = self._clean_map_b64
         except Exception as e:
             self.get_logger().error(f"Error processing /map: {e}")
 
@@ -1664,9 +1649,9 @@ class AmrBridgeNode(Node):
         return {
             'width': self._live_map_width,
             'height': self._live_map_height,
-            'resolution': self._live_map_resolution,
-            'origin_x': round(self._live_map_origin_x, 3),
-            'origin_y': round(self._live_map_origin_y, 3),
+            'resolution': float(self._live_map_resolution),
+            'origin_x': float(self._live_map_origin_x),
+            'origin_y': float(self._live_map_origin_y),
             'msg_count': self._map_msg_count,
             'last_update': round(self._last_map_time, 2)
         }
@@ -1773,8 +1758,8 @@ class AmrBridgeNode(Node):
 
     # -------- Map PNG with robot overlay --------
 
-    def get_map_image_b64(self, map_name: Optional[str] = None) -> Optional[str]:
-        """Return base64-encoded JPEG of map PNG with robot dot overlaid for specified map."""
+    def get_map_image_b64(self, map_name: Optional[str] = None, clean: bool = False) -> Optional[str]:
+        """Return base64-encoded JPEG of map PNG (clean or with robot dot overlaid)."""
         target = (map_name or self.active_map_name or 'hospital_map').strip()
         img_path = resolve_map_image_path(target)
         if not img_path or not img_path.exists():
@@ -1783,27 +1768,28 @@ class AmrBridgeNode(Node):
         try:
             from PIL import Image, ImageDraw
             img = Image.open(img_path).convert('RGBA')
-            draw = ImageDraw.Draw(img)
+            if not clean:
+                draw = ImageDraw.Draw(img)
 
-            # Robot position dot (red circle)
-            cx, cy = world_to_pixel(self.pose['x'], self.pose['y'], map_name=target)
-            r = 6
-            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 60, 60, 230))
+                # Robot position dot (red circle)
+                cx, cy = world_to_pixel(self.pose['x'], self.pose['y'], map_name=target)
+                r = 6
+                draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(255, 60, 60, 230))
 
-            # Robot heading line
-            length = 16
-            yaw = self.pose['yaw']
-            ex = int(cx + length * math.cos(yaw))
-            ey = int(cy - length * math.sin(yaw))
-            draw.line([cx, cy, ex, ey], fill=(255, 200, 0, 220), width=3)
+                # Robot heading line
+                length = 16
+                yaw = self.pose['yaw']
+                ex = int(cx + length * math.cos(yaw))
+                ey = int(cy - length * math.sin(yaw))
+                draw.line([cx, cy, ex, ey], fill=(255, 200, 0, 220), width=3)
 
-            # Path overlay (magenta polyline)
-            if len(self.path_waypoints) >= 2:
-                pix_path = [world_to_pixel(p[0], p[1], map_name=target) for p in self.path_waypoints]
-                draw.line(pix_path, fill=(255, 80, 220, 200), width=2)
+                # Path overlay (magenta polyline)
+                if len(self.path_waypoints) >= 2:
+                    pix_path = [world_to_pixel(p[0], p[1], map_name=target) for p in self.path_waypoints]
+                    draw.line(pix_path, fill=(255, 80, 220, 200), width=2)
 
             buf = io.BytesIO()
-            img.convert('RGB').save(buf, format='JPEG', quality=82)
+            img.convert('RGB').save(buf, format='JPEG', quality=85)
             return base64.b64encode(buf.getvalue()).decode()
         except Exception as e:
             self.get_logger().warning(f"Error drawing map overlay for {target}: {e}")
@@ -1964,11 +1950,11 @@ async def post_active_map(req: SetActiveMapRequest):
         return JSONResponse({'error': str(e)}, status_code=400)
 
 @app.get('/api/map')
-async def get_map(map_name: Optional[str] = None):
+async def get_map(map_name: Optional[str] = None, clean: bool = False):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
     target = (map_name or node.active_map_name or 'hospital_map').strip()
-    data = node.get_map_image_b64(target)
+    data = node.get_map_image_b64(target, clean=clean)
     if data is None:
         return JSONResponse({'error': f'Map image for {target} not found'}, status_code=404)
     return {'image': data, 'encoding': 'jpeg/base64', 'map_name': target}
@@ -3081,7 +3067,7 @@ def _ros_thread():
             pass
         node = AmrBridgeNode()
         logger.info("[bridge] AmrBridgeNode initialized and ready.")
-        executor = SingleThreadedExecutor()
+        executor = MultiThreadedExecutor()
         executor.add_node(node)
         try:
             executor.spin()

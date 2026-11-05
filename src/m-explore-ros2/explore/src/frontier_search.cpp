@@ -89,8 +89,8 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
       } else if (isNewFrontierCell(nbr, frontier_flag)) {
         frontier_flag[nbr] = true;
         Frontier new_frontier = buildNewFrontier(nbr, pos, frontier_flag);
-        if (new_frontier.size > 0 &&
-            new_frontier.size * costmap_->getResolution() >= min_frontier_size_) {
+        if (new_frontier.size * costmap_->getResolution() >=
+            min_frontier_size_) {
           frontier_list.push_back(new_frontier);
         }
       }
@@ -181,11 +181,9 @@ Frontier FrontierSearch::buildNewFrontier(unsigned int initial_cell,
   output.centroid.x /= output.size;
   output.centroid.y /= output.size;
 
-  // Compute safe_target in confirmed FREE_SPACE with guaranteed obstacle clearance
+  // Compute safe_target in confirmed FREE_SPACE with obstacle clearance
   output.safe_target = output.middle;
   unsigned int mx, my;
-  bool found_safe = false;
-
   if (costmap_->worldToMap(output.middle.x, output.middle.y, mx, my)) {
     unsigned int middle_idx = costmap_->getIndex(mx, my);
     unsigned int clear_idx;
@@ -195,71 +193,28 @@ Frontier FrontierSearch::buildNewFrontier(unsigned int initial_cell,
       costmap_->indexToCells(clear_idx, cx, cy);
       double wx, wy;
       costmap_->mapToWorld(cx, cy, wx, wy);
+      output.safe_target.x = wx;
+      output.safe_target.y = wy;
 
+      // Inset only if robot is comfortably far away (d > 0.80m)
+      // to avoid shrinking the goal inside the robot's goal tolerance footprint
       double dx = reference_x - wx;
       double dy = reference_y - wy;
       double d = std::sqrt(dx * dx + dy * dy);
-
-      if (d > 0.15) {
-        // Search along line towards robot for a point with at least 0.18m physical obstacle clearance.
-        // Step distances back from frontier towards the robot's known-free location:
-        const double step_candidates[] = {0.35, 0.50, 0.70, 0.20, 0.10, 0.0};
-        int r_cells = static_cast<int>(0.18 / costmap_->getResolution());
-        unsigned int size_x = costmap_->getSizeInCellsX();
-        unsigned int size_y = costmap_->getSizeInCellsY();
-
-        for (double s : step_candidates) {
-          // Do not step past the robot
-          if (s > d - 0.15) continue;
-
-          double cand_x = wx + (dx / d) * s;
-          double cand_y = wy + (dy / d) * s;
-          unsigned int cand_mx, cand_my;
-          if (!costmap_->worldToMap(cand_x, cand_y, cand_mx, cand_my)) continue;
-
-          unsigned char center_cost = costmap_->getCost(cand_mx, cand_my);
-          if (center_cost == NO_INFORMATION ||
-              center_cost >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
-            continue;
-          }
-
-          // Check circular footprint clearance from physical obstacles
-          bool clear_of_obstacles = true;
-          for (int rx = -r_cells; rx <= r_cells && clear_of_obstacles; ++rx) {
-            for (int ry = -r_cells; ry <= r_cells; ++ry) {
-              if (rx * rx + ry * ry > r_cells * r_cells) continue;
-              int nx = static_cast<int>(cand_mx) + rx;
-              int ny = static_cast<int>(cand_my) + ry;
-              if (nx < 0 || nx >= static_cast<int>(size_x) || ny < 0 || ny >= static_cast<int>(size_y)) {
-                clear_of_obstacles = false;
-                break;
-              }
-              unsigned char cell_cost = costmap_->getCost(nx, ny);
-              // Only physical obstacles (LETHAL or INSCRIBED) cause collisions.
-              // NO_INFORMATION (255) is unknown space, not a physical obstacle.
-              if (cell_cost != nav2_costmap_2d::NO_INFORMATION &&
-                  cell_cost >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
-                clear_of_obstacles = false;
-                break;
-              }
-            }
-          }
-
-          if (clear_of_obstacles) {
+      if (d > 0.80) {
+        double step = 0.20;
+        double cand_x = wx + (dx / d) * step;
+        double cand_y = wy + (dy / d) * step;
+        unsigned int cand_mx, cand_my;
+        if (costmap_->worldToMap(cand_x, cand_y, cand_mx, cand_my)) {
+          unsigned char cost = costmap_->getCost(cand_mx, cand_my);
+          if (cost < nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE && cost != NO_INFORMATION) {
             output.safe_target.x = cand_x;
             output.safe_target.y = cand_y;
-            found_safe = true;
-            break;
           }
         }
       }
     }
-  }
-
-  // If no safe target with open clearance could be found (e.g. inside an unreachable narrow slit),
-  // invalidate the frontier so the robot never drives into walls or narrow crevices.
-  if (!found_safe) {
-    output.size = 0;
   }
 
   return output;
@@ -292,31 +247,28 @@ double FrontierSearch::frontierCost(const Frontier& frontier)
   // 2. Physical length of frontier in meters
   double size_m = frontier.size * costmap_->getResolution();
 
-  // 3. Physical distance penalty:
-  // Nearest-Frontier principle: travel distance across the warehouse
-  // heavily penalizes jumping to distant rooms.
-  double dist_penalty = potential_scale_ * (distance_m + 0.2 * std::pow(distance_m, 1.2));
+  // 3. True metric cost:
+  // Steep distance penalty ensures nearby room frontiers strictly beat distant ones.
+  double dist_penalty = potential_scale_ * (distance_m * 2.0 + std::pow(distance_m, 1.4));
 
-  // 4. Information gain reward (moderated):
-  // Gives preference to larger openings without overwhelming proximity.
-  double gain_reward = gain_scale_ * std::min(size_m, 3.0);
-
+  // Cap size reward to a maximum (1.2m) so a huge doorway or hall opening in another room
+  // cannot overpower a small 0.3-0.5m corner in the current room.
+  double capped_size = std::min(size_m, 1.2);
+  double gain_reward = gain_scale_ * capped_size;
   double base_cost = dist_penalty - gain_reward;
 
-  // 5. STRICT LOCAL ROOM / ZONE CLUSTERING:
-  // If frontier is within current room/local radius (distance <= local_radius_):
-  // Apply a decisive cluster bonus (-60.0) so the robot MUST exhaust all local frontiers
-  // in the current room before venturing out into other rooms.
-  // Within the room, closer frontiers score lower cost (nearest-frontier traveling sweep).
+  // 4. Section/Room-First Local Priority:
+  // If the frontier is within the local room radius (default 3.5m),
+  // give a substantial negative bonus (-100.0) so it decisively beats ANY distant frontier!
+  // This guarantees that the robot completes the current section/room before moving on.
   if (distance_m <= local_radius_) {
-    double local_proximity = (1.0 - (distance_m / local_radius_));
-    base_cost -= (60.0 + 10.0 * local_proximity);
+    base_cost -= 100.0;
   }
 
-  // 6. Wall proximity bonus: frontier hugging a wall scores lower cost
+  // 5. Wall proximity bonus: frontier hugging a wall scores lower cost
   double wall_b = (wall_bonus_scale_ > 0.0) ? wallProximityBonus(frontier) * wall_bonus_scale_ : 0.0;
 
-  // 7. Momentum bonus: when selecting between distant rooms, prefer continuing along heading
+  // 6. Momentum bonus: frontier ahead of robot scores lower cost
   double mom_b = (momentum_scale_ > 0.0) ? momentumBonus(frontier) * momentum_scale_ : 0.0;
 
   return base_cost - wall_b - mom_b;

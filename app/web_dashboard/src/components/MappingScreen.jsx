@@ -28,8 +28,14 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
   const [status, setStatus] = useState(mappingData.state || 'READY'); // 'READY' | 'MAPPING' | 'STOPPED' | 'SAVED'
   const [elapsedSec, setElapsedSec] = useState(mappingData.elapsed_sec || 0);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [liveMapImg, setLiveMapImg] = useState(null);
-  const [liveMapMeta, setLiveMapMeta] = useState(null);
+  const [liveMap, setLiveMap] = useState({
+    image: null,
+    meta: null,
+    width: 0,
+    height: 0,
+  });
+  const liveMapImg = liveMap.image;
+  const liveMapMeta = liveMap.meta;
   const [teleopSpeed, setTeleopSpeed] = useState(0.4); // m/s safe mapping speed
   const [enableGui, setEnableGui] = useState(true); // Complete GUI mode (Gazebo 3D + RViz2)
   const [guiFeedback, setGuiFeedback] = useState(null);
@@ -146,9 +152,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
       if (m.map_name && !isSaved && !isMapNameDirtyRef.current) {
         setMapName(m.map_name);
       }
-      if (m.map_info) {
-        setLiveMapMeta(m.map_info);
-      }
+      // Note: We deliberately do NOT update liveMap.meta here from m.map_info.
+      // In SLAM Toolbox, the map boundary dynamically expands. The map metadata
+      // must remain strictly bound to the currently decoded image to avoid projection jumps.
       if (m.run_explore != null) {
         setRunExplore(Boolean(m.run_explore));
       }
@@ -180,11 +186,22 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
       const res = await bridge.getMapVerification();
       if (res?.verification?.has_map) {
         setVerificationData(res.verification);
-        setLiveMapMeta(res.verification);
-        if (mapViewMode === 'clean' && res.verification.clean_image_b64) {
-          setLiveMapImg(`data:image/png;base64,${res.verification.clean_image_b64}`);
-        } else if (mapViewMode === 'overlay' && res.verification.overlay_image_b64) {
-          setLiveMapImg(`data:image/png;base64,${res.verification.overlay_image_b64}`);
+        const baseImg = res.verification.clean_image_b64 || res.verification.overlay_image_b64;
+        if (baseImg) {
+          const imgSrc = `data:image/png;base64,${baseImg}`;
+          const img = new Image();
+          img.onload = () => {
+            const w = img.naturalWidth || res.verification.width || 0;
+            const h = img.naturalHeight || res.verification.height || 0;
+            setLiveMap({
+              image: imgSrc,
+              meta: res.verification,
+              width: w,
+              height: h,
+            });
+            setImgDimensions({ width: w, height: h });
+          };
+          img.src = imgSrc;
         }
       }
       if (res?.mapping?.is_saved) {
@@ -194,7 +211,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
         }
       }
     } catch (_) {}
-  }, [mapViewMode]);
+  }, []);
 
   // Trigger verification fetch when stopped or in verification step
   useEffect(() => {
@@ -203,18 +220,31 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     }
   }, [status, currentStep, fetchVerificationData]);
 
-  // Poll live map image during mapping or inspection
+  // Poll live map image during mapping or inspection (always clean floorplan; SVG handles overlays)
   useEffect(() => {
     let mapTimer = null;
+    let isMounted = true;
+
     const fetchLiveMap = async () => {
       try {
-        const isClean = mapViewMode === 'clean';
-        const res = await bridge.getLiveMap(isClean);
-        if (res?.has_data && res.image) {
-          setLiveMapImg(`data:image/png;base64,${res.image}`);
-          if (res.info) {
-            setLiveMapMeta(res.info);
-          }
+        const res = await bridge.getLiveMap(true);
+        if (!isMounted) return;
+        if (res?.has_data && res.image && res.info) {
+          const imgSrc = `data:image/png;base64,${res.image}`;
+          const img = new Image();
+          img.onload = () => {
+            if (!isMounted) return;
+            const w = img.naturalWidth || res.info.width || 0;
+            const h = img.naturalHeight || res.info.height || 0;
+            setLiveMap({
+              image: imgSrc,
+              meta: res.info,
+              width: w,
+              height: h,
+            });
+            setImgDimensions({ width: w, height: h });
+          };
+          img.src = imgSrc;
         }
       } catch (_) {}
     };
@@ -224,32 +254,43 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
       mapTimer = setInterval(fetchLiveMap, 1500); // 1.5s refresh for occupancy grid
     }
     return () => {
+      isMounted = false;
       if (mapTimer) clearInterval(mapTimer);
     };
-  }, [status, mapViewMode]);
+  }, [status]);
 
   // Coordinate transform for live SLAM map SVG overlay
-  const activeMapMeta = liveMapMeta || verificationData || mappingData?.map_info;
+  const activeMapMeta = liveMap.meta || verificationData || mappingData?.map_info;
   const worldToCanvasPx = useCallback((wx, wy) => {
-    if (!activeMapMeta || !activeMapMeta.resolution || !activeMapMeta.width || !activeMapMeta.height) {
+    if (!activeMapMeta || !activeMapMeta.resolution) {
       return null;
     }
     const res = Number(activeMapMeta.resolution) || 0.05;
     const ox = Number(activeMapMeta.origin_x) || 0;
     const oy = Number(activeMapMeta.origin_y) || 0;
-    const h = Number(activeMapMeta.height);
-    const w = Number(activeMapMeta.width);
+    const h = Number(liveMap.height || activeMapMeta.height);
+    const w = Number(liveMap.width || activeMapMeta.width);
+    if (!h || !w) return null;
 
+    // Standard ROS OccupancyGrid projection:
+    // cx: distance in pixels along x axis from origin_x
+    // cy: distance in pixels along y axis from origin_y
+    // In PIL image, array is flipped vertically with np.flipud so y=0 is bottom (h - 1 - cy)
     const cx = (wx - ox) / res;
     const cy = (wy - oy) / res;
     const px = cx;
     const py = (h - 1) - cy;
 
-    const scaleX = imgDimensions.width > 0 && w > 0 ? (imgDimensions.width / w) : 1;
-    const scaleY = imgDimensions.height > 0 && h > 0 ? (imgDimensions.height / h) : 1;
+    return { x: px, y: py };
+  }, [activeMapMeta, liveMap.height, liveMap.width]);
 
-    return { x: px * scaleX, y: py * scaleY };
-  }, [activeMapMeta, imgDimensions]);
+  const mapRes = Number(activeMapMeta?.resolution) || 0.05;
+  // AGV cylinder chassis is 0.11m radius, outer footprint ~0.16-0.18m.
+  // In map pixels: 0.18 / resolution (e.g. ~3.6px at 0.05m/px).
+  // Clamped between 3.5px and 7.0px for realistic physical proportion on the canvas.
+  const robotRadius = useMemo(() => {
+    return Math.max(3.5, Math.min(7.0, 0.18 / mapRes));
+  }, [mapRes]);
 
   const robotCanvasPx = useMemo(() => {
     if (!pose || typeof pose.x !== 'number' || typeof pose.y !== 'number') return null;
@@ -2833,6 +2874,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   transformOrigin: 'center center',
                   position: 'relative',
+                  width: imgDimensions.width > 0 ? `${imgDimensions.width}px` : 'auto',
+                  height: imgDimensions.height > 0 ? `${imgDimensions.height}px` : 'auto',
                   display: 'inline-block',
                   cursor: isPickNodeOnCanvasMode ? 'crosshair' : 'default',
                 }}
@@ -3027,7 +3070,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                   </svg>
                 )}
               </div>
-            ) : liveMapImg ? (
+            ) : liveMap.image ? (
 
               <div
                 className="mapping-image-wrapper"
@@ -3035,29 +3078,23 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   transformOrigin: 'center center',
                   position: 'relative',
+                  width: liveMap.width > 0 ? `${liveMap.width}px` : 'auto',
+                  height: liveMap.height > 0 ? `${liveMap.height}px` : 'auto',
                   display: 'inline-block',
                 }}
               >
                 <img
-                  src={liveMapImg}
+                  src={liveMap.image}
                   alt="SLAM Occupancy Grid"
                   className="mapping-slam-img"
                   draggable={false}
-                  onLoad={(e) => {
-                    if (e.target.naturalWidth) {
-                      setImgDimensions({
-                        width: e.target.naturalWidth,
-                        height: e.target.naturalHeight,
-                      });
-                    }
-                  }}
                 />
 
                 {/* SVG Live Robot & Exploration Overlay */}
-                {imgDimensions.width > 0 && imgDimensions.height > 0 && (
+                {liveMap.width > 0 && liveMap.height > 0 && mapViewMode === 'overlay' && (
                   <svg
                     className="mapping-live-svg-overlay"
-                    viewBox={`0 0 ${imgDimensions.width} ${imgDimensions.height}`}
+                    viewBox={`0 0 ${liveMap.width} ${liveMap.height}`}
                     style={{
                       position: 'absolute',
                       top: 0,
@@ -3068,16 +3105,6 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       zIndex: 4,
                     }}
                   >
-                    <defs>
-                      <filter id="robot-live-glow" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-                        <feMerge>
-                          <feMergeNode in="blur" />
-                          <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                      </filter>
-                    </defs>
-
                     {/* Active Exploration Frontiers */}
                     {telemetry?.mapping?.exploration?.frontiers?.map((f, i) => {
                       const fPx = worldToCanvasPx(f.x, f.y);
@@ -3085,83 +3112,54 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       return (
                         <g key={`frontier-${i}`}>
                           <polygon
-                            points={`${fPx.x},${fPx.y - 7} ${fPx.x + 6},${fPx.y} ${fPx.x},${fPx.y + 7} ${fPx.x - 6},${fPx.y}`}
+                            points={`${fPx.x},${fPx.y - 5} ${fPx.x + 4.5},${fPx.y} ${fPx.x},${fPx.y + 5} ${fPx.x - 4.5},${fPx.y}`}
                             fill="#fbbf24"
                             stroke="#ffffff"
-                            strokeWidth="1.5"
+                            strokeWidth="1.2"
                           />
                         </g>
                       );
                     })}
 
-                    {/* Prominent Live Robot Beacon */}
+                    {/* Simple, Clean AMR Robot (Proportionate physical sizing to map resolution) */}
                     {robotCanvasPx && (
                       <g
                         transform={`translate(${robotCanvasPx.x}, ${robotCanvasPx.y})`}
-                        filter="url(#robot-live-glow)"
+                        style={{ pointerEvents: 'auto', cursor: 'default' }}
                       >
-                        {/* Outer pulsing sonar / radar circle */}
+                        <title>{`AMR Robot • (${pose.x.toFixed(2)}m, ${pose.y.toFixed(2)}m) • Heading: ${((pose.yaw * 180) / Math.PI).toFixed(1)}°`}</title>
+
+                        {/* Single clean robot chassis disc matching physical footprint */}
                         <circle
-                          r="22"
-                          fill="rgba(6, 182, 212, 0.22)"
+                          r={robotRadius}
+                          fill="rgba(0, 212, 255, 0.32)"
                           stroke="#00f3ff"
-                          strokeWidth="1.5"
-                          className="radar-pulse-anim"
+                          strokeWidth="1.2"
                         />
-                        {/* Outer glowing halo */}
+
+                        {/* Center core dot */}
                         <circle
-                          r="14"
-                          fill="none"
-                          stroke="#00f3ff"
-                          strokeWidth="2"
-                          strokeDasharray="4 2"
+                          r={Math.max(1, robotRadius * 0.28)}
+                          fill="#ffffff"
                         />
-                        {/* Robot body base */}
-                        <circle
-                          r="9"
-                          fill="#0f172a"
-                          stroke="#10b981"
-                          strokeWidth="2.5"
-                        />
-                        {/* Center core */}
-                        <circle
-                          r="4.5"
-                          fill="#00f3ff"
-                        />
-                        {/* Heading Arrow */}
+
+                        {/* Crisp forward direction indicator */}
                         <g transform={`rotate(${(-pose.yaw * 180) / Math.PI})`}>
-                          <line x1="0" y1="0" x2="16" y2="0" stroke="#00f3ff" strokeWidth="2.5" />
+                          <line
+                            x1="0"
+                            y1="0"
+                            x2={robotRadius + 3}
+                            y2="0"
+                            stroke="#00f3ff"
+                            strokeWidth="1.4"
+                            strokeLinecap="round"
+                          />
                           <polygon
-                            points="18,0 11,-4.5 13,0 11,4.5"
+                            points={`${robotRadius + 4.2},0 ${robotRadius + 1.2},-2 ${robotRadius + 1.8},0 ${robotRadius + 1.2},2`}
                             fill="#00f3ff"
                             stroke="#ffffff"
-                            strokeWidth="1"
+                            strokeWidth="0.4"
                           />
-                        </g>
-                        {/* AMR Label Pill */}
-                        <g transform="translate(0, -20)">
-                          <rect
-                            x="-26"
-                            y="-9"
-                            width="52"
-                            height="16"
-                            rx="4"
-                            fill="rgba(15, 23, 42, 0.9)"
-                            stroke="#00f3ff"
-                            strokeWidth="1.2"
-                          />
-                          <text
-                            x="0"
-                            y="-1"
-                            fill="#00f3ff"
-                            fontSize="9"
-                            fontWeight="bold"
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            style={{ userSelect: 'none' }}
-                          >
-                            AMR ROBOT
-                          </text>
                         </g>
                       </g>
                     )}
@@ -3209,7 +3207,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                 ) : currentStep >= 3 && extractedGraphReport ? (
                   `Graph: ${extractedGraphReport.total_nodes} Nodes • ${extractedGraphReport.total_edges} Edges • Connectivity: ${extractedGraphReport.metrics?.avg_connectivity || '—'} / node`
                 ) : (
-                  `AMR: (${pose.x.toFixed(2)}, {pose.y.toFixed(2)}) • Res: ${verificationData?.resolution || mappingData.map_info?.resolution || 0.05} m/px`
+                  `AMR: (${pose.x.toFixed(2)}, ${pose.y.toFixed(2)}) • Res: ${verificationData?.resolution || mappingData.map_info?.resolution || 0.05} m/px`
                 )}
               </span>
             </div>

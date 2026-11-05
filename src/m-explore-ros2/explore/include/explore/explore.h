@@ -97,7 +97,6 @@ private:
       const std::vector<frontier_exploration::Frontier>& frontiers);
 
   bool goalOnBlacklist(const geometry_msgs::msg::Point& goal);
-  bool isFrontierCleared(const geometry_msgs::msg::Point& target, double radius = 0.8);
 
   NavigationGoalHandle::SharedPtr navigation_goal_handle_;
   // void
@@ -132,16 +131,7 @@ private:
   geometry_msgs::msg::Point prev_goal_;
   double prev_distance_;
   rclcpp::Time last_progress_;
-  rclcpp::Time last_blacklist_reset_{0, 0, RCL_ROS_TIME};
   size_t last_markers_count_;
-
-  geometry_msgs::msg::Point checkpoint_pos_;
-  double checkpoint_dist_to_active_{0.0};
-  bool has_checkpoint_{false};
-
-  geometry_msgs::msg::Point last_robot_pos_;
-  double last_robot_yaw_{0.0};
-  bool has_last_robot_pose_{false};
 
   geometry_msgs::msg::Pose initial_pose_;
   void returnToInitialPose(void);
