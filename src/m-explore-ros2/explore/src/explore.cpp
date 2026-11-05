@@ -37,6 +37,7 @@
  *********************************************************************/
 
 #include <explore/explore.h>
+#include <nav2_costmap_2d/cost_values.hpp>
 
 #include <thread>
 
@@ -244,42 +245,68 @@ void Explore::makePlan()
   // find frontiers
   auto pose = costmap_client_.getRobotPose();
 
-  // 1. HARD STALL CONSTRAINT:
-  // If an active goal is being pursued, verify that the robot is physically progressing towards it.
+  // Extract yaw from robot pose
+  double siny_cosp = 2.0 * (pose.orientation.w * pose.orientation.z + pose.orientation.x * pose.orientation.y);
+  double cosy_cosp = 1.0 - 2.0 * (pose.orientation.y * pose.orientation.y + pose.orientation.z * pose.orientation.z);
+  double current_yaw = std::atan2(siny_cosp, cosy_cosp);
+
+  // 1. KINEMATIC-AWARE STALL GUARD:
+  // Check if robot is physically making cumulative progress towards the goal, maneuvering along a curved path,
+  // or rotating in place for heading alignment.
   if (goal_active_ && !resuming_) {
     double current_dist_to_active = std::hypot(prev_goal_.x - pose.position.x,
                                                prev_goal_.y - pose.position.y);
-    if (prev_distance_ - current_dist_to_active > 0.08) {
-      // Robot physically advanced towards the active goal
+
+    if (!has_checkpoint_) {
+      checkpoint_pos_ = pose.position;
+      checkpoint_dist_to_active_ = current_dist_to_active;
       last_progress_ = this->now();
-      prev_distance_ = current_dist_to_active;
+      has_checkpoint_ = true;
+    }
+
+    // Cumulative displacement and distance closed since last progress checkpoint:
+    double dist_from_checkpoint = std::hypot(pose.position.x - checkpoint_pos_.x,
+                                             pose.position.y - checkpoint_pos_.y);
+    double dist_closed = checkpoint_dist_to_active_ - current_dist_to_active;
+
+    // Yaw difference since last tick (for detecting in-place rotation):
+    double yaw_diff = 0.0;
+    if (has_last_robot_pose_) {
+      yaw_diff = std::abs(current_yaw - last_robot_yaw_);
+      while (yaw_diff > M_PI) yaw_diff = std::abs(yaw_diff - 2.0 * M_PI);
+    }
+
+    // Progress is achieved ONLY when robot physically translates along the ground:
+    // (translates >= 0.12m from checkpoint OR closes distance to active goal by >= 0.10m)
+    bool made_progress = (dist_from_checkpoint >= 0.12) || (dist_closed >= 0.10);
+
+    if (made_progress) {
+      checkpoint_pos_ = pose.position;
+      checkpoint_dist_to_active_ = current_dist_to_active;
+      last_progress_ = this->now();
     } else if (this->now() - last_progress_ > tf2::durationFromSec(progress_timeout_)) {
-      // Robot made NO progress for > progress_timeout_ (8.0s) — hard constraint triggered!
       RCLCPP_WARN(logger_,
-                  "STALL CONSTRAINT TRIGGERED: Robot motionless for %.1f s towards (%.2f, %.2f). "
-                  "Cancelling active Nav2 goal, blacklisting stuck target, and forcing immediate re-plan.",
+                  "STALL CONSTRAINT TRIGGERED: Robot physically stationary for %.1f s towards (%.2f, %.2f). "
+                  "Cancelling active Nav2 goal, blacklisting stuck target, and waiting for clean state.",
                   progress_timeout_, prev_goal_.x, prev_goal_.y);
       frontier_blacklist_.push_back(prev_goal_);
       move_base_client_->async_cancel_all_goals();
       goal_active_ = false;
+      has_checkpoint_ = false;
       last_progress_ = this->now();
       prev_distance_ = 0.0;
+      return;
     }
+  } else {
+    has_checkpoint_ = false;
   }
 
-  // Update robot heading in the frontier search scorer using current TF
-  try {
-    auto tf_stamped = tf_buffer_.lookupTransform(
-        costmap_client_.getGlobalFrameID(), robot_base_frame_, tf2::TimePointZero);
-    // Extract yaw from quaternion
-    auto& q = tf_stamped.transform.rotation;
-    double siny_cosp = 2.0 * (q.w * q.z + q.x * q.y);
-    double cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
-    double yaw = std::atan2(siny_cosp, cosy_cosp);
-    search_.setRobotHeading(std::cos(yaw), std::sin(yaw));
-  } catch (const tf2::TransformException& ex) {
-    RCLCPP_DEBUG(logger_, "Could not get robot heading for momentum scoring: %s", ex.what());
-  }
+  last_robot_pos_ = pose.position;
+  last_robot_yaw_ = current_yaw;
+  has_last_robot_pose_ = true;
+
+  // Update robot heading in frontier scorer
+  search_.setRobotHeading(std::cos(current_yaw), std::sin(current_yaw));
 
   // get frontiers sorted according to cost
   auto frontiers = search_.searchFrom(pose.position);
@@ -289,6 +316,10 @@ void Explore::makePlan()
   }
 
   if (frontiers.empty()) {
+    if (goal_active_) {
+      // Robot is actively executing a goal. Allow it to proceed and reveal frontiers.
+      return;
+    }
     RCLCPP_WARN(logger_, "No frontiers found, stopping.");
     auto status_msg = explore_lite_msgs::msg::ExploreStatus();
     status_msg.status = explore_lite_msgs::msg::ExploreStatus::EXPLORATION_COMPLETE;
@@ -312,11 +343,7 @@ void Explore::makePlan()
                                       it->safe_target.y - pose.position.y);
     if (dist_to_robot < min_target_distance_) {
       // Robot is already within physical reach of this frontier target.
-      // Retire it to blacklist so it doesn't trigger 0-motion Nav2 instant-completion loops.
-      RCLCPP_DEBUG(logger_,
-                   "Frontier at (%.2f, %.2f) is within robot reach (%.2fm < %.2fm). Retiring to blacklist.",
-                   it->safe_target.x, it->safe_target.y, dist_to_robot, min_target_distance_);
-      frontier_blacklist_.push_back(it->safe_target);
+      // Skip it as a new candidate, but do NOT permanently blacklist it.
       continue;
     }
     frontier = it;
@@ -324,11 +351,17 @@ void Explore::makePlan()
   }
 
   if (frontier == frontiers.end()) {
-    // If all frontiers are blacklisted or inside reach, reset blacklist once so the robot
-    // re-evaluates previously obstructed areas with the latest expanded map
-    if (!frontier_blacklist_.empty()) {
+    if (goal_active_) {
+      // Robot is already pursuing an active navigation goal. Keep driving!
+      return;
+    }
+
+    // Rate-limit blacklist resets to at most once every 10 seconds:
+    if (!frontier_blacklist_.empty() &&
+        (this->now() - last_blacklist_reset_ > tf2::durationFromSec(10.0))) {
       RCLCPP_INFO(logger_, "All active frontiers were blacklisted or reached. Resetting blacklist to re-evaluate with current map.");
       frontier_blacklist_.clear();
+      last_blacklist_reset_ = this->now();
       for (auto it = frontiers.begin(); it != frontiers.end(); ++it) {
         double dist_to_robot = std::hypot(it->safe_target.x - pose.position.x,
                                           it->safe_target.y - pose.position.y);
@@ -341,7 +374,10 @@ void Explore::makePlan()
   }
 
   if (frontier == frontiers.end()) {
-    RCLCPP_WARN(logger_, "All frontiers traversed/tried out, stopping.");
+    if (goal_active_) {
+      return;
+    }
+    RCLCPP_WARN(logger_, "All reachable frontiers traversed/tried out, stopping.");
     auto status_msg = explore_lite_msgs::msg::ExploreStatus();
     status_msg.status = explore_lite_msgs::msg::ExploreStatus::EXPLORATION_COMPLETE;
     status_pub_->publish(status_msg);
@@ -352,36 +388,23 @@ void Explore::makePlan()
   double current_dist_to_target = std::hypot(target_position.x - pose.position.x,
                                              target_position.y - pose.position.y);
 
-  // Goal Commitment (Preventing ping-pong preemption across rooms):
-  // If we already have an active goal that the robot is pursuing and making progress towards:
-  // Do NOT interrupt or preempt the robot unless the candidate frontier is significantly closer
-  // to the robot than the active goal (e.g. less than half distance).
+  // If a goal is already active, maintain strict commitment to it!
+  // Preempting active goals in Nav2 while FollowPath is running causes bt_navigator action halt deadlocks.
   if (goal_active_) {
-    double dist_to_active = std::hypot(prev_goal_.x - pose.position.x,
-                                       prev_goal_.y - pose.position.y);
-    bool same_goal = same_point(prev_goal_, target_position);
-    bool candidate_much_closer = (current_dist_to_target < 1.2 && dist_to_active > 2.5);
-    if (!same_goal && !candidate_much_closer) {
-      // Maintain commitment to current room/target without ping-ponging
-      return;
-    }
+    return;
   }
-
-  bool same_goal = same_point(prev_goal_, target_position);
 
   // ensure only first call of makePlan was set resuming to true
   if (resuming_) {
     resuming_ = false;
   }
 
-  // we don't need to do anything if we still pursuing the same goal
-  if (same_goal && goal_active_) {
-    return;
-  }
-
   prev_goal_ = target_position;
   last_progress_ = this->now();
   prev_distance_ = current_dist_to_target;
+  checkpoint_pos_ = pose.position;
+  checkpoint_dist_to_active_ = current_dist_to_target;
+  has_checkpoint_ = true;
 
   RCLCPP_INFO(logger_, "Dispatching navigation goal to (%.2f, %.2f) [dist=%.2fm]",
               target_position.x, target_position.y, current_dist_to_target);
@@ -403,6 +426,7 @@ void Explore::makePlan()
         if (!goal_handle) {
           RCLCPP_ERROR(logger_, "Goal was REJECTED by the action server");
           goal_active_ = false;
+          has_checkpoint_ = false;
         } else {
           active_goal_id_ = goal_handle->get_goal_id();
           RCLCPP_DEBUG(logger_, "Goal ACCEPTED, uuid: %s",
@@ -458,6 +482,39 @@ bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
   return false;
 }
 
+bool Explore::isFrontierCleared(const geometry_msgs::msg::Point& target, double radius)
+{
+  auto* costmap = costmap_client_.getCostmap();
+  if (!costmap) {
+    return false;
+  }
+  unsigned int mx, my;
+  if (!costmap->worldToMap(target.x, target.y, mx, my)) {
+    return false;
+  }
+
+  int cell_radius = static_cast<int>(radius / costmap->getResolution());
+  unsigned int size_x = costmap->getSizeInCellsX();
+  unsigned int size_y = costmap->getSizeInCellsY();
+  const unsigned char* char_map = costmap->getCharMap();
+
+  int min_x = std::max(0, static_cast<int>(mx) - cell_radius);
+  int max_x = std::min(static_cast<int>(size_x) - 1, static_cast<int>(mx) + cell_radius);
+  int min_y = std::max(0, static_cast<int>(my) - cell_radius);
+  int max_y = std::min(static_cast<int>(size_y) - 1, static_cast<int>(my) + cell_radius);
+
+  int unknown_count = 0;
+  for (int x = min_x; x <= max_x; ++x) {
+    for (int y = min_y; y <= max_y; ++y) {
+      if (char_map[costmap->getIndex(x, y)] == nav2_costmap_2d::NO_INFORMATION) {
+        unknown_count++;
+      }
+    }
+  }
+
+  return (unknown_count < 3);
+}
+
 void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
                           const geometry_msgs::msg::Point& frontier_goal) {
   // discard stale callbacks from previously preempted goals
@@ -466,6 +523,7 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
   }
 
   goal_active_ = false;
+  has_checkpoint_ = false;
   switch (result.code) {
     case rclcpp_action::ResultCode::SUCCEEDED:
       RCLCPP_INFO(logger_, "Goal at (%.2f, %.2f) SUCCEEDED — retiring frontier to blacklist",
@@ -520,6 +578,7 @@ void Explore::stop(bool finished_exploring)
   RCLCPP_INFO(logger_, "Exploration stopped.");
 
   goal_active_ = false;
+  has_checkpoint_ = false;
   // Only publish paused status if manually stopped (not finished exploring)
   if (!finished_exploring) {
     auto status_msg = explore_lite_msgs::msg::ExploreStatus();

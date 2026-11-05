@@ -221,40 +221,33 @@ void Costmap2DClient::updatePartialMap(
 
 geometry_msgs::msg::Pose Costmap2DClient::getRobotPose() const
 {
-  geometry_msgs::msg::PoseStamped robot_pose;
   geometry_msgs::msg::Pose empty_pose;
-  robot_pose.header.frame_id = robot_base_frame_;
-  robot_pose.header.stamp = node_.now();
-
+  empty_pose.orientation.w = 1.0;
   auto& clk = *node_.get_clock();
 
-  // get the global pose of the robot
   try {
-    robot_pose = tf_->transform(robot_pose, global_frame_,
-                                tf2::durationFromSec(transform_tolerance_));
-  } catch (tf2::LookupException& ex) {
-    RCLCPP_ERROR_THROTTLE(node_.get_logger(), clk, 1000,
-                          "No Transform available Error looking up robot pose: "
-                          "%s\n",
-                          ex.what());
-    return empty_pose;
-  } catch (tf2::ConnectivityException& ex) {
-    RCLCPP_ERROR_THROTTLE(node_.get_logger(), clk, 1000,
-                          "Connectivity Error looking up robot pose: %s\n",
-                          ex.what());
-    return empty_pose;
-  } catch (tf2::ExtrapolationException& ex) {
-    RCLCPP_ERROR_THROTTLE(node_.get_logger(), clk, 1000,
-                          "Extrapolation Error looking up robot pose: %s\n",
-                          ex.what());
-    return empty_pose;
-  } catch (tf2::TransformException& ex) {
-    RCLCPP_ERROR_THROTTLE(node_.get_logger(), clk, 1000, "Other error: %s\n",
-                          ex.what());
+    auto tf_stamped = tf_->lookupTransform(
+        global_frame_, robot_base_frame_, tf2::TimePointZero,
+        tf2::durationFromSec(transform_tolerance_));
+
+    geometry_msgs::msg::Pose current_pose;
+    current_pose.position.x = tf_stamped.transform.translation.x;
+    current_pose.position.y = tf_stamped.transform.translation.y;
+    current_pose.position.z = tf_stamped.transform.translation.z;
+    current_pose.orientation = tf_stamped.transform.rotation;
+
+    last_valid_pose_ = current_pose;
+    has_valid_pose_ = true;
+    return current_pose;
+  } catch (const tf2::TransformException& ex) {
+    RCLCPP_WARN_THROTTLE(node_.get_logger(), clk, 2000,
+                         "Transform lookup (%s -> %s) error: %s",
+                         global_frame_.c_str(), robot_base_frame_.c_str(), ex.what());
+    if (has_valid_pose_) {
+      return last_valid_pose_;
+    }
     return empty_pose;
   }
-
-  return robot_pose.pose;
 }
 
 std::array<unsigned char, 256> init_translation_table()

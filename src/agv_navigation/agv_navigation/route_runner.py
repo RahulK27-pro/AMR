@@ -196,11 +196,13 @@ class RouteRunner(Node):
         # Stuck detector & Active Reverse Recovery
         self._stuck_counter = 0
         self._last_stuck_check_pos = None
+        self._prev_heading_err = None  # Tracks heading error delta for kinematic stuck detection
         self._stuck_threshold_ticks = 20  # ~2.0s of zero translation / spin triggers recovery
         self._recovery_phase = None        # None, 'BACKUP', or 'REROUTE'
         self._recovery_start_time = None
         self._recovery_backup_dur = 2.2   # Max seconds to reverse if standoff not yet achieved
         self._last_recovery_log_time = 0.0
+        self.hazard_zones = []         # Persistent anti-loop hazard memory: [{'pos': (x,y), 'radius': r, 'expire_time': timestamp}]
 
         # MPPI Parameters
         self.v_max = 0.75
@@ -463,9 +465,8 @@ class RouteRunner(Node):
         ranges = np.array(msg.ranges)
         angles = msg.angle_min + np.arange(len(ranges)) * msg.angle_increment
 
-        # Enforce minimum range of 0.15m to filter out self-reflections off robot wheels (0.13m) & chassis (0.11m)
-        min_range = max(0.15, msg.range_min)
-        valid = (ranges > min_range) & (ranges < msg.range_max)
+        # Basic range validity filter
+        valid = (ranges > max(0.08, msg.range_min)) & (ranges < msg.range_max) & np.isfinite(ranges)
         ranges = ranges[valid]
         angles = angles[valid]
 
@@ -477,6 +478,29 @@ class RouteRunner(Node):
         # Downsample LiDAR to every 3rd point
         ranges = ranges[::3]
         angles = angles[::3]
+
+        # Convert to robot local coordinate frame
+        ox_local = ranges * np.cos(angles)
+        oy_local = ranges * np.sin(angles)
+        r_local = np.sqrt(ox_local**2 + oy_local**2)
+
+        # Precise robot footprint self-masking:
+        # - Chassis is a cylinder of radius 0.11m; caster is inside; wheels are at y = +/-0.13m, width 0.026m
+        # Mask points strictly inside physical chassis cylinder: r < 0.112m
+        is_chassis_self = r_local < 0.112
+        # Mask points strictly on the side wheel protrusions: |y| in [0.112, 0.148] and |x| <= 0.045
+        is_wheel_self = (np.abs(oy_local) >= 0.112) & (np.abs(oy_local) <= 0.148) & (np.abs(ox_local) <= 0.045)
+
+        external_mask = (~is_chassis_self) & (~is_wheel_self)
+        ranges = ranges[external_mask]
+        angles = angles[external_mask]
+        ox_local = ox_local[external_mask]
+        oy_local = oy_local[external_mask]
+
+        if len(ranges) == 0:
+            self.obstacles = np.array([])
+            self.dynamic_obstacles = []
+            return
 
         # Use laser scan timestamp for map transformation to prevent rotational skew artifacts
         try:
@@ -494,9 +518,6 @@ class RouteRunner(Node):
             pose_yaw = self.current_yaw
 
         # Convert to global map frame
-        ox_local = ranges * np.cos(angles)
-        oy_local = ranges * np.sin(angles)
-
         cos_yaw = np.cos(pose_yaw)
         sin_yaw = np.sin(pose_yaw)
 
@@ -732,7 +753,9 @@ class RouteRunner(Node):
         # Reset active recovery and dynamic blockage penalties on new user goal
         self._recovery_phase = None
         self._stuck_counter = 0
+        self._prev_heading_err = None
         self.blocked_edges.clear()
+        self.hazard_zones.clear()
 
         start_node = self.find_closest_node(self.current_x, self.current_y)
         self.target_node = self.find_closest_node(goal_x, goal_y)
@@ -746,10 +769,24 @@ class RouteRunner(Node):
             self._publish_agv_state("IDLE")
             return
 
-        self.path_plan = self.densify_path(self.node_path, step_m=0.30)
-        self.get_logger().info(f"Dijkstra Path: {self.node_path} ({len(self.path_plan)} waypoints)")
+        base_plan = self.densify_path(self.node_path, step_m=0.30)
+        sx = self.map_data[start_node]["x"]
+        sy = self.map_data[start_node]["y"]
+        dist_to_start = math.hypot(sx - self.current_x, sy - self.current_y)
+        lead_in = []
+        if dist_to_start > 0.10:
+            num_lead = max(2, int(dist_to_start / 0.15))
+            lead_th = math.atan2(sy - self.current_y, sx - self.current_x)
+            for k in range(num_lead):
+                t = k / float(num_lead)
+                lx = self.current_x + t * (sx - self.current_x)
+                ly = self.current_y + t * (sy - self.current_y)
+                lead_in.append((lx, ly, lead_th))
 
-        self.current_target_index = 1 if len(self.path_plan) > 1 else 0
+        self.path_plan = lead_in + base_plan
+        self.get_logger().info(f"Dijkstra Path: {self.node_path} ({len(self.path_plan)} waypoints with {len(lead_in)} lead-in pts)")
+
+        self.current_target_index = 0
         self._visited_plan_nodes = set()
         self.last_cmd_v = 0.0
         self.last_cmd_w = 0.0
@@ -1036,7 +1073,10 @@ class RouteRunner(Node):
             if nid in blocked_nodes:
                 continue
             dist = math.hypot(data["x"] - rx, data["y"] - ry)
-            if dist < 1.2:
+            if dist < 1.3:
+                # Reject start nodes whose direct line-of-sight from robot crosses any active hazard zone
+                if any(self._dist_point_to_segment(h['pos'][0], h['pos'][1], rx, ry, data["x"], data["y"]) < h['radius'] for h in self.hazard_zones):
+                    continue
                 # Forward projection along current heading vector
                 fwd_proj = (data["x"] - rx) * math.cos(ryaw) + (data["y"] - ry) * math.sin(ryaw)
                 candidates.append((dist, fwd_proj, nid))
@@ -1102,25 +1142,32 @@ class RouteRunner(Node):
         """Computes a connected topological node path from the warehouse graph around the obstacle."""
         now = self._now_sec()
 
+        # Clean expired hazard memory
+        self.hazard_zones = [h for h in self.hazard_zones if now < h.get('expire_time', 0.0)]
+
         # Try with requested r_safe, fall back to tighter safe radius if graph is narrow
         for safe_radius in [max(0.35, min(0.45, r_safe)), 0.35]:
-            # 1. Identify all nodes within safe radius
+            # 1. Identify all nodes within safe radius (current obstacle + active hazard zones)
             blocked_nodes = set()
             for nid, data in self.map_data.items():
                 if math.hypot(data["x"] - ox, data["y"] - oy) < safe_radius:
                     blocked_nodes.add(nid)
+                for h in self.hazard_zones:
+                    if math.hypot(data["x"] - h['pos'][0], data["y"] - h['pos'][1]) < h['radius']:
+                        blocked_nodes.add(nid)
 
             # 2. Identify all edges intersecting safe zone
             blocked_edges = set()
-            # Fast filter: only examine edges connected to nodes within 2.5m of obstacle
+            check_centers = [(ox, oy, safe_radius)] + [(h['pos'][0], h['pos'][1], h['radius']) for h in self.hazard_zones]
             for nid, data in self.map_data.items():
-                if math.hypot(data["x"] - ox, data["y"] - oy) < 2.5:
-                    x1, y1 = data["x"], data["y"]
-                    for edge in data["edges"]:
-                        v = edge["to_node"]
-                        x2, y2 = self.map_data[v]["x"], self.map_data[v]["y"]
-                        if self._dist_point_to_segment(ox, oy, x1, y1, x2, y2) < safe_radius:
-                            blocked_edges.add((min(nid, v), max(nid, v)))
+                for (cx, cy, cr) in check_centers:
+                    if math.hypot(data["x"] - cx, data["y"] - cy) < 2.5:
+                        x1, y1 = data["x"], data["y"]
+                        for edge in data["edges"]:
+                            v = edge["to_node"]
+                            x2, y2 = self.map_data[v]["x"], self.map_data[v]["y"]
+                            if self._dist_point_to_segment(cx, cy, x1, y1, x2, y2) < cr:
+                                blocked_edges.add((min(nid, v), max(nid, v)))
 
             # 3. Find candidate start nodes near the robot
             candidates = []
@@ -1128,7 +1175,15 @@ class RouteRunner(Node):
                 if nid in blocked_nodes:
                     continue
                 dist = math.hypot(data["x"] - self.current_x, data["y"] - self.current_y)
-                if dist < 1.2:
+                if dist < 1.3:
+                    # Critical Line-of-Sight Check: direct segment from robot to candidate start node
+                    # must NOT cross the obstacle or any hazard zone!
+                    d_obs_seg = self._dist_point_to_segment(ox, oy, self.current_x, self.current_y, data["x"], data["y"])
+                    if d_obs_seg < safe_radius:
+                        continue
+                    if any(self._dist_point_to_segment(h['pos'][0], h['pos'][1], self.current_x, self.current_y, data["x"], data["y"]) < h['radius'] for h in self.hazard_zones):
+                        continue
+
                     fwd_proj = (data["x"] - self.current_x) * math.cos(self.current_yaw) + (data["y"] - self.current_y) * math.sin(self.current_yaw)
                     candidates.append((dist, fwd_proj, nid))
 
@@ -1159,8 +1214,24 @@ class RouteRunner(Node):
                         self.blocked_edges[(u, v)] = (self._get_edge_cost(u, v), now + 25.0)
 
                 self.node_path = new_path
-                self.path_plan = self.densify_path(self.node_path, step_m=0.30)
-                self.current_target_index = 1 if len(self.path_plan) > 1 else 0
+                base_plan = self.densify_path(self.node_path, step_m=0.30)
+
+                # Smooth Lead-In spline from current robot pose to chosen_start node
+                sx = self.map_data[chosen_start]["x"]
+                sy = self.map_data[chosen_start]["y"]
+                dist_to_start = math.hypot(sx - self.current_x, sy - self.current_y)
+                lead_in = []
+                if dist_to_start > 0.10:
+                    num_lead = max(2, int(dist_to_start / 0.15))
+                    lead_th = math.atan2(sy - self.current_y, sx - self.current_x)
+                    for k in range(num_lead):
+                        t = k / float(num_lead)
+                        lx = self.current_x + t * (sx - self.current_x)
+                        ly = self.current_y + t * (sy - self.current_y)
+                        lead_in.append((lx, ly, lead_th))
+
+                self.path_plan = lead_in + base_plan
+                self.current_target_index = 0
                 self._visited_plan_nodes = set()
                 self._reroute_cooldown_time = now + 3.5  # Lock path for 3.5s to prevent flip-flopping
                 self.active_detour = None
@@ -1172,7 +1243,7 @@ class RouteRunner(Node):
                 self.get_logger().info(
                     f"[BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at "
                     f"({ox:.2f}, {oy:.2f}) [R_safe={safe_radius:.2f}m]: {self.node_path} "
-                    f"({len(self.path_plan)} waypoints starting from {chosen_start}). Resuming navigation."
+                    f"({len(self.path_plan)} waypoints with {len(lead_in)} lead-in pts starting from {chosen_start}). Resuming navigation."
                 )
                 return True
 
@@ -1187,7 +1258,21 @@ class RouteRunner(Node):
         now = self._now_sec()
         self.active_detour = None
 
-        # Try to locate the obstacle causing this reroute
+        # Clean expired hazard memory
+        self.hazard_zones = [h for h in self.hazard_zones if now < h.get('expire_time', 0.0)]
+
+        # 1. Prefer obstacle from proactive corridor scan if available
+        corridor_obs = self.get_corridor_obstacle_analysis(lookahead_horizon=2.8)
+        if corridor_obs is not None:
+            ox, oy = corridor_obs['obstacle_pos']
+            r_safe = max(0.35, corridor_obs.get('safe_radius', 0.45))
+            self.get_logger().warn(
+                f"[BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around ({ox:.2f}, {oy:.2f})..."
+            )
+            if self.replan_around_obstacle(ox, oy, r_safe=r_safe):
+                return
+
+        # 2. Otherwise locate closest clustered obstacle in front of the robot (filter out walls)
         ox, oy = None, None
         if len(self.obstacles) > 0:
             c_yaw = math.cos(self.current_yaw)
@@ -1196,11 +1281,14 @@ class RouteRunner(Node):
             dy = self.obstacles[:, 1] - self.current_y
             x_rel = dx * c_yaw + dy * s_yaw
             y_rel = -dx * s_yaw + dy * c_yaw
-            front_mask = (x_rel > 0.0) & (x_rel < 2.5) & (np.abs(y_rel) < 0.8)
+            # Focus on front travel corridor: x in [0.05, 2.0], |y| < 0.40
+            front_mask = (x_rel > 0.05) & (x_rel < 2.0) & (np.abs(y_rel) < 0.40)
             if np.any(front_mask):
                 front_pts = self.obstacles[front_mask]
-                ox = float(np.mean(front_pts[:, 0]))
-                oy = float(np.mean(front_pts[:, 1]))
+                dists = np.sqrt(x_rel[front_mask]**2 + y_rel[front_mask]**2)
+                closest_idx = np.argmin(dists)
+                ox = float(front_pts[closest_idx, 0])
+                oy = float(front_pts[closest_idx, 1])
 
         if ox is not None and oy is not None:
             self.get_logger().warn(
@@ -1246,15 +1334,37 @@ class RouteRunner(Node):
                 f"Blocked edge ({u} <-> {v}) temporarily penalized (+999.0 for 25s)."
             )
 
-        start_node = self.find_best_reroute_start_node(self.current_x, self.current_y, self.current_yaw, set())
+        blocked_nodes = set()
+        for h in self.hazard_zones:
+            for nid, data in self.map_data.items():
+                if math.hypot(data["x"] - h['pos'][0], data["y"] - h['pos'][1]) < h['radius']:
+                    blocked_nodes.add(nid)
+
+        start_node = self.find_best_reroute_start_node(self.current_x, self.current_y, self.current_yaw, blocked_nodes)
         if not start_node:
             start_node = self.find_closest_node(self.current_x, self.current_y)
 
         new_path = self.calculate_dijkstra(start_node, self.target_node)
         if new_path and len(new_path) > 1:
             self.node_path = new_path
-            self.path_plan = self.densify_path(self.node_path, step_m=0.30)
-            self.current_target_index = 1 if len(self.path_plan) > 1 else 0
+            base_plan = self.densify_path(self.node_path, step_m=0.30)
+
+            # Smooth Lead-In from robot pose
+            sx = self.map_data[start_node]["x"]
+            sy = self.map_data[start_node]["y"]
+            dist_to_start = math.hypot(sx - self.current_x, sy - self.current_y)
+            lead_in = []
+            if dist_to_start > 0.10:
+                num_lead = max(2, int(dist_to_start / 0.15))
+                lead_th = math.atan2(sy - self.current_y, sx - self.current_x)
+                for k in range(num_lead):
+                    t = k / float(num_lead)
+                    lx = self.current_x + t * (sx - self.current_x)
+                    ly = self.current_y + t * (sy - self.current_y)
+                    lead_in.append((lx, ly, lead_th))
+
+            self.path_plan = lead_in + base_plan
+            self.current_target_index = 0
             self._visited_plan_nodes = set()
             self._reroute_cooldown_time = now + 3.5
             self._swerve_bias = 0.0
@@ -1264,7 +1374,7 @@ class RouteRunner(Node):
             self.yield_start_time = None
             self.get_logger().info(
                 f"[BRAIN: DIJKSTRA_ROUTER] DYNAMIC REROUTE SUCCESSFUL! "
-                f"New route: {self.node_path} ({len(self.path_plan)} waypoints). Resuming navigation."
+                f"New route: {self.node_path} ({len(self.path_plan)} waypoints with {len(lead_in)} lead-in pts). Resuming navigation."
             )
         else:
             self.get_logger().warn(
@@ -1305,6 +1415,34 @@ class RouteRunner(Node):
             self._recovery_start_time = now
             self._stuck_counter = 0
             self._last_stuck_check_pos = None
+
+            # Pinpoint the hazard location that triggered this recovery
+            hazard_pt = None
+            if len(self.obstacles) > 0:
+                c_yaw = math.cos(self.current_yaw)
+                s_yaw = math.sin(self.current_yaw)
+                dx = self.obstacles[:, 0] - self.current_x
+                dy = self.obstacles[:, 1] - self.current_y
+                x_rel = dx * c_yaw + dy * s_yaw
+                y_rel = -dx * s_yaw + dy * c_yaw
+                front_mask = (x_rel > 0.05) & (x_rel < 1.8) & (np.abs(y_rel) < 0.40)
+                if np.any(front_mask):
+                    front_pts = self.obstacles[front_mask]
+                    dists = np.sqrt(x_rel[front_mask]**2 + y_rel[front_mask]**2)
+                    closest_idx = np.argmin(dists)
+                    hazard_pt = (float(front_pts[closest_idx, 0]), float(front_pts[closest_idx, 1]))
+
+            if hazard_pt is not None:
+                self.hazard_zones.append({
+                    'pos': hazard_pt,
+                    'radius': 0.45,
+                    'expire_time': now + 30.0
+                })
+                self.get_logger().warn(
+                    f"[BRAIN: HAZARD_ZONE] Registered hazard memory at ({hazard_pt[0]:.2f}, {hazard_pt[1]:.2f}) "
+                    f"for 30s to prevent circular re-collision."
+                )
+
             self.get_logger().warn(
                 f"[BRAIN: RECOVERY] Active Reverse Escape initiated at ({self.current_x:.2f}, {self.current_y:.2f}). "
                 f"Front proximity={d_front:.2f}m, Rear clearance={d_rear:.2f}m. "
@@ -1766,7 +1904,7 @@ class RouteRunner(Node):
                 f"HeadingErr={abs_h_err_deg:.1f}° | Cmd=(v={optimal_v:.2f}, w={optimal_w:.2f}) | MinObs={min_obs_d:.2f}m"
             )
 
-        # Fix 5 & B — Stuck detector: count ticks where robot is not translating (halted or spinning in place)
+        # Stuck detector: count ticks where robot is not translating (halted or spinning in place without progress)
         # Excluded during intentional YIELDING (where robot is waiting for traffic to pass up to 4.5s)
         if self._recovery_phase is None and self.state != "YIELDING":
             if self._last_stuck_check_pos is not None:
@@ -1776,13 +1914,28 @@ class RouteRunner(Node):
                 )
                 is_spinning = abs(optimal_w) > 0.20
                 is_halted = optimal_v < 0.06
-                if moved < 0.05 and (is_halted or is_spinning):
+
+                # Kinematic-Aware Turn Progress Guard:
+                # Differentiate intentional in-place turn toward target from physical stall
+                is_turning_in_place = is_spinning and is_halted
+                heading_err_abs = abs(heading_error)
+                heading_progress = False
+                if self._prev_heading_err is not None:
+                    # Heading error is actively reducing (>= 0.015 rad / ~0.85 deg per tick)
+                    heading_progress = (heading_err_abs < self._prev_heading_err - 0.015)
+                self._prev_heading_err = heading_err_abs
+
+                if is_turning_in_place and heading_progress:
+                    # Healthy in-place pivot toward waypoint: reset stuck counter!
+                    self._stuck_counter = 0
+                elif moved < 0.05 and (is_halted or is_spinning):
                     self._stuck_counter += 1
                 else:
                     self._stuck_counter = 0
                     self._last_stuck_check_pos = (self.current_x, self.current_y)
             else:
                 self._last_stuck_check_pos = (self.current_x, self.current_y)
+                self._prev_heading_err = abs(heading_error)
 
             if self._stuck_counter >= self._stuck_threshold_ticks:
                 self.get_logger().warn(
@@ -1791,6 +1944,7 @@ class RouteRunner(Node):
                 )
                 self._stuck_counter = 0
                 self._last_stuck_check_pos = None
+                self._prev_heading_err = None
                 self._swerve_bias = 0.0
                 self._swerve_lock_ticks = 0
                 self._execute_recovery()

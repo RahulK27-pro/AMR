@@ -130,6 +130,9 @@ private:
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr costmap_sub_;
   rclcpp::Subscription<map_msgs::msg::OccupancyGridUpdate>::SharedPtr
       costmap_updates_sub_;
+
+  mutable geometry_msgs::msg::Pose last_valid_pose_;
+  mutable bool has_valid_pose_ = false;
 };
 
 }  // namespace explore
