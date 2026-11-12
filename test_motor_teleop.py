@@ -19,19 +19,22 @@ Pinout (RP1 40-Pin GPIO Header):
   - Logic Ground:
       * RMCS GND tied to Pi GND (Pin 39)
 
-Controls:
-  [W] : Forward
-  [S] : Reverse
-  [A] : Pivot Turn Left
-  [D] : Pivot Turn Right
+Controls (HOLD-TO-MOVE — robot stops immediately when key is released):
+  [W] : Forward      (hold)
+  [S] : Reverse      (hold)
+  [A] : Pivot Left   (hold)
+  [D] : Pivot Right  (hold)
   [X] or [SPACE] : Emergency STOP
   [+] or [=]     : Increase Base Speed (+5%)
   [-] or [_]     : Decrease Base Speed (-5%)
-  [1] : Solo Test Left Motor Forward
-  [2] : Solo Test Right Motor Forward
+  [1] : Solo Test Left Motor Forward  (hold)
+  [2] : Solo Test Right Motor Forward (hold)
   [I] : Toggle Left Motor Direction Invert
   [O] : Toggle Right Motor Direction Invert
   [Q] or [Ctrl+C]: Safe Exit (Stop motors and release GPIO)
+
+NOTE: The robot ONLY moves while a drive key is physically held down.
+      Releasing any key immediately stops all motors.
 """
 
 import sys
@@ -302,17 +305,16 @@ class MotorTestApp:
         self.cur_right_pwm = right_speed
         self.driver.set_right(right_speed, self.cur_right_dir_hw)
 
-    def stop(self):
-        self.state_name = "STOPPED"
+    def stop(self, reason="STOPPED — KEY RELEASED"):
+        self.state_name = reason
         self.cur_left_pwm = 0.0
         self.cur_right_pwm = 0.0
         self.driver.stop_all()
 
     def check_watchdog(self):
-        if self.watchdog_sec > 0.0 and self.state_name != "STOPPED":
+        if self.watchdog_sec > 0.0 and "STOPPED" not in self.state_name:
             if (time.time() - self.last_cmd_time) > self.watchdog_sec:
-                self.stop()
-                self.state_name = "WATCHDOG AUTO-STOP"
+                self.stop("WATCHDOG AUTO-STOP")
 
     def print_hud(self):
         # ANSI Escape Codes for crisp HUD without scroll flicker
@@ -336,10 +338,10 @@ class MotorTestApp:
         print(f"   LEFT WHEEL  -> PWM: {self.cur_left_pwm:5.1f}% | DIR Pin Level: {'HIGH (1)' if self.cur_left_dir_hw else 'LOW  (0)'}")
         print(f"   RIGHT WHEEL -> PWM: {self.cur_right_pwm:5.1f}% | DIR Pin Level: {'HIGH (1)' if self.cur_right_dir_hw else 'LOW  (0)'}")
         print("-" * 68)
-        print(" Key Commands:")
-        print("      [W] : Forward             |  [+] : Speed +5%      |  [1] : Solo Left")
-        print("  [A] [S] [D] : Left/Back/Right |  [-] : Speed -5%      |  [2] : Solo Right")
-        print("  [X] / [SPACE] : STOP NOW      |  [I] : Invert Left DIR|  [O] : Invert Right DIR")
+        print(" Key Commands (HOLD-TO-MOVE — releases automatically stop motors):")
+        print("      [W] : Forward  (hold) |  [+] : Speed +5%      |  [1] : Solo Left  (hold)")
+        print("  [A] [S] [D] : L/B/R (hold)|  [-] : Speed -5%      |  [2] : Solo Right (hold)")
+        print("  [X] / [SPACE] : STOP NOW  |  [I] : Invert Left DIR|  [O] : Invert Right DIR")
         print("  [Q] or [Ctrl+C] : Quit safely")
         print("=" * 68)
         print(" Press a key to send command... ", end='', flush=True)
@@ -393,10 +395,18 @@ def main():
                 app.print_hud()
                 need_refresh = False
 
-            key = key_reader.read_key(timeout=0.1)
+            key = key_reader.read_key(timeout=0.12)
             app.check_watchdog()
 
+            # ---- HOLD-TO-MOVE LOGIC ----
+            # No key received in this poll window → robot stops immediately.
+            # Drive keys (W/A/S/D/1/2 and arrows) must be held to keep the
+            # motors running. The OS keyboard auto-repeat (~10-30 Hz) keeps
+            # sending events while a key is held, so motion feels continuous.
             if key is None:
+                if "STOPPED" not in app.state_name and "WATCHDOG" not in app.state_name:
+                    app.stop("STOPPED — KEY RELEASED")
+                    need_refresh = True
                 continue
 
             need_refresh = True
@@ -431,39 +441,23 @@ def main():
 
             elif key_lower in ['x', ' ']:
                 # Emergency Stop
-                app.stop()
+                app.stop("STOPPED — ESTOP [X/SPACE]")
 
             # Speed Adjustments
             elif key in ['+', '=']:
                 app.speed = min(100, app.speed + 5)
-                # If currently moving, update speed immediately
-                if app.cur_left_pwm > 0 or app.cur_right_pwm > 0:
-                    sign_l = -1 if "TURNING LEFT" in app.state_name or "REVERSE" in app.state_name else 1
-                    sign_r = -1 if "TURNING RIGHT" in app.state_name or "REVERSE" in app.state_name else 1
-                    app.apply_motion(sign_l * app.speed, sign_r * app.speed, app.state_name)
+                # Speed takes effect on the NEXT held drive key press
 
             elif key in ['-', '_']:
                 app.speed = max(10, app.speed - 5)
-                if app.cur_left_pwm > 0 or app.cur_right_pwm > 0:
-                    sign_l = -1 if "TURNING LEFT" in app.state_name or "REVERSE" in app.state_name else 1
-                    sign_r = -1 if "TURNING RIGHT" in app.state_name or "REVERSE" in app.state_name else 1
-                    app.apply_motion(sign_l * app.speed, sign_r * app.speed, app.state_name)
+                # Speed takes effect on the NEXT held drive key press
 
-            # Polarity Inversion Toggles (Live correction)
+            # Polarity Inversion Toggles (Live correction — stop first, then re-hold)
             elif key_lower == 'i':
                 app.invert_left = not app.invert_left
-                # Re-apply current motion with new inversion
-                if app.cur_left_pwm > 0 or app.cur_right_pwm > 0:
-                    sign_l = -1 if "TURNING LEFT" in app.state_name or "REVERSE" in app.state_name else 1
-                    sign_r = -1 if "TURNING RIGHT" in app.state_name or "REVERSE" in app.state_name else 1
-                    app.apply_motion(sign_l * app.speed, sign_r * app.speed, app.state_name)
 
             elif key_lower == 'o':
                 app.invert_right = not app.invert_right
-                if app.cur_left_pwm > 0 or app.cur_right_pwm > 0:
-                    sign_l = -1 if "TURNING LEFT" in app.state_name or "REVERSE" in app.state_name else 1
-                    sign_r = -1 if "TURNING RIGHT" in app.state_name or "REVERSE" in app.state_name else 1
-                    app.apply_motion(sign_l * app.speed, sign_r * app.speed, app.state_name)
 
             # Bench Solo Motor Tests
             elif key == '1':
