@@ -207,5 +207,7 @@ If testing individual hardware subsystems in isolation without launching ROS 2:
    *(Validates GPIO access, I2C scan, IMU accel/gyro/mag, LiDAR serial + scans, encoder pulse counting, motor spins, and synchronous 20 Hz acquisition).*
 
 > [!CAUTION]
-> **GPIO Resource Lock**: Only one program can control the motor GPIO pins at a time. Always terminate `./start_hardware.sh` (`Ctrl+C`) before running `test_motor_teleop.py`, or vice versa.
+> **GPIO Resource Lock**: Only one program can control the motor GPIO pins at a time. When the ROS 2 hardware stack is running via `./start_hardware.sh`, always use `./teleop_hardware.sh` to drive the robot via `/cmd_vel` rather than `test_motor_teleop.py`.
+>
+> For an exhaustive, layer-by-layer analysis of every network, DDS, firewall, and ROS 2 issue encountered during hardware bringup and how each was resolved, see the **[Hardware Integration Troubleshooting Report](Hardware_Integration_Troubleshooting_Report.md)**.
 
