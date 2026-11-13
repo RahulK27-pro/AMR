@@ -69,11 +69,9 @@ if dpkg -s ros-jazzy-rmw-cyclonedds-cpp >/dev/null 2>&1; then
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
-    <General>
-      <AllowMulticast>false</AllowMulticast>
-    </General>
     <Discovery>
       <Peers>
+        <Peer Address="127.0.0.1"/>
         <Peer Address="$LAPTOP_IP"/>
       </Peers>
     </Discovery>
@@ -85,11 +83,9 @@ EOF
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
-    <General>
-      <AllowMulticast>false</AllowMulticast>
-    </General>
     <Discovery>
       <Peers>
+        <Peer Address="127.0.0.1"/>
         <Peer Address="255.255.255.255"/>
       </Peers>
     </Discovery>
