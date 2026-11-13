@@ -75,7 +75,12 @@ else
     echo "     2. On Pi: ./start_hardware.sh $LAPTOP_IP"
 fi
 
-# 3. Resolve RViz config (prefer dedicated hardware bringup config with Fixed Frame: odom)
+# 3. Publish fallback map -> odom TF so RViz renders cleanly even if Fixed Frame is left as 'map'
+ros2 run tf2_ros static_transform_publisher --x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 --frame-id map --child-frame-id odom >/dev/null 2>&1 &
+TF_PID=$!
+trap "kill $TF_PID 2>/dev/null || true" EXIT
+
+# 4. Resolve RViz config (prefer dedicated hardware bringup config with Fixed Frame: odom)
 RVIZ_CFG="$WS_DIR/src/agv_description/config/agv_hardware.rviz"
 if [ ! -f "$RVIZ_CFG" ]; then
     RVIZ_CFG="$WS_DIR/install/agv_description/share/agv_description/config/agv_hardware.rviz"
@@ -86,7 +91,7 @@ fi
 
 echo "[OK] Launching RViz2 with config: $(basename "$RVIZ_CFG") (Fixed Frame: odom)..."
 if [ -f "$RVIZ_CFG" ]; then
-    exec rviz2 -d "$RVIZ_CFG"
+    rviz2 -d "$RVIZ_CFG"
 else
-    exec rviz2
+    rviz2
 fi
