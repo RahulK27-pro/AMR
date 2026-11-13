@@ -65,10 +65,16 @@ echo "[OK] ROS_DOMAIN_ID=7"
 if dpkg -s ros-jazzy-rmw-cyclonedds-cpp >/dev/null 2>&1; then
     CFG_FILE="/tmp/cyclonedds_pi.xml"
     if [ -n "$LAPTOP_IP" ]; then
+        PI_MY_IP=$(ip route get "$LAPTOP_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -I | awk '{print $1}')
         cat <<EOF > "$CFG_FILE"
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
+    <General>
+      <Interfaces>
+        <NetworkInterface address="$PI_MY_IP"/>
+      </Interfaces>
+    </General>
     <Discovery>
       <Peers>
         <Peer Address="127.0.0.1"/>
@@ -95,7 +101,7 @@ EOF
     fi
     export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
     export CYCLONEDDS_URI="file://$CFG_FILE"
-    echo "[OK] Configured CycloneDDS (rmw_cyclonedds_cpp) for Wi-Fi streaming"
+    echo "[OK] Configured CycloneDDS (rmw_cyclonedds_cpp) bound to $PI_MY_IP -> Peer $LAPTOP_IP"
 else
     echo "[WARN] ros-jazzy-rmw-cyclonedds-cpp is not installed on Pi."
     echo "       If laptop RViz cannot see topics over Wi-Fi, install it on Pi via:"

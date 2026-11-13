@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
+    <General>
+      <Interfaces>
+        <NetworkInterface address="10.73.81.140"/>
+      </Interfaces>
+    </General>
     <Discovery>
       <Peers>
         <Peer Address="127.0.0.1"/>

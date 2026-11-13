@@ -44,6 +44,11 @@ cat <<EOF > "$CFG_FILE"
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
+    <General>
+      <Interfaces>
+        <NetworkInterface address="$LAPTOP_IP"/>
+      </Interfaces>
+    </General>
     <Discovery>
       <Peers>
         <Peer Address="127.0.0.1"/>
