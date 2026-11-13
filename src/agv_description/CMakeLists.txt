@@ -34,8 +34,17 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
-# Make shell scripts executable after install
+# Install executable Python & shell scripts to lib and share
 install(PROGRAMS
+  scripts/amr_hardware_drive_node.py
+  scripts/amr_imu_node.py
+  scripts/save_map.sh
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  scripts/amr_hardware_drive_node.py
+  scripts/amr_imu_node.py
   scripts/save_map.sh
   DESTINATION share/${PROJECT_NAME}/scripts
 )
