@@ -197,10 +197,14 @@ class GPIOController:
                     self._encoder_counts[f"{prefix}_b"] += 8
             return
         if side == "left":
-            self.lgpio.gpio_write(self.chip, LEFT_DIR_PIN, 1 if forward else 0)
+            # Left motor polarity: 0 = Forward, 1 = Reverse
+            dir_val = 0 if forward else 1
+            self.lgpio.gpio_write(self.chip, LEFT_DIR_PIN, dir_val)
             self.lgpio.tx_pwm(self.chip, LEFT_PWM_PIN, PWM_FREQ, max(0, min(100, duty_pct)))
         else:
-            self.lgpio.gpio_write(self.chip, RIGHT_DIR_PIN, 1 if forward else 0)
+            # Right motor polarity: 1 = Forward, 0 = Reverse
+            dir_val = 1 if forward else 0
+            self.lgpio.gpio_write(self.chip, RIGHT_DIR_PIN, dir_val)
             self.lgpio.tx_pwm(self.chip, RIGHT_PWM_PIN, PWM_FREQ, max(0, min(100, duty_pct)))
 
     def stop_motors(self):

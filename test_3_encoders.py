@@ -20,15 +20,20 @@ Purpose:
     - 1x Channel A Rising-Edge Pulses (Single-channel count)
 
 Procedure:
-  1. Keep robot elevated on blocks.
-  2. Put a piece of tape at 12 o'clock on the wheel rim.
+  1. Keep robot elevated on blocks (wheels spin freely).
+  2. Place a small tape marker at 12 o'clock on the wheel rim.
   3. Press [R] to zero all counters.
-  4. Slowly rotate the wheel by hand EXACTLY 1 full turn (360°) back to 12 o'clock.
-  5. Note down the recorded ticks!
+  4. Slowly rotate the wheel by hand in the FORWARD direction
+     EXACTLY 1 full turn (360°) back to 12 o'clock.
+  5. Check that ticks count UP (+). If they count down (-), press [I] or [O]
+     to invert the counting direction!
+  6. Press [SPACE] to snapshot the reading.
 
 Controls:
   [R]     : Reset / Zero counters
   [SPACE] : Snapshot current reading (saves to history)
+  [I]     : Toggle Left Encoder Direction Invert
+  [O]     : Toggle Right Encoder Direction Invert
   [Q]     : Quit
 """
 
@@ -69,10 +74,13 @@ class MockHardware:
 
 
 class EncoderReader:
-    def __init__(self, mock=False):
+    def __init__(self, invert_left=True, invert_right=False, mock=False):
         self.mock = mock
         self.chip = None
         self.callbacks = []
+
+        self.invert_left = invert_left
+        self.invert_right = invert_right
 
         # Counts
         self.left_4x = 0
@@ -106,7 +114,7 @@ class EncoderReader:
         if self.chip is None:
             raise RuntimeError("Cannot open any gpiochip. Are you running on Raspberry Pi 5?")
 
-        # Claim input pins with pull-ups enabled if supported
+        # Claim input pins
         for pin in [LEFT_ENC_A, LEFT_ENC_B, RIGHT_ENC_A, RIGHT_ENC_B]:
             self.lgpio.gpio_claim_input(self.chip, pin)
             self.lgpio.gpio_claim_alert(self.chip, pin, self.lgpio.BOTH_EDGES)
@@ -134,7 +142,7 @@ class EncoderReader:
         new_state = (level << 1) | lb
         transition = (self.left_state << 2) | new_state
         delta = QUAD_TABLE[transition & 0x0F]
-        self.left_4x += delta
+        self.left_4x += (-delta if self.invert_left else delta)
         self.left_state = new_state
 
     def _on_left_b(self, chip, gpio, level, tick):
@@ -144,7 +152,7 @@ class EncoderReader:
         new_state = (la << 1) | level
         transition = (self.left_state << 2) | new_state
         delta = QUAD_TABLE[transition & 0x0F]
-        self.left_4x += delta
+        self.left_4x += (-delta if self.invert_left else delta)
         self.left_state = new_state
 
     def _on_right_a(self, chip, gpio, level, tick):
@@ -154,7 +162,7 @@ class EncoderReader:
         new_state = (level << 1) | rb
         transition = (self.right_state << 2) | new_state
         delta = QUAD_TABLE[transition & 0x0F]
-        self.right_4x += delta
+        self.right_4x += (-delta if self.invert_right else delta)
         self.right_state = new_state
 
     def _on_right_b(self, chip, gpio, level, tick):
@@ -164,7 +172,7 @@ class EncoderReader:
         new_state = (ra << 1) | level
         transition = (self.right_state << 2) | new_state
         delta = QUAD_TABLE[transition & 0x0F]
-        self.right_4x += delta
+        self.right_4x += (-delta if self.invert_right else delta)
         self.right_state = new_state
 
     def reset(self):
@@ -179,8 +187,10 @@ class EncoderReader:
         snap = {
             "time": time.strftime("%H:%M:%S"),
             "left_4x": self.left_4x,
+            "left_abs": abs(self.left_4x),
             "left_1x": self.left_1x_a,
             "right_4x": self.right_4x,
+            "right_abs": abs(self.right_4x),
             "right_1x": self.right_1x_a
         }
         self.snapshots.append(snap)
@@ -228,43 +238,60 @@ class KeyReader:
                 pass
 
 
-def print_hud(reader, simulated_wheel_r=0.025):
+def print_hud(reader):
     os.system('clear' if os.name == 'posix' else 'cls')
-    print("=" * 72)
+    print("=" * 74)
     print("   AMR WHEEL ENCODER CALIBRATION & TICKS-PER-REV MEASUREMENT TOOL")
-    print("=" * 72)
+    print("=" * 74)
     print(" Procedure:")
     print("   1. Keep robot elevated on blocks (wheels spin freely).")
     print("   2. Place a small tape marker at 12 o'clock on the wheel rim.")
     print("   3. Press [R] to ZERO the counters.")
-    print("   4. Slowly rotate the wheel by hand EXACTLY 1 full turn (360°).")
-    print("   5. Press [SPACE] to snapshot the reading.")
-    print("-" * 72)
-    print(f" LEFT WHEEL ENCODER  (Ch A: GPIO {LEFT_ENC_A}, Ch B: GPIO {LEFT_ENC_B}):")
-    print(f"   ► 4x Quadrature Ticks : \033[1;32m{reader.left_4x:>7}\033[0m ticks (Bidirectional, 4 edges)")
+    print("   4. Slowly rotate the wheel by hand in the FORWARD direction 1 full turn (360°).")
+    print("   5. Make sure ticks count POSITIVE (+). If negative, press [I] or [O] to invert!")
+    print("   6. Press [SPACE] to snapshot the reading.")
+    print("-" * 74)
+
+    # Direction descriptions
+    l_dir = "FORWARD (+)" if reader.left_4x > 0 else ("REVERSE (-)" if reader.left_4x < 0 else "STATIONARY")
+    r_dir = "FORWARD (+)" if reader.right_4x > 0 else ("REVERSE (-)" if reader.right_4x < 0 else "STATIONARY")
+
+    l_inv_str = "\033[1;36m[INVERTED]\033[0m" if reader.invert_left else "[NORMAL]"
+    r_inv_str = "\033[1;36m[INVERTED]\033[0m" if reader.invert_right else "[NORMAL]"
+
+    print(f" LEFT WHEEL ENCODER  (Ch A: GPIO {LEFT_ENC_A}, Ch B: GPIO {LEFT_ENC_B}) | Polarity: {l_inv_str} [Toggle: 'I']:")
+    print(f"   ► 4x Quadrature Ticks : \033[1;32m{reader.left_4x:>7}\033[0m  (Direction: {l_dir}) | Magnitude: \033[1;37m{abs(reader.left_4x)}\033[0m")
     print(f"     1x Ch A Pulses      : \033[1;33m{reader.left_1x_a:>7}\033[0m pulses (Rising edge only)")
-    print(f"     1x Ch B Pulses      : \033[1;33m{reader.left_1x_b:>7}\033[0m pulses (Rising edge only)")
-    print("-" * 72)
-    print(f" RIGHT WHEEL ENCODER (Ch A: GPIO {RIGHT_ENC_A}, Ch B: GPIO {RIGHT_ENC_B}):")
-    print(f"   ► 4x Quadrature Ticks : \033[1;32m{reader.right_4x:>7}\033[0m ticks (Bidirectional, 4 edges)")
+    print("-" * 74)
+    print(f" RIGHT WHEEL ENCODER (Ch A: GPIO {RIGHT_ENC_A}, Ch B: GPIO {RIGHT_ENC_B}) | Polarity: {r_inv_str} [Toggle: 'O']:")
+    print(f"   ► 4x Quadrature Ticks : \033[1;32m{reader.right_4x:>7}\033[0m  (Direction: {r_dir}) | Magnitude: \033[1;37m{abs(reader.right_4x)}\033[0m")
     print(f"     1x Ch A Pulses      : \033[1;33m{reader.right_1x_a:>7}\033[0m pulses (Rising edge only)")
-    print(f"     1x Ch B Pulses      : \033[1;33m{reader.right_1x_b:>7}\033[0m pulses (Rising edge only)")
-    print("-" * 72)
+    print("-" * 74)
 
     if reader.snapshots:
         print(" Saved Snapshots for 1 Full Turn (360°):")
         for idx, snap in enumerate(reader.snapshots[-3:], 1):
-            print(f"   #{idx} [{snap['time']}] -> Left 4x: {snap['left_4x']:>5} | Right 4x: {snap['right_4x']:>5} "
-                  f"| Left 1x: {snap['left_1x']:>5} | Right 1x: {snap['right_1x']:>5}")
-        print("-" * 72)
+            print(f"   #{idx} [{snap['time']}] -> Left 4x: {snap['left_4x']:>5} (|Mag|: {snap['left_abs']:>5}) "
+                  f"| Right 4x: {snap['right_4x']:>5} (|Mag|: {snap['right_abs']:>5})")
+        print("-" * 74)
 
-    print(" Controls:  [R] = Zero/Reset  |  [SPACE] = Save Snapshot  |  [Q] = Quit")
-    print("=" * 72)
-    print(" Rotate wheel by hand now... (Listening) ", end='', flush=True)
+    print(" Controls:")
+    print("   [R] = Zero/Reset   |   [SPACE] = Save Snapshot   |   [I] = Invert Left")
+    print("   [Q] = Quit         |                             |   [O] = Invert Right")
+    print("=" * 74)
+    print(" Rotate wheel by hand in forward direction... ", end='', flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Measure wheel ticks per revolution on Raspberry Pi 5")
+    parser.add_argument('--invert-left', dest='invert_left', action='store_true', default=True,
+                        help="Invert left encoder counting direction (default: True)")
+    parser.add_argument('--no-invert-left', dest='invert_left', action='store_false',
+                        help="Do NOT invert left encoder counting direction")
+    parser.add_argument('--invert-right', dest='invert_right', action='store_true', default=False,
+                        help="Invert right encoder counting direction (default: False)")
+    parser.add_argument('--no-invert-right', dest='invert_right', action='store_false',
+                        help="Do NOT invert right encoder counting direction")
     parser.add_argument('--mock', action='store_true', help="Force mock/simulation mode")
     args = parser.parse_args()
 
@@ -272,13 +299,13 @@ def main():
     reader = None
     try:
         if args.mock:
-            reader = EncoderReader(mock=True)
+            reader = EncoderReader(invert_left=args.invert_left, invert_right=args.invert_right, mock=True)
         else:
             try:
-                reader = EncoderReader(mock=False)
+                reader = EncoderReader(invert_left=args.invert_left, invert_right=args.invert_right, mock=False)
             except Exception as e:
                 print(f"[WARN] Hardware error: {e}. Falling back to mock mode.")
-                reader = EncoderReader(mock=True)
+                reader = EncoderReader(invert_left=args.invert_left, invert_right=args.invert_right, mock=True)
     except Exception as e:
         print(f"[ERROR] Failed to start: {e}")
         sys.exit(1)
@@ -309,15 +336,18 @@ def main():
                     reader.reset()
                 elif key == ' ':
                     reader.snapshot()
+                elif key_l == 'i':
+                    reader.invert_left = not reader.invert_left
+                elif key_l == 'o':
+                    reader.invert_right = not reader.invert_right
                 elif key_l == 'q':
                     break
                 elif reader.mock:
-                    # In mock mode, pressing 'l' or 'r' simulates ticks
                     if key_l == 'l':
-                        reader.left_4x += 20
+                        reader.left_4x += (20 if not reader.invert_left else -20)
                         reader.left_1x_a += 5
                     elif key_l == 'k':
-                        reader.right_4x += 20
+                        reader.right_4x += (20 if not reader.invert_right else -20)
                         reader.right_1x_a += 5
 
     finally:
@@ -328,12 +358,12 @@ def main():
         if reader.snapshots:
             last = reader.snapshots[-1]
             print(f"  Last Recorded Full Turn (360°):")
-            print(f"    Left Wheel  -> 4x Ticks: {last['left_4x']} | 1x Pulses: {last['left_1x']}")
-            print(f"    Right Wheel -> 4x Ticks: {last['right_4x']} | 1x Pulses: {last['right_1x']}")
+            print(f"    Left Wheel  -> 4x Ticks: {last['left_4x']} (|Mag|: {last['left_abs']}) | 1x Pulses: {last['left_1x']}")
+            print(f"    Right Wheel -> 4x Ticks: {last['right_4x']} (|Mag|: {last['right_abs']}) | 1x Pulses: {last['right_1x']}")
         else:
             print(f"  Current Counters:")
-            print(f"    Left Wheel  -> 4x Ticks: {reader.left_4x} | 1x Pulses: {reader.left_1x_a}")
-            print(f"    Right Wheel -> 4x Ticks: {reader.right_4x} | 1x Pulses: {reader.right_1x_a}")
+            print(f"    Left Wheel  -> 4x Ticks: {reader.left_4x} (|Mag|: {abs(reader.left_4x)}) | 1x Pulses: {reader.left_1x_a}")
+            print(f"    Right Wheel -> 4x Ticks: {reader.right_4x} (|Mag|: {abs(reader.right_4x)}) | 1x Pulses: {reader.right_1x_a}")
         print("=" * 62)
 
 

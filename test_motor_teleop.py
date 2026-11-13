@@ -351,8 +351,14 @@ def main():
     parser = argparse.ArgumentParser(description="AMR Motor Hardware Testing & WASD Teleop for Raspberry Pi 5")
     parser.add_argument('--speed', type=int, default=DEFAULT_SPEED, help=f"Initial speed percentage (10-100, default {DEFAULT_SPEED})")
     parser.add_argument('--freq', type=int, default=DEFAULT_PWM_FREQ, help=f"PWM frequency in Hz (default {DEFAULT_PWM_FREQ})")
-    parser.add_argument('--invert-left', action='store_true', help="Invert left motor direction polarity")
-    parser.add_argument('--invert-right', action='store_true', default=True, help="Invert right motor direction polarity (default True for differential drive)")
+    parser.add_argument('--invert-left', dest='invert_left', action='store_true', default=True,
+                        help="Invert left motor direction polarity (default: True)")
+    parser.add_argument('--no-invert-left', dest='invert_left', action='store_false',
+                        help="Do NOT invert left motor direction polarity")
+    parser.add_argument('--invert-right', dest='invert_right', action='store_true', default=False,
+                        help="Invert right motor direction polarity (default: False)")
+    parser.add_argument('--no-invert-right', dest='invert_right', action='store_false',
+                        help="Do NOT invert right motor direction polarity")
     parser.add_argument('--watchdog', type=float, default=0.0, help="Safety auto-stop timeout in seconds (0 = disabled, e.g. 1.5)")
     parser.add_argument('--mock', action='store_true', help="Force mock/simulation mode without accessing GPIOs")
     args = parser.parse_args()
