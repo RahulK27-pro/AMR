@@ -38,16 +38,21 @@ if [ -f "$WS_DIR/install/setup.bash" ]; then
     source "$WS_DIR/install/setup.bash"
 fi
 
-# 2. Configure CycloneDDS unicast peer discovery
+# 2. Configure CycloneDDS pure unicast peer discovery
 CFG_FILE="/tmp/cyclonedds_laptop_$$.xml"
 cat <<EOF > "$CFG_FILE"
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
+    <General>
+      <AllowMulticast>false</AllowMulticast>
+      <Interfaces>
+        <NetworkInterface name="eth0"/>
+      </Interfaces>
+    </General>
     <Discovery>
       <Peers>
         <Peer Address="$PI_IP"/>
-        <Peer Address="255.255.255.255"/>
       </Peers>
     </Discovery>
   </Domain>
