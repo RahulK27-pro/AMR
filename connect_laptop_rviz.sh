@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
+# ==============================================================================
 # connect_laptop_rviz.sh
-# ======================
+# ==============================================================================
 # Launch RViz2 on laptop connected directly to the Raspberry Pi's ROS 2 DDS domain (Domain 7).
 # Works over Wi-Fi even when the router blocks UDP multicast by configuring CycloneDDS unicast peers.
 #
@@ -8,14 +9,20 @@
 #   ./connect_laptop_rviz.sh [PI_IP]
 #
 # Example:
-#   ./connect_laptop_rviz.sh 10.87.204.118
+#   ./connect_laptop_rviz.sh 10.73.81.208
+# ==============================================================================
 
 set -e
 
-PI_IP="${1:-10.87.204.118}"
+PI_IP="${1:-10.73.81.208}"
+
+# Automatically detect laptop IP on the route to the Pi
+LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -I | awk '{print $1}')
 
 echo "=================================================================="
-echo "  AMR Remote Laptop Visualizer (RViz2) -> Raspberry Pi @ $PI_IP"
+echo "  AMR Remote Laptop Visualizer (RViz2) -> Raspberry Pi"
+echo "  Pi IP     : $PI_IP"
+echo "  Laptop IP : $LAPTOP_IP"
 echo "=================================================================="
 
 # 1. Source ROS 2
@@ -40,6 +47,7 @@ cat <<EOF > "$CFG_FILE"
     <Discovery>
       <Peers>
         <Peer Address="$PI_IP"/>
+        <Peer Address="255.255.255.255"/>
       </Peers>
     </Discovery>
   </Domain>
@@ -51,22 +59,32 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI="file://$CFG_FILE"
 
 echo "[OK] Configured CycloneDDS (Domain 7) with Unicast Peer -> $PI_IP"
-echo "[OK] Testing topic connection to Raspberry Pi..."
+echo "[OK] Testing topic connection to Raspberry Pi (waiting 2s for DDS handshake)..."
+sleep 2
+
 TOPICS=$(ros2 topic list 2>/dev/null || true)
 
-if echo "$TOPICS" | grep -q "/cmd_vel\|/clock\|/odom"; then
+if echo "$TOPICS" | grep -q "/odom\|/scan\|/imu/data\|/cmd_vel"; then
     echo "✅ Successfully connected to AMR robot on Raspberry Pi!"
+    echo "   Active topics found:"
+    echo "$TOPICS" | grep "/odom\|/scan\|/imu\|/robot_description\|/tf" | sed 's/^/     - /'
 else
-    echo "⚠️  Connected to network, waiting for AMR topics..."
+    echo "⚠️  Waiting for AMR topics from Raspberry Pi..."
+    echo "   If RViz shows no data, ensure CycloneDDS is running on the Pi:"
+    echo "     1. On Pi: sudo apt update && sudo apt install -y ros-jazzy-rmw-cyclonedds-cpp"
+    echo "     2. On Pi: ./start_hardware.sh $LAPTOP_IP"
 fi
 
-# 3. Resolve RViz config
-RVIZ_CFG="$WS_DIR/src/agv_description/config/agv_nav.rviz"
+# 3. Resolve RViz config (prefer dedicated hardware bringup config with Fixed Frame: odom)
+RVIZ_CFG="$WS_DIR/src/agv_description/config/agv_hardware.rviz"
 if [ ! -f "$RVIZ_CFG" ]; then
-    RVIZ_CFG="$WS_DIR/install/agv_description/share/agv_description/config/agv_nav.rviz"
+    RVIZ_CFG="$WS_DIR/install/agv_description/share/agv_description/config/agv_hardware.rviz"
+fi
+if [ ! -f "$RVIZ_CFG" ]; then
+    RVIZ_CFG="$WS_DIR/src/agv_description/config/agv_nav.rviz"
 fi
 
-echo "[OK] Starting RViz2 with live robot telemetry..."
+echo "[OK] Launching RViz2 with config: $(basename "$RVIZ_CFG") (Fixed Frame: odom)..."
 if [ -f "$RVIZ_CFG" ]; then
     exec rviz2 -d "$RVIZ_CFG"
 else

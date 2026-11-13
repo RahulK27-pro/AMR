@@ -82,7 +82,7 @@ def generate_launch_description():
             'min_pwm': 15.0,
             'max_pwm': 100.0,
             'odom_rate': 50.0,
-            'cmd_vel_timeout': 0.5,
+            'cmd_vel_timeout': 1.5,
             'publish_tf': False,  # EKF publishes odom -> base_link
             'odom_frame': 'odom',
             'base_frame': 'base_link',

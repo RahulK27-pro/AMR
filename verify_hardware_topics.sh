@@ -16,6 +16,11 @@ fi
 
 export ROS_DOMAIN_ID=7
 
+if [ -f "/tmp/cyclonedds_pi.xml" ] && dpkg -s ros-jazzy-rmw-cyclonedds-cpp >/dev/null 2>&1; then
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    export CYCLONEDDS_URI="file:///tmp/cyclonedds_pi.xml"
+fi
+
 echo "=================================================================="
 echo "          AMR Hardware ROS 2 Topic Verification Monitor           "
 echo "=================================================================="

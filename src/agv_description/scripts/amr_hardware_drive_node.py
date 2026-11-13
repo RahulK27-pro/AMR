@@ -102,14 +102,7 @@ class AMRHardwareDriveNode(Node):
             f"ticks_per_rev={self.ticks_per_rev:.0f} ({self.meters_per_tick*1000:.4f} mm/tick)"
         )
 
-        # Hardware Initialization (lgpio)
-        self.chip = None
-        self.mock_mode = False
-        self.callbacks = []
-
-        self._init_hardware()
-
-        # Encoder tick counters (protected variables)
+        # Initialize all state variables BEFORE claiming hardware interrupts
         self.left_ticks = 0
         self.right_ticks = 0
         self.prev_left_ticks = 0
@@ -126,6 +119,13 @@ class AMRHardwareDriveNode(Node):
 
         # Watchdog
         self.last_cmd_time = self.get_clock().now()
+
+        # Hardware Initialization (lgpio)
+        self.chip = None
+        self.mock_mode = False
+        self.callbacks = []
+
+        self._init_hardware()
 
         # ROS 2 Subscriptions & Publishers
         self.cmd_vel_sub = self.create_subscription(
@@ -245,6 +245,12 @@ class AMRHardwareDriveNode(Node):
 
         self.lgpio.gpio_write(self.chip, RIGHT_DIR_PIN, dir_right)
         self.lgpio.tx_pwm(self.chip, RIGHT_PWM_PIN, PWM_FREQ, duty_right)
+
+        if duty_left > 0.0 or duty_right > 0.0:
+            self.get_logger().info(
+                f"[MOTORS] L: DIR={dir_left} PWM={duty_left:.1f}% ({v_left:+.2f}m/s) | "
+                f"R: DIR={dir_right} PWM={duty_right:.1f}% ({v_right:+.2f}m/s)"
+            )
 
     def _speed_to_duty(self, speed: float) -> float:
         if speed < 0.01:

@@ -2,20 +2,27 @@
 # ==============================================================================
 # AMR Master Physical Hardware Startup Script (Raspberry Pi 5)
 # ==============================================================================
-# Sourcing environment:
-#   - ROS 2 Jazzy (/opt/ros/jazzy)
-#   - YDLIDAR ROS 2 Driver (~/ydlidar_ws)
-#   - AMR Main Stack (~/AMR/AMR-main)
+# Usage:
+#   ./start_hardware.sh [LAPTOP_IP]
 #
-# Verification:
-#   In a second terminal, run:
-#     ros2 topic hz /scan /imu/data /odom /odometry/filtered
+# Examples:
+#   ./start_hardware.sh                # Local domain 7 multicast
+#   ./start_hardware.sh 10.73.81.140   # Connects unicast to remote Laptop RViz
 # ==============================================================================
 
 set -e
 
+LAPTOP_IP=""
+if [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    LAPTOP_IP="$1"
+    shift
+fi
+
 echo "=================================================================="
 echo "  Starting AMR Hardware Stack (Pi 5 + RMCS-2305 + MPU-6500 + X2)  "
+if [ -n "$LAPTOP_IP" ]; then
+echo "  Target Remote Laptop RViz : $LAPTOP_IP"
+fi
 echo "=================================================================="
 
 # 1. Source ROS 2 Core
@@ -54,7 +61,46 @@ fi
 export ROS_DOMAIN_ID=7
 echo "[OK] ROS_DOMAIN_ID=7"
 
-# 4. Launch Master Hardware Stack
+# 4. Configure CycloneDDS for reliable Wi-Fi streaming to Laptop
+if dpkg -s ros-jazzy-rmw-cyclonedds-cpp >/dev/null 2>&1; then
+    CFG_FILE="/tmp/cyclonedds_pi.xml"
+    if [ -n "$LAPTOP_IP" ]; then
+        cat <<EOF > "$CFG_FILE"
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="7">
+    <Discovery>
+      <Peers>
+        <Peer Address="$LAPTOP_IP"/>
+        <Peer Address="255.255.255.255"/>
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
+EOF
+    else
+        cat <<EOF > "$CFG_FILE"
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="7">
+    <Discovery>
+      <Peers>
+        <Peer Address="255.255.255.255"/>
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
+EOF
+    fi
+    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    export CYCLONEDDS_URI="file://$CFG_FILE"
+    echo "[OK] Configured CycloneDDS (rmw_cyclonedds_cpp) for Wi-Fi streaming"
+else
+    echo "[WARN] ros-jazzy-rmw-cyclonedds-cpp is not installed on Pi."
+    echo "       If laptop RViz cannot see topics over Wi-Fi, install it on Pi via:"
+    echo "         sudo apt update && sudo apt install -y ros-jazzy-rmw-cyclonedds-cpp"
+fi
+
+# 5. Launch Master Hardware Stack
 echo "Launching hardware_bringup.launch.py..."
 ros2 launch agv_description hardware_bringup.launch.py "$@"
-

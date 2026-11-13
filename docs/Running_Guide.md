@@ -2,6 +2,11 @@
 
 This guide covers the complete startup, navigation, mission dispatch, dynamic obstacle testing, and troubleshooting for the Autonomous Mobile Robot (AMR) warehouse navigation system.
 
+> [!NOTE]
+> **Physical Hardware vs. Gazebo Simulation**:
+> - For physical deployment on the **Raspberry Pi 5** (motors, encoders, IMU, YDLIDAR X2, and physical EKF bringup), refer to the dedicated **[Hardware Integration Guide](Hardware_Integration_Guide.md)**.
+> - The sections below cover the Gazebo Harmonic digital twin simulation environment.
+
 **Stack summary:**
 - **Gazebo Harmonic** simulation with Gazebo–ROS bridge
 - **AMCL** localization on a pre-saved occupancy-grid map
