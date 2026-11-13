@@ -14,7 +14,7 @@ import sys
 import socket
 import time
 
-TEST_PORT = 9999
+TEST_PORT = 7410
 
 def run_listener():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -60,3 +60,4 @@ if __name__ == '__main__':
         run_ping(target)
     else:
         run_listener()
+
