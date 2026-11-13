@@ -64,7 +64,7 @@ echo "[OK] Configured CycloneDDS (Domain 7) with Unicast Peer -> $PI_IP"
 echo "[OK] Testing topic connection to Raspberry Pi (waiting 2s for DDS handshake)..."
 sleep 2
 
-TOPICS=$(ros2 topic list 2>/dev/null || true)
+TOPICS=$(ros2 topic list --no-daemon 2>/dev/null || true)
 
 if echo "$TOPICS" | grep -q "/odom\|/scan\|/imu/data\|/cmd_vel"; then
     echo "✅ Successfully connected to AMR robot on Raspberry Pi!"

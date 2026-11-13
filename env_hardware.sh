@@ -19,9 +19,13 @@ export ROS_DOMAIN_ID=7
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI="file://$WS_DIR/cyclonedds.xml"
 
+# Avoid stale daemon hangs across Wi-Fi reconnects
+alias ros2='ros2 --no-daemon'
+
 echo "=================================================================="
 echo "  [OK] Terminal configured for AMR Physical Robot Stack"
 echo "  ROS_DOMAIN_ID       : 7"
 echo "  RMW_IMPLEMENTATION  : rmw_cyclonedds_cpp"
 echo "  CYCLONEDDS_URI      : $CYCLONEDDS_URI (Unicast -> 10.73.81.208)"
 echo "=================================================================="
+
