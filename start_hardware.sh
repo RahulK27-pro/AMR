@@ -71,9 +71,6 @@ if dpkg -s ros-jazzy-rmw-cyclonedds-cpp >/dev/null 2>&1; then
   <Domain Id="7">
     <General>
       <AllowMulticast>false</AllowMulticast>
-      <Interfaces>
-        <NetworkInterface autoselect="true"/>
-      </Interfaces>
     </General>
     <Discovery>
       <Peers>
@@ -90,9 +87,6 @@ EOF
   <Domain Id="7">
     <General>
       <AllowMulticast>false</AllowMulticast>
-      <Interfaces>
-        <NetworkInterface autoselect="true"/>
-      </Interfaces>
     </General>
     <Discovery>
       <Peers>

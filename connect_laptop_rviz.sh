@@ -46,9 +46,6 @@ cat <<EOF > "$CFG_FILE"
   <Domain Id="7">
     <General>
       <AllowMulticast>false</AllowMulticast>
-      <Interfaces>
-        <NetworkInterface name="eth0"/>
-      </Interfaces>
     </General>
     <Discovery>
       <Peers>
