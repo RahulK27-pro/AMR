@@ -338,7 +338,13 @@ class IMUReader:
         """Enable I2C bypass so we can talk directly to AK8963 magnetometer."""
         if self.mock:
             return
-        # Set BYPASS_EN bit in INT_PIN_CFG register
+        # Disable I2C Master Mode in USER_CTRL (0x6A) first; otherwise bypass is blocked
+        try:
+            self.bus.write_byte_data(self.addr, 0x6A, 0x00)
+            time.sleep(0.01)
+        except Exception:
+            pass
+        # Set BYPASS_EN bit in INT_PIN_CFG register (0x37)
         self.bus.write_byte_data(self.addr, MPU9250_INT_PIN_CFG, 0x02)
         time.sleep(0.05)
 
@@ -652,39 +658,45 @@ def test_imu_data(results, mock=False):
                        f"({'stable at rest' if gyro_ok else 'excessive drift — check wiring'})",
                        {"avg_gx": avg_gx, "avg_gy": avg_gy, "avg_gz": avg_gz})
 
-        # Read magnetometer (AK8963)
-        print("  Enabling magnetometer passthrough...")
-        try:
-            imu.enable_magnetometer_passthrough()
-            mag_wai = imu.mag_who_am_i()
-            print(f"  AK8963 WHO_AM_I = 0x{mag_wai:02X} ({'OK' if mag_wai == 0x48 else 'UNEXPECTED'})")
+        # Check for Magnetometer (only present on MPU9250 0x71/0x73; MPU6500 0x70 is 6-DOF)
+        if wai == 0x70:
+            print("  Note: Chip is MPU-6500 (6-DOF: Accel + Gyro).")
+            print("        Magnetometer is not present on MPU-6500 (optimal for indoor AMR EKF).")
+            results.record("IMU Magnetometer", True,
+                           "N/A — MPU-6500 6-DOF chip detected. Accel+Gyro ready for ROS 2 EKF.",
+                           {"chip": "MPU6500", "dof": 6})
+        else:
+            print("  Enabling magnetometer passthrough...")
+            try:
+                imu.enable_magnetometer_passthrough()
+                mag_wai = imu.mag_who_am_i()
+                print(f"  AK8963 WHO_AM_I = 0x{mag_wai:02X} ({'OK' if mag_wai == 0x48 else 'UNEXPECTED'})")
 
-            if mag_wai == 0x48:
-                imu.mag_init()
-                time.sleep(0.1)
-                print("  Reading magnetometer (5 samples)...")
-                mag_samples = []
-                for _ in range(5):
-                    m = imu.read_mag_raw()
-                    mag_samples.append(m)
-                    time.sleep(0.05)
+                if mag_wai == 0x48:
+                    imu.mag_init()
+                    time.sleep(0.1)
+                    print("  Reading magnetometer (5 samples)...")
+                    mag_samples = []
+                    for _ in range(5):
+                        m = imu.read_mag_raw()
+                        mag_samples.append(m)
+                        time.sleep(0.05)
 
-                avg_mx = sum(s["mx"] for s in mag_samples) / len(mag_samples)
-                avg_my = sum(s["my"] for s in mag_samples) / len(mag_samples)
-                avg_mz = sum(s["mz"] for s in mag_samples) / len(mag_samples)
-                print(f"    Avg: mx={avg_mx:+.0f}  my={avg_my:+.0f}  mz={avg_mz:+.0f}")
+                    avg_mx = sum(s["mx"] for s in mag_samples) / len(mag_samples)
+                    avg_my = sum(s["my"] for s in mag_samples) / len(mag_samples)
+                    avg_mz = sum(s["mz"] for s in mag_samples) / len(mag_samples)
+                    print(f"    Avg: mx={avg_mx:+.0f}  my={avg_my:+.0f}  mz={avg_mz:+.0f}")
 
-                # Basic sanity: at least one axis should be non-zero
-                mag_ok = any(abs(v) > 5 for v in [avg_mx, avg_my, avg_mz])
-                results.record("IMU Magnetometer", mag_ok,
-                               f"mx={avg_mx:+.0f} my={avg_my:+.0f} mz={avg_mz:+.0f} "
-                               f"({'field detected' if mag_ok else 'all near zero — check module'})",
-                               {"avg_mx": avg_mx, "avg_my": avg_my, "avg_mz": avg_mz})
-            else:
-                results.record("IMU Magnetometer", False,
-                               f"AK8963 WHO_AM_I = 0x{mag_wai:02X}, expected 0x48")
-        except Exception as e:
-            results.record("IMU Magnetometer", False, f"Mag passthrough failed: {e}")
+                    mag_ok = any(abs(v) > 5 for v in [avg_mx, avg_my, avg_mz])
+                    results.record("IMU Magnetometer", mag_ok,
+                                   f"mx={avg_mx:+.0f} my={avg_my:+.0f} mz={avg_mz:+.0f} "
+                                   f"({'field detected' if mag_ok else 'all near zero — check module'})",
+                                   {"avg_mx": avg_mx, "avg_my": avg_my, "avg_mz": avg_mz})
+                else:
+                    results.record("IMU Magnetometer", False,
+                                   f"AK8963 WHO_AM_I = 0x{mag_wai:02X}, expected 0x48")
+            except Exception as e:
+                results.record("IMU Magnetometer", False, f"Mag passthrough failed: {e}")
 
         return True
 
