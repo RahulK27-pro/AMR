@@ -119,13 +119,20 @@ def generate_launch_description():
 
     # 5. YDLIDAR X2 Driver Node (publishes /scan on /dev/ttyUSB0 @ 115200 baud)
     ydlidar_node = Node(
-        package='ydlidar_ros2_driver',
-        executable='ydlidar_ros2_driver_node',
-        name='ydlidar_ros2_driver_node',
+        package='agv_description',
+        executable='amr_lidar_node.py',
+        name='amr_lidar_node',
         output='screen',
         condition=IfCondition(enable_lidar),
-        parameters=[lidar_config_path, {'use_sim_time': False}],
-        remappings=[('/scan', '/scan')]
+        parameters=[{
+            'port': '/dev/ttyUSB0',
+            'baudrate': 115200,
+            'frame_id': 'laser_frame',
+            'range_min': 0.10,
+            'range_max': 8.0,
+            'num_bins': 360,
+            'use_sim_time': False
+        }]
     )
 
     return LaunchDescription([
