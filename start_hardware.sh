@@ -43,9 +43,10 @@ fi
 # 3. Source AMR Workspace
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Auto-build if hardware_bringup.launch.py is not yet installed in share directory
-if [ ! -f "$SCRIPT_DIR/install/agv_description/share/agv_description/launch/hardware_bringup.launch.py" ]; then
-    echo "[INFO] New launch files detected. Building agv_description package..."
+# Auto-build if hardware_bringup.launch.py is not yet installed or URDF was updated
+if [ ! -f "$SCRIPT_DIR/install/agv_description/share/agv_description/launch/hardware_bringup.launch.py" ] || \
+   [ "$SCRIPT_DIR/src/agv_description/urdf/warehouse_agv.urdf" -nt "$SCRIPT_DIR/install/agv_description/share/agv_description/urdf/warehouse_agv.urdf" ]; then
+    echo "[INFO] Build or update detected. Building agv_description package..."
     (cd "$SCRIPT_DIR" && colcon build --packages-select agv_description --symlink-install)
 fi
 

@@ -23,13 +23,13 @@
   </material>
 
   <!-- ===================================================== -->
-  <!-- BASE -->
+  <!-- BASE (Dia: 220mm / 0.22m, Height: 100mm / 0.10m)      -->
   <!-- ===================================================== -->
 
   <link name="base_link">
 
     <visual>
-      <origin xyz="0 0 0.06"/>
+      <origin xyz="0 0 0.090"/>
       <geometry>
         <cylinder radius="0.11" length="0.10"/>
       </geometry>
@@ -37,14 +37,14 @@
     </visual>
 
     <collision>
-      <origin xyz="0 0 0.06"/>
+      <origin xyz="0 0 0.090"/>
       <geometry>
         <cylinder radius="0.11" length="0.10"/>
       </geometry>
     </collision>
 
     <inertial>
-      <origin xyz="0 0 0.06"/>
+      <origin xyz="0 0 0.090"/>
       <mass value="8.0"/>
 
       <inertia 
@@ -145,34 +145,34 @@
   </joint>
 
   <!-- ===================================================== -->
-  <!-- FRONT CASTER -->
+  <!-- FRONT CASTER (Proportional Ball Caster: r=0.020m)     -->
   <!-- ===================================================== -->
 
   <link name="front_caster">
 
     <visual>
       <geometry>
-        <sphere radius="0.070"/>
+        <sphere radius="0.020"/>
       </geometry>
       <material name="gray"/>
     </visual>
 
     <collision>
       <geometry>
-        <sphere radius="0.070"/>
+        <sphere radius="0.020"/>
       </geometry>
     </collision>
 
     <inertial>
-      <mass value="0.2"/>
+      <mass value="0.1"/>
 
       <inertia
-        ixx="0.00005"
+        ixx="0.000016"
         ixy="0"
         ixz="0"
-        iyy="0.00005"
+        iyy="0.000016"
         iyz="0"
-        izz="0.00005"/>
+        izz="0.000016"/>
     </inertial>
 
   </link>
@@ -182,39 +182,39 @@
     <parent link="base_link"/>
     <child link="front_caster"/>
 
-    <origin xyz="0.09 0 0.070"/>
+    <origin xyz="0.09 0 0.020"/>
 
   </joint>
 
   <!-- ===================================================== -->
-  <!-- REAR CASTER -->
+  <!-- REAR CASTER (Proportional Ball Caster: r=0.020m)      -->
   <!-- ===================================================== -->
 
   <link name="rear_caster">
 
     <visual>
       <geometry>
-        <sphere radius="0.070"/>
+        <sphere radius="0.020"/>
       </geometry>
       <material name="gray"/>
     </visual>
 
     <collision>
       <geometry>
-        <sphere radius="0.070"/>
+        <sphere radius="0.020"/>
       </geometry>
     </collision>
 
     <inertial>
-      <mass value="0.2"/>
+      <mass value="0.1"/>
 
       <inertia
-        ixx="0.00005"
+        ixx="0.000016"
         ixy="0"
         ixz="0"
-        iyy="0.00005"
+        iyy="0.000016"
         iyz="0"
-        izz="0.00005"/>
+        izz="0.000016"/>
     </inertial>
 
   </link>
@@ -224,7 +224,7 @@
     <parent link="base_link"/>
     <child link="rear_caster"/>
 
-    <origin xyz="-0.09 0 0.070"/>
+    <origin xyz="-0.09 0 0.020"/>
 
   </joint>
 
@@ -267,7 +267,8 @@
     <parent link="base_link"/>
     <child link="lidar_link"/>
 
-    <origin xyz="0 0 0.135"/>
+    <!-- Mounted on top of 100mm body (top of body = 0.140m, center of 50mm LiDAR = 0.165m) -->
+    <origin xyz="0 0 0.165"/>
 
   </joint>
 
@@ -276,11 +277,11 @@
   <joint name="laser_frame_joint" type="fixed">
     <parent link="lidar_link"/>
     <child link="laser_frame"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="0 0 0.015" rpy="0 0 0"/>
   </joint>
 
   <!-- ===================================================== -->
-  <!-- IMU -->
+  <!-- IMU (Mounted on Top Deck next to LiDAR)               -->
   <!-- ===================================================== -->
 
   <link name="imu_link">
@@ -300,7 +301,7 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <origin xyz="0 0 0.06"/>
+    <origin xyz="0.05 0 0.1425"/>
   </joint>
 
   <gazebo reference="imu_link">
@@ -431,8 +432,8 @@
             name="gz::sim::systems::DiffDrive">
       <left_joint>left_wheel_joint</left_joint>
       <right_joint>right_wheel_joint</right_joint>
-      <wheel_separation>0.26</wheel_separation>
-      <wheel_radius>0.025</wheel_radius>
+      <wheel_separation>0.240</wheel_separation>
+      <wheel_radius>0.070</wheel_radius>
       <max_linear_acceleration>5.0</max_linear_acceleration>
       <max_angular_acceleration>5.0</max_angular_acceleration>
       <topic>/cmd_vel</topic>
