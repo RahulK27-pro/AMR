@@ -90,8 +90,8 @@ Conventional mobile robot architectures combining standard Nav2 DWB/TEB controll
 \subsection{Differential Drive Non-Holonomic Kinematics}
 The platform operates on the planar Euclidean group $SE(2)$ with configuration pose $\mathbf{q} = [x, y, \theta]^T$. The physical geometry defined in \texttt{warehouse\_agv.urdf} is:
 \begin{itemize}
-    \item Drive wheel radius: $r = 0.025\text{ m}$ (nominal diameter $50\text{ mm}$, thickness $0.02\text{ m}$)
-    \item Wheel track baseline: $L = 0.26\text{ m}$ (symmetric lateral offset $y = \pm 0.13\text{ m}$)
+    \item Drive wheel radius: $r = 0.035\text{ m}$ (nominal diameter $70\text{ mm}$, thickness $0.03\text{ m}$)
+    \item Wheel track baseline: $L = 0.240\text{ m}$ (symmetric lateral offset $y = \pm 0.12\text{ m}$)
     \item Chassis cylindrical footprint radius: $R_{\text{base}} = 0.11\text{ m}$ (diameter $0.22\text{ m}$, height $0.10\text{ m}$)
     \item Ground clearance: Enforced $z = 0.01\text{ m}$ ($1\text{ cm}$) gap under chassis to prevent Gazebo ground contact friction artifacts; wheels and casters interface at $z = 0\text{ m}$.
     \item Total vehicle gross mass: $M = 10.4\text{ kg}$ (Chassis $8.0\text{ kg}$, wheels $2 \times 0.8\text{ kg}$, casters $2 \times 0.4\text{ kg}$)

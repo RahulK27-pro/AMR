@@ -40,9 +40,10 @@ All low-level odometry, kinematics, and simulation models are calibrated to the 
 
 | Parameter | Measured Value | Metric Value | Impact on Differential Drive Kinematics |
 | :--- | :--- | :--- | :--- |
-| **Wheel Radius ($r$)** | $70\text{ mm}$ | **$0.070\text{ m}$** | Circumference $C = 2\pi r \approx \mathbf{0.43982\text{ m}}$ |
+| **Wheel Diameter ($D$)** | $70\text{ mm}$ | **$0.070\text{ m}$** | Outer tire diameter |
+| **Wheel Radius ($r$)** | $35\text{ mm}$ | **$0.035\text{ m}$** | Circumference $C = 2\pi r \approx \mathbf{0.21991\text{ m}}$ |
 | **Track Width ($L$)** | $240\text{ mm}$ | **$0.240\text{ m}$** | Center-to-center distance between tires ($y = \pm 0.120\text{ m}$) |
-| **Ticks / Revolution** | $4713\text{ ticks}$ | **$4713$** | High resolution: **$0.09332\text{ mm/tick}$** ($\approx 10,715\text{ ticks/m}$) |
+| **Ticks / Revolution** | $4713\text{ ticks}$ | **$4713$** | High resolution: **$0.04666\text{ mm/tick}$** ($\approx 21,431\text{ ticks/m}$) |
 | **Left Motor Polarity** | Inverted | — | `DIR1 = 0` (Forward), `DIR1 = 1` (Reverse) |
 | **Right Motor Polarity**| Normal | — | `DIR2 = 1` (Forward), `DIR2 = 0` (Reverse) |
 | **Left Encoder Polarity**| Inverted | — | Quadrature delta inverted so forward rotation counts $(+)$ |
@@ -68,7 +69,7 @@ flowchart TD
         DRIVE["amr_hardware_drive_node.py<br/>(Diff-Drive Controller & Odom)"]
         IMU_NODE["amr_imu_node.py<br/>(6-Axis IMU Driver)"]
         LIDAR_NODE["amr_lidar_node.py<br/>(Native Python X2 Driver)"]
-        RSP["robot_state_publisher<br/>(URDF: r=0.070, L=0.240)"]
+        RSP["robot_state_publisher<br/>(URDF: r=0.035, L=0.240)"]
         EKF["robot_localization<br/>(ekf_node, use_sim_time: false)"]
     end
 

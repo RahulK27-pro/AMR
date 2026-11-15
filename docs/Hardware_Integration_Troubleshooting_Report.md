@@ -4,7 +4,7 @@
 **Hardware Platform**: Raspberry Pi 5 (RP1 Southbridge, Ubuntu 24.04 LTS, ROS 2 Jazzy, ARM64)  
 **Remote Visualizer / Workstation**: Laptop (Windows 11 + WSL2 Ubuntu 24.04 LTS, ROS 2 Jazzy, x86_64)  
 **Middleware**: CycloneDDS (`rmw_cyclonedds_cpp`, ROS Domain ID `7`)  
-**Sensors & Actuators**: RMCS-2305 Dual DC Motor Driver, 6-wire Quadrature Encoders ($r=0.070\text{ m}$, $L=0.240\text{ m}$, $4713\text{ ticks/rev}$), GY-91 MPU-6500 IMU, YDLIDAR X2 LiDAR.
+**Sensors & Actuators**: RMCS-2305 Dual DC Motor Driver, 6-wire Quadrature Encoders ($r=0.035\text{ m}$, $D=0.070\text{ m}$, $L=0.240\text{ m}$, $4713\text{ ticks/rev}$), GY-91 MPU-6500 IMU, YDLIDAR X2 LiDAR.
 
 ---
 

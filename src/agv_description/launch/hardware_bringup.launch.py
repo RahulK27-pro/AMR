@@ -5,7 +5,7 @@ AMR Master Hardware Bringup Launch File
 Brings up the complete physical robot hardware on Raspberry Pi 5:
   1. AMR Hardware Drive Node   : Subscribes to /cmd_vel, drives motors, computes /odom
   2. AMR 6-Axis IMU Node       : Reads GY-91 MPU-6500 on I2C bus 1 (0x68), publishes /imu/data
-  3. Robot State Publisher     : Broadcasts chassis & wheel TF frames (r=0.070m, L=0.240m)
+  3. Robot State Publisher     : Broadcasts chassis & wheel TF frames (r=0.035m, L=0.240m, Dia=70mm)
   4. Robot Localization (EKF)  : Fuses /odom + /imu/data -> /odometry/filtered & broadcasts odom->base_link TF
   5. YDLIDAR X2 Driver         : Connects to /dev/ttyUSB0 (115200 baud) and publishes /scan
 
@@ -75,10 +75,10 @@ def generate_launch_description():
         output='screen',
         condition=IfCondition(enable_motors),
         parameters=[{
-            'wheel_radius': 0.070,
+            'wheel_radius': 0.035,
             'wheel_separation': 0.240,
             'ticks_per_rev': 4713,
-            'max_wheel_speed': 0.90,
+            'max_wheel_speed': 0.45,
             'min_pwm': 15.0,
             'max_pwm': 100.0,
             'odom_rate': 50.0,

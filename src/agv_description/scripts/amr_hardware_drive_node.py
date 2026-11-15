@@ -8,7 +8,8 @@ Hardware Interfaces:
   - Encoders: 6-Wire Quadrature Hall-Effect Encoders (3.3V Logic)
 
 Calibrated Constants:
-  - Wheel Radius (r)       : 0.070 m (70 mm)
+  - Wheel Diameter (D)     : 0.070 m (70 mm)
+  - Wheel Radius (r)       : 0.035 m (35 mm)
   - Wheel Separation (L)   : 0.240 m (240 mm)
   - Ticks Per Revolution   : 4713 ticks (4x quadrature decoding)
 
@@ -72,10 +73,10 @@ class AMRHardwareDriveNode(Node):
         super().__init__('amr_hardware_drive_node')
 
         # Declare ROS 2 Parameters
-        self.declare_parameter('wheel_radius', 0.070)
+        self.declare_parameter('wheel_radius', 0.035)
         self.declare_parameter('wheel_separation', 0.240)
         self.declare_parameter('ticks_per_rev', 4713)
-        self.declare_parameter('max_wheel_speed', 0.90)       # m/s (~122 RPM on 70mm wheel)
+        self.declare_parameter('max_wheel_speed', 0.45)       # m/s (~122 RPM on 70mm diameter wheel)
         self.declare_parameter('min_pwm', 15.0)               # % duty minimum deadband
         self.declare_parameter('max_pwm', 100.0)              # % duty maximum
         self.declare_parameter('odom_rate', 50.0)             # Hz
