@@ -33,6 +33,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, TransformStamped, Quaternion
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import JointState
 from tf2_ros import TransformBroadcaster
 
 # GPIO Pinout
@@ -135,6 +136,7 @@ class AMRHardwareDriveNode(Node):
             10
         )
         self.odom_pub = self.create_publisher(Odometry, '/odom', 10)
+        self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
         self.tf_broadcaster = TransformBroadcaster(self) if self.publish_tf else None
 
         # Timer for Odometry & Watchdog (50 Hz)
@@ -358,6 +360,21 @@ class AMRHardwareDriveNode(Node):
         ]
 
         self.odom_pub.publish(odom)
+
+        # Broadcast JointState so robot_state_publisher articulates wheel transforms in RViz
+        js = JointState()
+        js.header.stamp = current_time.to_msg()
+        js.header.frame_id = self.base_frame
+        js.name = ['left_wheel_joint', 'right_wheel_joint']
+        js.position = [
+            (self.left_ticks / self.ticks_per_rev) * 2.0 * math.pi,
+            (self.right_ticks / self.ticks_per_rev) * 2.0 * math.pi
+        ]
+        js.velocity = [
+            (d_left / dt) / self.r,
+            (d_right / dt) / self.r
+        ]
+        self.joint_pub.publish(js)
 
         # Optional TF Broadcast (odom -> base_link)
         if self.publish_tf and self.tf_broadcaster:

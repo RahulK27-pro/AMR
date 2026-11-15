@@ -18,6 +18,10 @@
     <color rgba="0.7 0.7 0.7 1"/>
   </material>
 
+  <material name="red">
+    <color rgba="0.9 0.1 0.1 1.0"/>
+  </material>
+
   <!-- ===================================================== -->
   <!-- BASE -->
   <!-- ===================================================== -->
@@ -280,8 +284,15 @@
   <!-- ===================================================== -->
 
   <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.025 0.015 0.005"/>
+      </geometry>
+      <material name="red"/>
+    </visual>
     <inertial>
-      <mass value="0.1"/>
+      <mass value="0.05"/>
       <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
     </inertial>
   </link>

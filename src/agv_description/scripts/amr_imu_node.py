@@ -17,7 +17,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from geometry_msgs.msg import Quaternion
+from geometry_msgs.msg import Quaternion, PoseStamped, AccelStamped
 
 # MPU-6500 Register Map
 MPU_ADDR           = 0x68
@@ -81,10 +81,12 @@ class AMRIMUNode(Node):
         self._init_i2c()
 
         self.imu_pub = self.create_publisher(Imu, '/imu/data', 10)
+        self.pose_pub = self.create_publisher(PoseStamped, '/imu/pose', 10)
+        self.accel_pub = self.create_publisher(AccelStamped, '/imu/accel', 10)
         timer_period = 1.0 / self.rate
         self.timer = self.create_timer(timer_period, self.read_and_publish)
 
-        self.get_logger().info(f"AMR IMU Node online (Publishing /imu/data @ {self.rate} Hz)")
+        self.get_logger().info(f"AMR IMU Node online (Publishing /imu/data, /imu/pose, /imu/accel @ {self.rate} Hz)")
 
     def _init_i2c(self):
         try:
@@ -227,6 +229,21 @@ class AMRIMUNode(Node):
         ]
 
         self.imu_pub.publish(msg)
+
+        # Build geometry_msgs/PoseStamped for native RViz orientation visualization
+        pose_msg = PoseStamped()
+        pose_msg.header = msg.header
+        pose_msg.pose.orientation = q
+        self.pose_pub.publish(pose_msg)
+
+        # Build geometry_msgs/AccelStamped for native RViz acceleration vector visualization
+        accel_msg = AccelStamped()
+        accel_msg.header = msg.header
+        accel_msg.accel.linear.x = ax
+        accel_msg.accel.linear.y = ay
+        accel_msg.accel.linear.z = az
+        self.accel_pub.publish(accel_msg)
+
         self.last_time = current_time
 
     def destroy_node(self):
