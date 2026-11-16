@@ -16,8 +16,9 @@ Verification Command:
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -142,13 +143,17 @@ def generate_launch_description():
     )
 
     # 6. SLAM Toolbox (Optional Onboard Mapping Node)
-    slam_node = Node(
-        package='slam_toolbox',
-        executable='async_slam_toolbox_node',
-        name='slam_toolbox',
-        output='screen',
+    slam_node = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory('slam_toolbox'), 'launch', 'online_async_launch.py')
+        ),
         condition=IfCondition(enable_slam),
-        parameters=[slam_config_path, {'use_sim_time': False}]
+        launch_arguments={
+            'slam_params_file': slam_config_path,
+            'use_sim_time': 'false',
+            'autostart': 'true',
+            'use_lifecycle_manager': 'false'
+        }.items()
     )
 
     return LaunchDescription([

@@ -22,14 +22,16 @@ Usage:
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
     pkg_agv = get_package_share_directory('agv_description')
+    pkg_slam = get_package_share_directory('slam_toolbox')
 
     default_slam_params = os.path.join(pkg_agv, 'config', 'mapper_params_hardware.yaml')
     default_rviz_config = os.path.join(pkg_agv, 'config', 'agv_hardware_mapping.rviz')
@@ -64,19 +66,20 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     rviz_config = LaunchConfiguration('rviz_config')
 
-    # 1. SLAM Toolbox (Async Online Mapping)
-    slam_toolbox_node = Node(
-        package='slam_toolbox',
-        executable='async_slam_toolbox_node',
-        name='slam_toolbox',
-        output='screen',
-        parameters=[
-            slam_params_file,
-            {'use_sim_time': use_sim_time}
-        ]
+    # 1. SLAM Toolbox (Include official online_async_launch.py with Lifecycle Management & Autostart)
+    slam_toolbox_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_slam, 'launch', 'online_async_launch.py')
+        ),
+        launch_arguments={
+            'slam_params_file': slam_params_file,
+            'use_sim_time': use_sim_time,
+            'autostart': 'true',
+            'use_lifecycle_manager': 'false'
+        }.items()
     )
 
-    # 2. RViz2 Visualization (Fixed Frame: map)
+    # 2. RViz2 Visualization
     rviz2_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -94,8 +97,8 @@ def generate_launch_description():
         declare_rviz_config,
         LogInfo(msg="================================================================"),
         LogInfo(msg="  Starting AMR Physical Hardware SLAM Mapping Session           "),
-        LogInfo(msg="  Fixed Frame: map -> odom (slam_toolbox dynamic scan matching) "),
+        LogInfo(msg="  Fixed Frame: odom / map (slam_toolbox dynamic scan matching)  "),
         LogInfo(msg="================================================================"),
-        slam_toolbox_node,
+        slam_toolbox_launch,
         rviz2_node
     ])
