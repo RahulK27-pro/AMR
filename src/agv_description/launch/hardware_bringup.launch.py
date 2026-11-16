@@ -28,6 +28,7 @@ def generate_launch_description():
     urdf_path = os.path.join(pkg_dir, 'urdf', 'warehouse_agv.urdf')
     ekf_config_path = os.path.join(pkg_dir, 'config', 'ekf_hardware.yaml')
     lidar_config_path = os.path.join(pkg_dir, 'config', 'ydlidar_x2.yaml')
+    slam_config_path = os.path.join(pkg_dir, 'config', 'mapper_params_hardware.yaml')
 
     with open(urdf_path, 'r') as f:
         robot_description_content = f.read()
@@ -37,6 +38,7 @@ def generate_launch_description():
     enable_ekf = LaunchConfiguration('enable_ekf')
     enable_imu = LaunchConfiguration('enable_imu')
     enable_motors = LaunchConfiguration('enable_motors')
+    enable_slam = LaunchConfiguration('enable_slam')
 
     declare_lidar = DeclareLaunchArgument(
         'enable_lidar', default_value='true',
@@ -53,6 +55,10 @@ def generate_launch_description():
     declare_motors = DeclareLaunchArgument(
         'enable_motors', default_value='true',
         description='Whether to launch differential drive motor & odometry node'
+    )
+    declare_slam = DeclareLaunchArgument(
+        'enable_slam', default_value='false',
+        description='Whether to launch SLAM Toolbox onboard the robot'
     )
 
     # 1. Robot State Publisher (Static & Kinematic TFs from URDF)
@@ -135,16 +141,28 @@ def generate_launch_description():
         }]
     )
 
+    # 6. SLAM Toolbox (Optional Onboard Mapping Node)
+    slam_node = Node(
+        package='slam_toolbox',
+        executable='async_slam_toolbox_node',
+        name='slam_toolbox',
+        output='screen',
+        condition=IfCondition(enable_slam),
+        parameters=[slam_config_path, {'use_sim_time': False}]
+    )
+
     return LaunchDescription([
         declare_lidar,
         declare_ekf,
         declare_imu,
         declare_motors,
+        declare_slam,
         LogInfo(msg="=== Launching AMR Physical Hardware Stack (Pi 5) ==="),
         robot_state_publisher_node,
         motor_drive_node,
         imu_node,
         ekf_node,
-        ydlidar_node
+        ydlidar_node,
+        slam_node
     ])
 
