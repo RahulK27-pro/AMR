@@ -26,18 +26,6 @@ else
     fi
 fi
 
-echo "=================================================================="
-echo "  AMR Teleoperation Keyboard Controller (Domain 7 -> /cmd_vel)"
-echo "=================================================================="
-echo "  Key Controls:"
-echo "    [i] : Move Forward"
-echo "    [,] : Move Reverse"
-echo "    [j] : Turn Left"
-echo "    [l] : Turn Right"
-echo "    [k] : Stop"
-echo "    [q] / [z] : Increase / Decrease linear speed (+10%)"
-echo "    [w] / [x] : Increase / Decrease angular speed (+10%)"
-echo "=================================================================="
-
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --remap /cmd_vel:=/cmd_vel
+# Launch the dedicated WASD Hold-to-Move ROS 2 Teleop Controller
+exec python3 "$WS_DIR/teleop_wasd.py" "$@"
 
