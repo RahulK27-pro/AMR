@@ -27,13 +27,13 @@ echo "  AMR Real-Time Hardware Map Saver"
 echo "  Target Output : $FULL_PATH.yaml & .pgm"
 echo "=================================================================="
 
-# 1. Source ROS 2 environment
+# 1. Source ROS 2 environment (pass empty or valid IP, not MAP_NAME)
 if [ -f /opt/ros/jazzy/setup.bash ]; then
     source /opt/ros/jazzy/setup.bash
 fi
 
 if [ -f "$SCRIPT_DIR/env_hardware.sh" ]; then
-    source "$SCRIPT_DIR/env_hardware.sh"
+    source "$SCRIPT_DIR/env_hardware.sh" "10.244.248.208"
 else
     export ROS_DOMAIN_ID=7
     if dpkg -s ros-jazzy-rmw-cyclonedds-cpp >/dev/null 2>&1; then
@@ -56,14 +56,16 @@ fi
 
 echo "✅ Topic /map is active ($MAP_PUB publisher(s)). Saving map..."
 
-# 3. Save map via nav2_map_server map_saver_cli (use_sim_time:=false)
+# 3. Save map via nav2_map_server map_saver_cli
+# NOTE: Arguments (-f <name>) must precede --ros-args in ROS 2 Jazzy!
 ros2 run nav2_map_server map_saver_cli \
+    -f "$FULL_PATH" \
+    --occ 0.65 \
+    --free 0.25 \
+    --fmt pgm \
     --ros-args \
     -p use_sim_time:=false \
-    -p save_map_timeout:=10.0 \
-    -p free_thresh_default:=0.25 \
-    -p occupied_thresh_default:=0.65 \
-    -- -f "$FULL_PATH"
+    -p save_map_timeout:=10.0
 
 if [ -f "${FULL_PATH}.yaml" ] && [ -f "${FULL_PATH}.pgm" ]; then
     echo ""

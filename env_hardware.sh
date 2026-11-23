@@ -17,7 +17,13 @@ if [ -f "$WS_DIR/install/setup.bash" ]; then
     source "$WS_DIR/install/setup.bash"
 fi
 
-PI_IP="${1:-10.244.248.208}"
+DEFAULT_PI_IP="10.244.248.208"
+# Only treat $1 as PI_IP if it matches an IPv4 format
+if [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    PI_IP="$1"
+else
+    PI_IP="$DEFAULT_PI_IP"
+fi
 
 # Dynamically ensure cyclonedds.xml binds to eth0 and targets the active Pi IP
 cat <<EOF > "$WS_DIR/cyclonedds.xml"
