@@ -3,13 +3,13 @@
   <Domain Id="7">
     <General>
       <Interfaces>
-        <NetworkInterface address="10.73.81.140"/>
+        <NetworkInterface name="eth0"/>
       </Interfaces>
     </General>
     <Discovery>
       <Peers>
         <Peer Address="127.0.0.1"/>
-        <Peer Address="10.73.81.208"/>
+        <Peer Address="10.244.248.208"/>
       </Peers>
     </Discovery>
   </Domain>
