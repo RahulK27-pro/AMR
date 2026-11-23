@@ -31,7 +31,7 @@ class AMRLidarNode(Node):
         self.declare_parameter('range_max', 8.0)
         self.declare_parameter('num_bins', 360)
         self.declare_parameter('inverted', True)
-        self.declare_parameter('angle_offset', 0.0)
+        self.declare_parameter('angle_offset', 180.0)
 
         self.port = self.get_parameter('port').value
         self.baudrate = self.get_parameter('baudrate').value

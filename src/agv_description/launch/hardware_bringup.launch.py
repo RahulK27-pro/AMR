@@ -144,7 +144,7 @@ def generate_launch_description():
             'range_max': 8.0,
             'num_bins': 360,
             'inverted': True,
-            'angle_offset': 0.0,
+            'angle_offset': 180.0,
             'use_sim_time': False
         }]
     )
