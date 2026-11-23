@@ -35,13 +35,13 @@ slam_toolbox:
     # ── Real-Time Scan Matcher Configuration ─────────────────────────
     use_scan_matching: true
     use_scan_barycenter: true
-    scan_buffer_size: 25
+    scan_buffer_size: 20
     scan_buffer_maximum_scan_distance: 8.0
-    link_match_minimum_response_fine: 0.60
+    link_match_minimum_response_fine: 0.35    # Relaxed from 0.60 to easily snap walls and absorb odometry drift
     link_scan_maximum_distance: 1.5
 
     # Correlation Search Space (Captures dynamic manual teleoperation speeds)
-    correlation_search_space_dimension: 0.80
+    correlation_search_space_dimension: 0.50
     correlation_search_space_resolution: 0.01
     correlation_search_space_smear_deviation: 0.10
 
@@ -49,9 +49,9 @@ slam_toolbox:
     do_loop_closing: true
     loop_search_maximum_distance: 4.0
     loop_match_minimum_chain_size: 10
-    loop_match_maximum_variance_coarse: 2.0
-    loop_match_minimum_response_coarse: 0.65
-    loop_match_minimum_response_fine:   0.80
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35  # Relaxed from 0.65 to enable reliable loop closures
+    loop_match_minimum_response_fine:   0.45  # Relaxed from 0.80
 
     loop_search_space_dimension: 8.0
     loop_search_space_resolution: 0.05
