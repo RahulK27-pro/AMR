@@ -93,6 +93,9 @@ def generate_launch_description():
             'publish_tf': False,  # EKF publishes odom -> base_link
             'odom_frame': 'odom',
             'base_frame': 'base_link',
+            'swap_encoders': False,
+            'invert_odom_yaw': False,
+            'invert_odom_linear': True,
             'use_sim_time': False
         }]
     )
@@ -110,6 +113,8 @@ def generate_launch_description():
             'frame_id': 'imu_link',
             'rate': 50.0,
             'calibrate_gyro': True,
+            'invert_gyro_z': True,
+            'gyro_deadband': 0.05,
             'use_sim_time': False
         }]
     )
@@ -135,9 +140,11 @@ def generate_launch_description():
             'port': '/dev/ttyUSB0',
             'baudrate': 115200,
             'frame_id': 'laser_frame',
-            'range_min': 0.10,
+            'range_min': 0.12,
             'range_max': 8.0,
             'num_bins': 360,
+            'inverted': True,
+            'angle_offset': 0.0,
             'use_sim_time': False
         }]
     )

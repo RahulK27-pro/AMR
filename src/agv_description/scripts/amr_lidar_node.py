@@ -27,9 +27,11 @@ class AMRLidarNode(Node):
         self.declare_parameter('port', '/dev/ttyUSB0')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('frame_id', 'laser_frame')
-        self.declare_parameter('range_min', 0.10)
+        self.declare_parameter('range_min', 0.12)
         self.declare_parameter('range_max', 8.0)
         self.declare_parameter('num_bins', 360)
+        self.declare_parameter('inverted', True)
+        self.declare_parameter('angle_offset', 0.0)
 
         self.port = self.get_parameter('port').value
         self.baudrate = self.get_parameter('baudrate').value
@@ -37,6 +39,8 @@ class AMRLidarNode(Node):
         self.range_min = self.get_parameter('range_min').value
         self.range_max = self.get_parameter('range_max').value
         self.num_bins = self.get_parameter('num_bins').value
+        self.inverted = self.get_parameter('inverted').value
+        self.angle_offset = float(self.get_parameter('angle_offset').value)
 
         self.scan_pub = self.create_publisher(LaserScan, '/scan', 10)
 
@@ -141,7 +145,13 @@ class AMRLidarNode(Node):
                     dist_meters = (raw_dist / 4.0) / 1000.0  # mm to meters
 
                     if self.range_min <= dist_meters <= self.range_max:
-                        cur_ang = (start_angle + step * i) % 360.0
+                        raw_ang = (start_angle + step * i) % 360.0
+                        if self.inverted:
+                            # Invert Clockwise laser sweep to Counter-Clockwise (ROS REP-103 convention)
+                            cur_ang = (360.0 - raw_ang + self.angle_offset) % 360.0
+                        else:
+                            cur_ang = (raw_ang + self.angle_offset) % 360.0
+
                         # Bin index [0, num_bins - 1]
                         bin_idx = int((cur_ang / 360.0) * self.num_bins) % self.num_bins
                         # Store closest obstacle in bin

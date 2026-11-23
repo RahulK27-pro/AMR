@@ -59,12 +59,16 @@ class AMRIMUNode(Node):
         self.declare_parameter('frame_id', 'imu_link')
         self.declare_parameter('rate', 50.0)
         self.declare_parameter('calibrate_gyro', True)
+        self.declare_parameter('invert_gyro_z', True)
+        self.declare_parameter('gyro_deadband', 0.05)
 
         self.bus_num = self.get_parameter('i2c_bus').value
         self.addr = self.get_parameter('i2c_address').value
         self.frame_id = self.get_parameter('frame_id').value
         self.rate = self.get_parameter('rate').value
         self.do_calib = self.get_parameter('calibrate_gyro').value
+        self.invert_gyro_z = self.get_parameter('invert_gyro_z').value
+        self.gyro_deadband = float(self.get_parameter('gyro_deadband').value)
 
         self.bus = None
         self.mock_mode = False
@@ -119,7 +123,7 @@ class AMRIMUNode(Node):
 
     def _calibrate_gyro(self):
         self.get_logger().info("Calibrating gyroscope zero-rate bias (keep robot stationary)...")
-        samples = 100
+        samples = 200
         sum_gx, sum_gy, sum_gz = 0.0, 0.0, 0.0
 
         for _ in range(samples):
@@ -183,6 +187,18 @@ class AMRIMUNode(Node):
                 gy = gy_raw - self.bias_gy
                 gz = gz_raw - self.bias_gz
 
+                # Invert Gyro Z if sensor is mounted upside down
+                if self.invert_gyro_z:
+                    gz = -gz
+
+                # Deadband filter to eliminate stationary zero-rate drift
+                if abs(gz) < self.gyro_deadband:
+                    gz = 0.0
+                if abs(gx) < self.gyro_deadband:
+                    gx = 0.0
+                if abs(gy) < self.gyro_deadband:
+                    gy = 0.0
+
             except OSError:
                 # Occasional I2C bus noise/transient NACK — skip sample safely
                 self.last_time = current_time
@@ -192,11 +208,8 @@ class AMRIMUNode(Node):
         self.yaw += gz * dt
         self.yaw = math.atan2(math.sin(self.yaw), math.cos(self.yaw))
 
-        # Roll and Pitch from gravity vector
-        roll = math.atan2(ay, az)
-        pitch = math.atan2(-ax, math.sqrt(ay * ay + az * az))
-
-        q = euler_to_quaternion(roll, pitch, self.yaw)
+        # Planar yaw orientation (roll=0, pitch=0 prevents upside-down vector flip in RViz)
+        q = euler_to_quaternion(0.0, 0.0, self.yaw)
 
         # Build sensor_msgs/Imu
         msg = Imu()
@@ -214,9 +227,9 @@ class AMRIMUNode(Node):
         msg.angular_velocity.y = gy
         msg.angular_velocity.z = gz
         msg.angular_velocity_covariance = [
-            1e-4, 0.0,  0.0,
-            0.0,  1e-4, 0.0,
-            0.0,  0.0,  1e-4
+            0.01, 0.0,  0.0,
+            0.0,  0.01, 0.0,
+            0.0,  0.0,  0.02
         ]
 
         msg.linear_acceleration.x = ax

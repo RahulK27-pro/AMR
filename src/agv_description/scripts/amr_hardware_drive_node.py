@@ -84,6 +84,9 @@ class AMRHardwareDriveNode(Node):
         self.declare_parameter('publish_tf', False)           # Set True only if EKF is disabled
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_link')
+        self.declare_parameter('swap_encoders', False)
+        self.declare_parameter('invert_odom_yaw', False)
+        self.declare_parameter('invert_odom_linear', True)
 
         # Read Parameters
         self.r = self.get_parameter('wheel_radius').value
@@ -96,6 +99,9 @@ class AMRHardwareDriveNode(Node):
         self.publish_tf = self.get_parameter('publish_tf').value
         self.odom_frame = self.get_parameter('odom_frame').value
         self.base_frame = self.get_parameter('base_frame').value
+        self.swap_encoders = self.get_parameter('swap_encoders').value
+        self.invert_odom_yaw = self.get_parameter('invert_odom_yaw').value
+        self.invert_odom_linear = self.get_parameter('invert_odom_linear').value
 
         self.meters_per_tick = (2.0 * math.pi * self.r) / self.ticks_per_rev
 
@@ -294,9 +300,13 @@ class AMRHardwareDriveNode(Node):
         if time_since_cmd > self.cmd_timeout:
             self.stop_motors()
 
-        # Capture encoder deltas
-        cur_l = self.left_ticks
-        cur_r = self.right_ticks
+        # Capture encoder deltas (swap channels if physically inverted)
+        if self.swap_encoders:
+            cur_l = self.right_ticks
+            cur_r = self.left_ticks
+        else:
+            cur_l = self.left_ticks
+            cur_r = self.right_ticks
 
         delta_l = cur_l - self.prev_left_ticks
         delta_r = cur_r - self.prev_right_ticks
@@ -309,7 +319,12 @@ class AMRHardwareDriveNode(Node):
         d_right = delta_r * self.meters_per_tick
 
         d_center = (d_right + d_left) / 2.0
+        if self.invert_odom_linear:
+            d_center = -d_center
+
         delta_theta = (d_right - d_left) / self.L
+        if self.invert_odom_yaw:
+            delta_theta = -delta_theta
 
         # Runge-Kutta 2nd Order Odometry Integration
         self.x += d_center * math.cos(self.theta + delta_theta / 2.0)
@@ -368,8 +383,8 @@ class AMRHardwareDriveNode(Node):
         js.header.frame_id = self.base_frame
         js.name = ['left_wheel_joint', 'right_wheel_joint']
         js.position = [
-            (self.left_ticks / self.ticks_per_rev) * 2.0 * math.pi,
-            (self.right_ticks / self.ticks_per_rev) * 2.0 * math.pi
+            (cur_l / self.ticks_per_rev) * 2.0 * math.pi,
+            (cur_r / self.ticks_per_rev) * 2.0 * math.pi
         ]
         js.velocity = [
             (d_left / dt) / self.r,

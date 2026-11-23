@@ -201,13 +201,13 @@ Visualization Manager:
           Frame: Local
           Offset: 1
           Scale: 1
-          Value: true
+          Value: false
         Position:
           Alpha: 0.3
           Color: 204; 51; 204
           Scale: 1
-          Value: true
-        Value: true
+          Value: false
+        Value: false
       Enabled: true
       Keep: 100
       Name: Odometry (EKF Filtered)
@@ -325,7 +325,7 @@ Visualization Manager:
       Scale: 0.15
       Shaft Length: 0.1
       Shaft Radius: 0.01
-      Show Acceleration: true
+      Show Acceleration: false
       Show Axes: true
       Show Box: true
       Show Orientation: true

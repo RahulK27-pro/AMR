@@ -68,12 +68,35 @@ ros2 run nav2_map_server map_saver_cli \
     -p save_map_timeout:=10.0
 
 if [ -f "${FULL_PATH}.yaml" ] && [ -f "${FULL_PATH}.pgm" ]; then
+    # Auto-generate viewable PNG version and apply cluster noise filter
+    python3 -c "
+import cv2, numpy as np
+from PIL import Image
+
+# 1. Generate standard PNG
+Image.open('${FULL_PATH}.pgm').save('${FULL_PATH}.png')
+
+# 2. Filter isolated single-cell noise specks (< 4 cells = < 10cm x 10cm)
+img = cv2.imread('${FULL_PATH}.pgm', cv2.IMREAD_UNCHANGED)
+if img is not None:
+    occ = (img == 0).astype(np.uint8)
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(occ, connectivity=8)
+    for i in range(1, n):
+        if stats[i, cv2.CC_STAT_AREA] < 4:
+            img[labels == i] = 254
+    cv2.imwrite('${FULL_PATH}.pgm', img)
+    cv2.imwrite('${FULL_PATH}.png', img)
+" 2>/dev/null || true
+
     echo ""
     echo "=================================================================="
-    echo "  ✅ MAP SAVED SUCCESSFULLY!"
+    echo "  ✅ MAP SAVED SUCCESSFULLY (Filtered & Cleaned)!"
     echo "=================================================================="
     echo "  YAML Metadata : ${FULL_PATH}.yaml"
-    echo "  PGM Image    : ${FULL_PATH}.pgm"
+    echo "  PGM Raw Map   : ${FULL_PATH}.pgm"
+    if [ -f "${FULL_PATH}.png" ]; then
+        echo "  PNG Viewer    : ${FULL_PATH}.png"
+    fi
     echo ""
     echo "  Quick verification:"
     cat "${FULL_PATH}.yaml"
