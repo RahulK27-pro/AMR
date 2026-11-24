@@ -193,8 +193,53 @@ class RouteRunner(Node):
         self.robot_radius = 0.11       # Cylinder radius 0.11m (diameter 0.22m)
         self.collision_radius = 0.15   # Hard safety clearance (0.11m + 0.04m physical margin)
         self.min_passable_gap = 0.35   # Minimum passage width for 22cm robot (0.22m + 0.13m corridor margin)
-        self.critical_proximity = 0.20 # Distance threshold (m) triggering active reverse escape (chassis radius is 0.11m)
-        self.safe_standoff = 0.50      # Target front standoff distance (m) to achieve during reverse escape
+
+        # Declare configurable navigation parameters (auto-adapts for Physical Hardware vs Simulation)
+        self.declare_parameter('use_sim_time', False)
+        self.use_sim_time = self.get_parameter('use_sim_time').value
+
+        # Physical Hardware Defaults (gentle crawl, high stability) vs Simulation (fast test)
+        default_v_max = 0.75 if self.use_sim_time else 0.12
+        default_cruise_v = 0.45 if self.use_sim_time else 0.10
+        default_min_v = 0.08 if self.use_sim_time else 0.04
+        default_w_max = 1.80 if self.use_sim_time else 0.40
+        default_lookahead = 0.75 if self.use_sim_time else 0.35
+        default_accel_v = 0.60 if self.use_sim_time else 0.15
+        default_decel_v = 0.90 if self.use_sim_time else 0.30
+        default_accel_w = 1.60 if self.use_sim_time else 0.45
+        default_kp_h = 1.40 if self.use_sim_time else 0.85
+        default_standoff = 0.50 if self.use_sim_time else 0.30
+        default_crit_prox = 0.20 if self.use_sim_time else 0.14
+        default_noise_v = 0.30 if self.use_sim_time else 0.04
+        default_noise_w = 0.50 if self.use_sim_time else 0.08
+        default_dyn_rep = 0.65 if self.use_sim_time else 0.42
+        default_evasion_r = 1.20 if self.use_sim_time else 0.80
+        default_swerve_str = 0.35 if self.use_sim_time else 0.15
+
+        self.declare_parameter('max_linear_speed', default_v_max)
+        self.declare_parameter('cruise_linear_speed', default_cruise_v)
+        self.declare_parameter('min_linear_speed', default_min_v)
+        self.declare_parameter('max_angular_speed', default_w_max)
+        self.declare_parameter('lookahead_dist', default_lookahead)
+        self.declare_parameter('accel_lim_v', default_accel_v)
+        self.declare_parameter('decel_lim_v', default_decel_v)
+        self.declare_parameter('accel_lim_w', default_accel_w)
+        self.declare_parameter('kp_heading', default_kp_h)
+        self.declare_parameter('safe_standoff', default_standoff)
+        self.declare_parameter('critical_proximity', default_crit_prox)
+
+        self.v_max = float(self.get_parameter('max_linear_speed').value)
+        self.cruise_linear_speed = float(self.get_parameter('cruise_linear_speed').value)
+        self.min_linear_speed = float(self.get_parameter('min_linear_speed').value)
+        self.v_min = 0.0
+        self.w_max = float(self.get_parameter('max_angular_speed').value)
+        self.lookahead_dist = float(self.get_parameter('lookahead_dist').value)
+        self.accel_lim_v = float(self.get_parameter('accel_lim_v').value)
+        self.decel_lim_v = float(self.get_parameter('decel_lim_v').value)
+        self.accel_lim_w = float(self.get_parameter('accel_lim_w').value)
+        self.kp_heading = float(self.get_parameter('kp_heading').value)
+        self.safe_standoff = float(self.get_parameter('safe_standoff').value)
+        self.critical_proximity = float(self.get_parameter('critical_proximity').value)
 
         # Smooth Early Detour (Circumnavigation) state
         self.active_detour = None      # Stores {rejoin_idx, created_time, side} when circumnavigating
@@ -214,16 +259,13 @@ class RouteRunner(Node):
         self.hazard_zones = []         # Persistent anti-loop hazard memory: [{'pos': (x,y), 'radius': r, 'expire_time': timestamp}]
 
         # MPPI Parameters
-        self.v_max = 0.75
-        self.v_min = 0.0               # Forward-only in normal MPPI rollouts; reverse handled deterministically
-        self.w_max = 1.8               # High turning authority for obstacle evasion
         self.dt = 0.1                  # 10 Hz
         self.horizon = 15              # 1.5s preview
         self.num_samples = 80
 
         # MPPI Noise covariance
-        self.noise_v = 0.3
-        self.noise_w = 0.5
+        self.noise_v = default_noise_v
+        self.noise_w = default_noise_w
         self.lambda_weight = 0.5
 
         # MPPI Cost Weights
@@ -231,10 +273,10 @@ class RouteRunner(Node):
         self.w_heading = 3.0
         self.w_collision = 5000.0
         
-        # Repulsion fields (tuned for 1.2m - 1.5m warehouse aisles and 22cm robot)
-        self.dynamic_repulsive_dist = 0.65  # Proactive evasion bubble for moving obstacles (m)
+        # Repulsion fields (tuned for physical indoor environments and 22cm robot)
+        self.dynamic_repulsive_dist = default_dyn_rep  # Proactive evasion bubble for moving obstacles (m)
         self.dynamic_w_repulsive = 45.0     # Smooth proactive repulsion from dynamic obstacles
-        self.static_repulsive_dist = 0.26   # Wall repulsion activation distance (m) (tuned for narrow corridors)
+        self.static_repulsive_dist = 0.22   # Wall repulsion activation distance (m) (tuned for narrow passages)
         self.static_w_repulsive = 50.0      # Quadratic wall repulsion (smooth gradient in narrow passages)
 
         self.w_cross_track_nominal = 6.0
@@ -242,18 +284,13 @@ class RouteRunner(Node):
         self.w_cross_track = self.w_cross_track_nominal
 
         # Distance-gated evasion: only relax w_cross_track for obstacles within this range
-        self.evasion_range = 1.2       # metres
+        self.evasion_range = default_evasion_r       # metres
 
         # Swerve side commitment: commit to one side briefly to avoid L/R oscillation
         self._swerve_bias = 0.0           # Current angular bias added to MPPI w_seq mean (rad/s)
         self._swerve_lock_ticks = 0       # Ticks remaining on current committed swerve direction
         self.swerve_lock_duration = 8     # Ticks (~0.8s at 10 Hz) to hold swerve commitment
-        self.swerve_bias_strength = 0.35  # Angular bias magnitude (rad/s)
-
-        # Motion Smoothness & Command Slew-Rate Limiter Parameters
-        self.accel_lim_v = 0.60         # Max forward acceleration: 0.60 m/s^2 (0.060 m/s per 100ms tick)
-        self.decel_lim_v = 0.90         # Max forward deceleration: 0.90 m/s^2 (0.090 m/s per 100ms tick)
-        self.accel_lim_w = 1.60         # Max angular acceleration: 1.60 rad/s^2 (0.160 rad/s per 100ms tick)
+        self.swerve_bias_strength = default_swerve_str  # Angular bias magnitude (rad/s)
 
         self.last_cmd_v = 0.0          # Last published linear velocity
         self.last_cmd_w = 0.0          # Last published angular velocity
@@ -329,8 +366,8 @@ class RouteRunner(Node):
             arr = np.flipud(arr)
             # In ROS map standard: pixel value < 50 indicates occupied cell
             occ = (arr < 50)
-            # Dilate occupied walls by ~0.22m (approx 4-5 cells at 0.05m resolution)
-            iterations = max(2, int(0.22 / meta.get('resolution', 0.05)))
+            # Dilate occupied walls by ~0.28m to absorb normal sensor spread
+            iterations = max(2, int(0.28 / meta.get('resolution', 0.05)))
             self.static_wall_mask = binary_dilation(occ, iterations=iterations)
             self.static_map_resolution = float(meta.get('resolution', 0.05))
             orig = meta.get('origin', [0.0, 0.0, 0.0])
@@ -352,7 +389,7 @@ class RouteRunner(Node):
             grid = np.array(msg.data, dtype=np.int8).reshape((h, w))
             occ = (grid > 50)
             res = msg.info.resolution
-            iterations = max(2, int(0.22 / res))
+            iterations = max(2, int(0.28 / res))
             self.static_wall_mask = binary_dilation(occ, iterations=iterations)
             self.static_map_resolution = float(res)
             self.static_map_origin_x = float(msg.info.origin.position.x)
@@ -1486,11 +1523,12 @@ class RouteRunner(Node):
                 self._stop_robot()
                 self._recovery_phase = "REROUTE"
             else:
-                # Command smooth reverse
-                self.last_cmd_v = -0.15
+                # Command smooth, controlled minimum reverse
+                rev_speed = -max(self.min_linear_speed, min(0.08, self.cruise_linear_speed * 0.7))
+                self.last_cmd_v = rev_speed
                 self.last_cmd_w = 0.0
                 cmd = Twist()
-                cmd.linear.x = -0.15  # 0.15 m/s reverse
+                cmd.linear.x = rev_speed
                 cmd.angular.z = 0.0
                 self.cmd_pub.publish(cmd)
                 return
@@ -1589,7 +1627,7 @@ class RouteRunner(Node):
                     self.replan_around_obstacle(ox, oy, r_safe=r_safe)
 
         # Get lookahead target
-        (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=0.75)
+        (target_x, target_y, target_theta), target_idx = self.get_lookahead_target(lookahead_dist=self.lookahead_dist)
 
         # Continuous Path Deviation Monitoring & Milestone Node Tracking
         if len(self.path_plan) > 0:
@@ -1698,16 +1736,16 @@ class RouteRunner(Node):
         abs_h_err = abs(heading_error)
         heading_alignment = max(0.0, math.cos(heading_error))
 
-        if abs_h_err <= math.radians(45):
+        if abs_h_err <= math.radians(35):
             corner_scale = 1.0
-        elif abs_h_err <= math.radians(90):
-            frac = (abs_h_err - math.radians(45)) / math.radians(45)
-            corner_scale = 0.15 + 0.85 * 0.5 * (1.0 + math.cos(math.pi * frac))
+        elif abs_h_err <= math.radians(75):
+            frac = (abs_h_err - math.radians(35)) / math.radians(40)
+            corner_scale = 0.20 + 0.80 * 0.5 * (1.0 + math.cos(math.pi * frac))
         else:
-            corner_scale = 0.0  # In-place pivot for acute / reverse turns
+            corner_scale = 0.0  # Smooth in-place pivot for acute turns
 
-        base_v = 0.45 * (heading_alignment ** 1.5) * corner_scale * approach_scale * dyn_slowdown
-        v_mean = max(0.0, base_v) if corner_scale == 0.0 else max(0.08, base_v)
+        base_v = self.cruise_linear_speed * (heading_alignment ** 1.5) * corner_scale * approach_scale * dyn_slowdown
+        v_mean = 0.0 if corner_scale == 0.0 else max(self.min_linear_speed, base_v)
 
         v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
 
@@ -1746,7 +1784,7 @@ class RouteRunner(Node):
                 self._swerve_bias = 0.0
 
         # MPPI Angular Sampling Prior: blend proportional heading guidance with evasion bias
-        kp_heading = 1.4
+        kp_heading = self.kp_heading
         w_guidance = kp_heading * heading_error
         w_mean = float(np.clip(w_guidance + self._swerve_bias, -self.w_max, self.w_max))
         w_seq = np.random.normal(w_mean, self.noise_w, (self.num_samples, self.horizon))

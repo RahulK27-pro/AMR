@@ -7,11 +7,13 @@
 # and RViz2 on Laptop connected to Raspberry Pi 5.
 #
 # Usage:
-#   ./start_hardware_nav.sh [PI_IP] [MAP_NAME_OR_YAML]
+# Usage:
+#   ./start_hardware_nav.sh [PI_IP] [MAP_NAME_OR_YAML] [MAX_SPEED]
 #
 # Examples:
 #   ./start_hardware_nav.sh 10.244.248.208
 #   ./start_hardware_nav.sh 10.244.248.208 prakash_room
+#   ./start_hardware_nav.sh 10.244.248.208 prakash_room 0.10
 #   ./start_hardware_nav.sh 10.244.248.208 final_map
 #   ./start_hardware_nav.sh 10.244.248.208 maps/prakash_room.yaml
 # ==============================================================================
@@ -20,6 +22,7 @@ set -e
 
 PI_IP="${1:-10.244.248.208}"
 MAP_INPUT="${2:-prakash_room}"
+MAX_SPEED="${3:-0.12}"
 
 # Detect laptop IP on the route to the Pi
 LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -I | awk '{print $1}')
@@ -29,6 +32,7 @@ echo "  AMR Physical Hardware Autonomous Navigation Session"
 echo "  Target Pi IP      : $PI_IP"
 echo "  Laptop Host IP    : $LAPTOP_IP"
 echo "  Selected Map      : $MAP_INPUT"
+echo "  Linear Speed Cap  : $MAX_SPEED m/s (Minimum Safe Crawl)"
 echo "=================================================================="
 
 # 1. Source ROS 2 Core
@@ -117,10 +121,18 @@ echo "  - Map Topic   : /map"
 echo "  - Laser Topic : /scan"
 echo "  - Odom Topic  : /odometry/filtered"
 echo "  - Goal Topic  : /goal_pose (Click '2D Goal Pose' in RViz)"
+echo ""
+echo "  👉 STEP 1: Once RViz opens, inspect the cyan LiDAR scan."
+echo "             Does it align with the room walls?"
+echo "  👉 STEP 2: If tilted or shifted, click '2D Pose Estimate' on the"
+echo "             top toolbar and click-drag the robot's real pose & heading."
+echo "  👉 STEP 3: Verify the cyan scan aligns ON TOP of the black walls."
+echo "  👉 STEP 4: Click '2D Goal Pose' on a golden roadmap node to navigate!"
 echo "=================================================================="
 echo ""
 
 # 6. Launch Hardware Navigation Stack
 exec ros2 launch agv_description hardware_navigation.launch.py \
     map:="$MAP_INPUT" \
+    max_linear_speed:="$MAX_SPEED" \
     use_rviz:=true

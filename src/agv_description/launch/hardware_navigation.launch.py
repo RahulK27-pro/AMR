@@ -58,6 +58,10 @@ def launch_setup(context, *args, **kwargs):
     init_x = float(LaunchConfiguration('initial_pose_x').perform(context).strip() or 0.0)
     init_y = float(LaunchConfiguration('initial_pose_y').perform(context).strip() or 0.0)
     init_yaw = float(LaunchConfiguration('initial_pose_yaw').perform(context).strip() or 0.0)
+    max_v = float(LaunchConfiguration('max_linear_speed').perform(context).strip() or 0.12)
+    max_w = float(LaunchConfiguration('max_angular_speed').perform(context).strip() or 0.40)
+    cruise_v = float(LaunchConfiguration('cruise_linear_speed').perform(context).strip() or 0.10)
+    lookahead_d = float(LaunchConfiguration('lookahead_dist').perform(context).strip() or 0.35)
 
     # ── 1. Resolve Map YAML File ──────────────────────────────────────
     if os.path.isabs(map_input) and os.path.exists(map_input):
@@ -128,15 +132,26 @@ def launch_setup(context, *args, **kwargs):
                         pass
 
     # ── Log Operational Parameters ────────────────────────────────────
-    print("=" * 68)
+    print("=" * 72)
     print("  [AMR PHYSICAL HARDWARE NAVIGATION SESSION]")
-    print(f"  Active Map       : {map_stem} ({map_yaml_file})")
-    print(f"  Roadmap Graph    : {graph_file}")
-    print(f"  Initial Pose     : X={init_x:.2f}m, Y={init_y:.2f}m, Yaw={init_yaw:.2f}rad")
-    print(f"  Local Controller : 10 Hz Vectorized MPPI (route_runner)")
-    print(f"  Behavior Tree    : Enabled={use_bt_val}")
-    print(f"  RViz Display     : Enabled={use_rviz_val}")
-    print("=" * 68)
+    print(f"  Active Map          : {map_stem} ({map_yaml_file})")
+    print(f"  Roadmap Graph       : {graph_file}")
+    print(f"  Max Linear Speed    : {max_v:.2f} m/s (Hardware Safe Crawl)")
+    print(f"  Max Angular Speed   : {max_w:.2f} rad/s (~{max_w * 57.2958:.0f} deg/s)")
+    print(f"  Cruise Speed        : {cruise_v:.2f} m/s")
+    print(f"  Lookahead Distance  : {lookahead_d:.2f} m")
+    print(f"  Initial Pose        : X={init_x:.2f}m, Y={init_y:.2f}m, Yaw={init_yaw:.2f}rad")
+    print(f"  Local Controller    : 10 Hz Vectorized MPPI (route_runner)")
+    print(f"  Behavior Tree       : Enabled={use_bt_val}")
+    print(f"  RViz Display        : Enabled={use_rviz_val}")
+    print("")
+    print("  ⚠️  CRITICAL LOCALIZATION STEP (DO THIS ONCE RVIZ OPENS):")
+    print("  1. Inspect RViz: Does the cyan laser scan align with the map walls?")
+    print("  2. If the scan is tilted/offset: Click '2D Pose Estimate' on the")
+    print("     top toolbar and click-drag the robot's physical pose & heading.")
+    print("  3. Verify the cyan points snap ON TOP of the black map walls.")
+    print("  4. Once aligned: Click '2D Goal Pose' to send a navigation goal!")
+    print("=" * 72)
 
     # Config files
     nav2_hw_params = os.path.join(pkg_agv, 'config', 'nav2_params_hardware.yaml')
@@ -206,6 +221,17 @@ def launch_setup(context, *args, **kwargs):
                 parameters=[{
                     'map_name': map_stem,
                     'use_sim_time': False,
+                    'max_linear_speed': max_v,
+                    'max_angular_speed': max_w,
+                    'cruise_linear_speed': cruise_v,
+                    'min_linear_speed': 0.04,
+                    'lookahead_dist': lookahead_d,
+                    'accel_lim_v': 0.15,
+                    'decel_lim_v': 0.30,
+                    'accel_lim_w': 0.45,
+                    'kp_heading': 0.85,
+                    'safe_standoff': 0.30,
+                    'critical_proximity': 0.14,
                 }],
                 output='screen',
             )
@@ -298,6 +324,26 @@ def generate_launch_description():
             'initial_pose_yaw',
             default_value='0.0',
             description='Initial AMCL estimated Yaw heading in radians'
+        ),
+        DeclareLaunchArgument(
+            'max_linear_speed',
+            default_value='0.12',
+            description='Max physical linear speed in m/s (minimum safe crawl)'
+        ),
+        DeclareLaunchArgument(
+            'max_angular_speed',
+            default_value='0.40',
+            description='Max physical angular turning rate in rad/s'
+        ),
+        DeclareLaunchArgument(
+            'cruise_linear_speed',
+            default_value='0.10',
+            description='Target physical linear cruising speed in m/s'
+        ),
+        DeclareLaunchArgument(
+            'lookahead_dist',
+            default_value='0.35',
+            description='Lookahead target distance along path arc in meters'
         ),
         OpaqueFunction(function=launch_setup),
     ])
