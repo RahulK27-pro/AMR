@@ -198,16 +198,16 @@ class RouteRunner(Node):
         self.declare_parameter('use_sim_time', False)
         self.use_sim_time = self.get_parameter('use_sim_time').value
 
-        # Physical Hardware Defaults (gentle crawl, high stability) vs Simulation (fast test)
-        default_v_max = 0.75 if self.use_sim_time else 0.12
-        default_cruise_v = 0.45 if self.use_sim_time else 0.10
-        default_min_v = 0.08 if self.use_sim_time else 0.04
-        default_w_max = 1.80 if self.use_sim_time else 0.40
+        # Physical Hardware Defaults (calibrated minimum moving speeds) vs Simulation (fast test)
+        default_v_max = 0.75 if self.use_sim_time else 0.18
+        default_cruise_v = 0.45 if self.use_sim_time else 0.15
+        default_min_v = 0.08 if self.use_sim_time else 0.08
+        default_w_max = 1.80 if self.use_sim_time else 0.70
         default_lookahead = 0.75 if self.use_sim_time else 0.35
-        default_accel_v = 0.60 if self.use_sim_time else 0.15
-        default_decel_v = 0.90 if self.use_sim_time else 0.30
-        default_accel_w = 1.60 if self.use_sim_time else 0.45
-        default_kp_h = 1.40 if self.use_sim_time else 0.85
+        default_accel_v = 0.60 if self.use_sim_time else 0.25
+        default_decel_v = 0.90 if self.use_sim_time else 0.40
+        default_accel_w = 1.60 if self.use_sim_time else 0.80
+        default_kp_h = 1.40 if self.use_sim_time else 1.00
         default_standoff = 0.50 if self.use_sim_time else 0.30
         default_crit_prox = 0.20 if self.use_sim_time else 0.14
         default_noise_v = 0.30 if self.use_sim_time else 0.04
@@ -1716,8 +1716,8 @@ class RouteRunner(Node):
         # --- MPPI Controller with Predictive Dynamic Rollout ---
         # 1. Sample control sequences
         # Goal approach velocity scaling: smooth quadratic deceleration as robot nears destination
-        if dist_to_final < 1.2:
-            approach_scale = max(0.28, min(1.0, dist_to_final / 1.0))
+        if dist_to_final < 0.45:
+            approach_scale = max(0.55, dist_to_final / 0.45)
         else:
             approach_scale = 1.0
 
@@ -1786,6 +1786,13 @@ class RouteRunner(Node):
         # MPPI Angular Sampling Prior: blend proportional heading guidance with evasion bias
         kp_heading = self.kp_heading
         w_guidance = kp_heading * heading_error
+
+        # In-place pivot torque boost: ensure sufficient angular velocity to overcome caster & wheel stiction
+        if corner_scale == 0.0 and abs(heading_error) > math.radians(6):
+            min_pivot_w = 0.55  # Minimum angular speed (rad/s) for guaranteed in-place turning
+            if abs(w_guidance) < min_pivot_w:
+                w_guidance = math.copysign(min_pivot_w, heading_error)
+
         w_mean = float(np.clip(w_guidance + self._swerve_bias, -self.w_max, self.w_max))
         w_seq = np.random.normal(w_mean, self.noise_w, (self.num_samples, self.horizon))
         v_seq = np.clip(v_seq, self.v_min, self.v_max)

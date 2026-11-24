@@ -22,7 +22,7 @@ set -e
 
 PI_IP="${1:-10.244.248.208}"
 MAP_INPUT="${2:-prakash_room}"
-MAX_SPEED="${3:-0.12}"
+MAX_SPEED="${3:-0.18}"
 
 # Detect laptop IP on the route to the Pi
 LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -I | awk '{print $1}')

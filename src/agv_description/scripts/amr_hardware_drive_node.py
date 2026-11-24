@@ -77,7 +77,7 @@ class AMRHardwareDriveNode(Node):
         self.declare_parameter('wheel_separation', 0.240)
         self.declare_parameter('ticks_per_rev', 4713)
         self.declare_parameter('max_wheel_speed', 0.45)       # m/s (~122 RPM on 70mm diameter wheel)
-        self.declare_parameter('min_pwm', 15.0)               # % duty minimum deadband
+        self.declare_parameter('min_pwm', 20.0)               # % duty minimum deadband
         self.declare_parameter('max_pwm', 100.0)              # % duty maximum
         self.declare_parameter('odom_rate', 50.0)             # Hz
         self.declare_parameter('cmd_vel_timeout', 0.5)        # seconds safety watchdog

@@ -86,7 +86,7 @@ def generate_launch_description():
             'wheel_separation': 0.240,
             'ticks_per_rev': 4713,
             'max_wheel_speed': 0.45,
-            'min_pwm': 15.0,
+            'min_pwm': 20.0,
             'max_pwm': 100.0,
             'odom_rate': 50.0,
             'cmd_vel_timeout': 1.5,
