@@ -22,7 +22,7 @@ set -e
 
 PI_IP="${1:-10.244.248.208}"
 MAP_INPUT="${2:-prakash_room}"
-MAX_SPEED="${3:-0.18}"
+MAX_SPEED="${3:-0.20}"
 
 # Detect laptop IP on the route to the Pi
 LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -I | awk '{print $1}')
@@ -85,6 +85,15 @@ export CYCLONEDDS_URI="file://$CFG_FILE"
 # Clean up temporary DDS config on exit
 trap "rm -f $CFG_FILE 2>/dev/null || true" EXIT
 
+# 0. Inter-machine system clock synchronization
+echo "[INFO] Synchronizing system clock with Raspberry Pi ($PI_IP)..."
+if ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no "amr@$PI_IP" "sudo date -s '@$(date +%s)'" 2>/dev/null; then
+    echo "  ✅ Clock synchronized successfully with Raspberry Pi!"
+else
+    echo "  ⚠️  Could not auto-sync clock over SSH without password."
+    echo "     If scans are dropped in AMCL, run on Pi: sudo date -s \"$(date -u +'%Y-%m-%d %H:%M:%S')\""
+fi
+
 # 4. Kill any lingering SLAM or static transform publishers
 if pgrep -f "slam_toolbox|static_transform_publisher.*map.*odom" >/dev/null 2>&1; then
     echo "[WARN] Found lingering SLAM / static TF processes. Terminating them so AMCL owns 'map -> odom'..."
@@ -113,6 +122,14 @@ else
     echo "  ⚠️  Odometry topic not yet detected."
 fi
 
+# Prepare run logging directory
+LOG_DIR="$WS_DIR/run_logs"
+mkdir -p "$LOG_DIR"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LAUNCH_LOG="$LOG_DIR/hardware_nav_${TIMESTAMP}.log"
+LATEST_LAUNCH_LOG="$LOG_DIR/latest_launch.log"
+ln -sf "$LAUNCH_LOG" "$LATEST_LAUNCH_LOG"
+
 echo ""
 echo "=================================================================="
 echo "  Launching AMR Navigation Stack with Automatic Global Localization"
@@ -121,16 +138,21 @@ echo "  - Map Topic   : /map"
 echo "  - Laser Topic : /scan"
 echo "  - Auto-Pose   : ZERO-PRIOR SCAN MATCHER (Auto-detects robot position)"
 echo "  - Goal Topic  : /goal_pose (Click '2D Goal Pose' in RViz)"
+echo "  - Run Logs    : $LAUNCH_LOG (and latest_launch.log)"
+echo "  - Telemetry   : $LOG_DIR/navigation_run_${TIMESTAMP}.csv"
 echo ""
 echo "  ✅ The robot will auto-identify its starting location anywhere in the room."
 echo "  ✅ To re-localize after picking up / moving the robot at any time:"
 echo "       ros2 service call /trigger_auto_relocalization std_srvs/srv/Trigger"
+echo "  ✅ Or click '2D Pose Estimate' in RViz to set position manually."
 echo "  ✅ Once cyan scan snaps onto the black walls, click '2D Goal Pose' to navigate!"
 echo "=================================================================="
 echo ""
 
-# 6. Launch Hardware Navigation Stack
-exec ros2 launch agv_description hardware_navigation.launch.py \
+# 6. Launch Hardware Navigation Stack and tee all output to log file
+ros2 launch agv_description hardware_navigation.launch.py \
     map:="$MAP_INPUT" \
     max_linear_speed:="$MAX_SPEED" \
-    use_rviz:=true
+    cruise_linear_speed:="0.16" \
+    max_angular_speed:="0.75" \
+    use_rviz:=true 2>&1 | tee "$LAUNCH_LOG"

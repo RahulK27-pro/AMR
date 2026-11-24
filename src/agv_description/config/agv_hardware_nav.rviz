@@ -196,18 +196,18 @@ Visualization Manager:
           Value: true
         Value: false
       Enabled: true
-      Keep: 100
+      Keep: 1
       Name: Odometry
       Position Tolerance: 0.10000000149011612
       Shape:
         Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.10000000149011612
+        Axes Length: 0.3
+        Axes Radius: 0.03
         Color: 255; 25; 0
-        Head Length: 0.30000001192092896
-        Head Radius: 0.10000000149011612
-        Shaft Length: 1
-        Shaft Radius: 0.05000000074505806
+        Head Length: 0.1
+        Head Radius: 0.05
+        Shaft Length: 0.25
+        Shaft Radius: 0.02
         Value: Arrow
       Topic:
         Depth: 10
@@ -339,7 +339,7 @@ Visualization Manager:
         Durability Policy: Volatile
         Filter size: 10
         History Policy: Keep Last
-        Reliability Policy: System Default
+        Reliability Policy: Best Effort
         Value: /particle_cloud
       Value: true
     - Alpha: 1

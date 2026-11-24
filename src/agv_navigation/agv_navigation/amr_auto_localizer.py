@@ -7,10 +7,13 @@ Zero-Prior Global Scan-Matching Auto-Localizer for Physical AMR.
 Solves the Kidnapped Robot / Arbitrary Initial Starting Pose Problem:
   1. Computes Likelihood Field / Distance Transform over all traversable map free space.
   2. Subscribes to physical LiDAR (/scan).
-  3. Executes vectorized 2D Correlative Scan Matching (< 100ms) to identify global (x, y, yaw).
-  4. Automatically publishes /initialpose (geometry_msgs/PoseWithCovarianceStamped).
-  5. Triggers AMCL no-motion update service so particles snap onto the real physical pose.
-  6. Provides '/trigger_auto_relocalization' (std_srvs/Trigger) service for dynamic repositioning.
+  3. Waits for Nav2 AMCL to reach ACTIVE state before attempting handoff.
+  4. Executes vectorized 2D Correlative Scan Matching (< 100ms) to identify global (x, y, yaw).
+  5. Automatically publishes /initialpose with TRANSIENT_LOCAL + RELIABLE QoS (depth=1).
+  6. Directly calls /set_initial_pose (nav2_msgs/srv/SetInitialPose) and /request_nomotion_update.
+  7. Runs an active handshake verification loop to confirm AMCL has accepted the pose (via map->base_link TF or /amcl_pose).
+  8. Once AMCL confirms lock-on, CANCELS all timers and terminates startup loop (prevents pose jumping).
+  9. Provides '/trigger_auto_relocalization' (std_srvs/Trigger) service for dynamic repositioning anytime.
 """
 
 import os
@@ -30,6 +33,8 @@ from geometry_msgs.msg import PoseWithCovarianceStamped
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid
 from std_srvs.srv import Trigger, Empty
+from nav2_msgs.srv import SetInitialPose
+from tf2_ros import Buffer, TransformListener
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -42,10 +47,11 @@ class AMRAutoLocalizer(Node):
         super().__init__('amr_auto_localizer')
 
         self.declare_parameter('map_name', '')
-        self.declare_parameter('use_sim_time', False)
+        if not self.has_parameter('use_sim_time'):
+            self.declare_parameter('use_sim_time', False)
         self.declare_parameter('auto_on_startup', True)
         self.declare_parameter('sigma_hit', 0.15)
-        self.declare_parameter('min_clearance', 0.20)
+        self.declare_parameter('min_clearance', 0.25)
 
         self.map_name = self.get_parameter('map_name').value.strip()
         self.auto_on_startup = self.get_parameter('auto_on_startup').value
@@ -63,16 +69,28 @@ class AMRAutoLocalizer(Node):
         self.likelihood_map = None
         self.cand_x = None
         self.cand_y = None
-        self.cand_yaws = np.linspace(0, 2 * np.pi, 36, endpoint=False)  # 10 deg steps
+        self.cand_yaws = np.linspace(0, 2 * np.pi, 72, endpoint=False)  # 5 deg steps (72 orientations)
+
+        # TF Buffer and Listener to monitor active AMCL localization
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         # Publishers & Services
+        # Nav2 AMCL requires TRANSIENT_LOCAL durability with depth=1
+        pose_qos = QoSProfile(
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )
         self.initial_pose_pub = self.create_publisher(
-            PoseWithCovarianceStamped, '/initialpose', 10
+            PoseWithCovarianceStamped, '/initialpose', pose_qos
         )
         self.reloc_srv = self.create_service(
             Trigger, '/trigger_auto_relocalization', self.relocalize_service_cb
         )
         self.nomotion_client = self.create_client(Empty, '/request_nomotion_update')
+        self.set_initial_pose_client = self.create_client(SetInitialPose, '/set_initial_pose')
 
         # Map subscription (latched)
         map_qos = QoSProfile(
@@ -95,15 +113,25 @@ class AMRAutoLocalizer(Node):
             LaserScan, '/scan', self.scan_callback, sensor_qos
         )
 
+        # Monitor AMCL Pose topic
+        self.amcl_pose_sub = self.create_subscription(
+            PoseWithCovarianceStamped, '/amcl_pose', self.amcl_pose_cb, 10
+        )
+
         self.latest_scan = None
         self.has_localized = False
+        self.amcl_confirmed = False
+        self.last_solved_msg = None
+        self.startup_timer = None
+        self.verification_timer = None
+        self.verification_attempts = 0
 
         # Attempt to load static map file directly from disk for instant readiness
         self._load_static_map_file()
 
         self.get_logger().info(
             "AMR Zero-Prior Global Auto-Localizer Active! "
-            "Listening for LiDAR scan to estimate arbitrary robot starting pose..."
+            "Listening for LiDAR scan to auto-estimate arbitrary starting pose..."
         )
 
     def _load_static_map_file(self):
@@ -185,6 +213,7 @@ class AMRAutoLocalizer(Node):
 
             self._build_likelihood_field(arr)
             self.get_logger().info(f"[AUTO_LOCALIZE] Updated likelihood field from /map topic ({w}x{h}).")
+            self._schedule_startup_localizer()
         except Exception as e:
             self.get_logger().warn(f"[AUTO_LOCALIZE] Error processing /map: {e}")
 
@@ -210,18 +239,101 @@ class AMRAutoLocalizer(Node):
 
     def scan_callback(self, msg: LaserScan):
         self.latest_scan = msg
-        if self.auto_on_startup and self.map_loaded and not self.has_localized:
-            self.has_localized = True
-            # Allow a short 0.5s pause for LiDAR driver to deliver full 360-degree sweep
-            self.create_timer(0.5, self._run_startup_localizer, clock=self.get_clock())
+        self._schedule_startup_localizer()
+
+    def _schedule_startup_localizer(self):
+        """Schedules a one-shot startup localization once map and scan are ready."""
+        if self.auto_on_startup and self.map_loaded and self.latest_scan is not None and not self.has_localized:
+            if self.startup_timer is None:
+                self.startup_timer = self.create_timer(0.5, self._run_startup_localizer)
 
     def _run_startup_localizer(self):
-        # One-shot trigger
-        self.find_and_publish_global_pose()
+        """Executes one-shot startup localization with AMCL readiness check."""
+        if self.startup_timer is not None:
+            self.startup_timer.cancel()
+            self.startup_timer = None
+
+        if self.has_localized:
+            return
+
+        # Check if AMCL services are available (indicates AMCL lifecycle transition to ACTIVE)
+        if not self.nomotion_client.service_is_ready():
+            if not self.nomotion_client.wait_for_service(timeout_sec=0.2):
+                self.get_logger().info("[AUTO_LOCALIZE] Waiting for Nav2 AMCL lifecycle activation...")
+                # Reschedule retry in 0.5s
+                self.startup_timer = self.create_timer(0.5, self._run_startup_localizer)
+                return
+
+        success, log_msg = self.find_and_publish_global_pose()
+        if success:
+            self.has_localized = True
+            # Start verification handshake to ensure AMCL locked on
+            self.verification_attempts = 0
+            self.verification_timer = self.create_timer(0.8, self._verify_amcl_lock)
+        else:
+            self.get_logger().warn(f"[AUTO_LOCALIZE] Initial attempt not ready ({log_msg}), retrying...")
+            self.startup_timer = self.create_timer(0.5, self._run_startup_localizer)
+
+    def _verify_amcl_lock(self):
+        """Verification handshake: confirms AMCL accepted pose and published TF."""
+        if self.amcl_confirmed:
+            if self.verification_timer is not None:
+                self.verification_timer.cancel()
+                self.verification_timer = None
+            return
+
+        self.verification_attempts += 1
+        has_tf = False
+        try:
+            has_tf = self.tf_buffer.can_transform(
+                'map', 'base_link', rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=0.08)
+            )
+        except Exception:
+            pass
+
+        if has_tf or self.amcl_confirmed:
+            self.amcl_confirmed = True
+            self.get_logger().info("=" * 72)
+            self.get_logger().info("🎉 [AUTO_LOCALIZE] AMCL LOCKED ONTO PHYSICAL POSE!")
+            self.get_logger().info("   Robot pose is stable and locked. Navigation ready.")
+            self.get_logger().info("=" * 72)
+            if self.verification_timer is not None:
+                self.verification_timer.cancel()
+                self.verification_timer = None
+            return
+
+        if self.verification_attempts == 2 and not self.amcl_confirmed:
+            # Gently request a nomotion update to prompt AMCL to publish TF without resetting particles
+            self._trigger_amcl_nomotion_update()
+        elif self.verification_attempts >= 5:
+            # Stand down verification loop after 4 seconds
+            if self.verification_timer is not None:
+                self.verification_timer.cancel()
+                self.verification_timer = None
+
+    def amcl_pose_cb(self, msg: PoseWithCovarianceStamped):
+        if not self.amcl_confirmed:
+            self.amcl_confirmed = True
+            self.get_logger().info(
+                f"[AUTO_LOCALIZE] 🎉 AMCL active pose confirmed: "
+                f"X={msg.pose.pose.position.x:.2f}m, Y={msg.pose.pose.position.y:.2f}m"
+            )
+            if self.verification_timer is not None:
+                self.verification_timer.cancel()
+                self.verification_timer = None
 
     def relocalize_service_cb(self, request, response):
-        """Service callback to manually or programmatically trigger global relocalization."""
+        """Service callback to manually or programmatically trigger global relocalization anytime."""
+        self.amcl_confirmed = False
+        self.has_localized = False
         success, msg = self.find_and_publish_global_pose()
+        if success:
+            self.has_localized = True
+            self.verification_attempts = 0
+            if self.verification_timer is not None:
+                self.verification_timer.cancel()
+            self.verification_timer = self.create_timer(0.8, self._verify_amcl_lock)
         response.success = success
         response.message = msg
         return response
@@ -240,8 +352,8 @@ class AMRAutoLocalizer(Node):
         ranges = np.array(scan.ranges)
         angles = scan.angle_min + np.arange(len(ranges)) * scan.angle_increment
 
-        # Filter valid physical range returns (exclude chassis self-reflections < 0.12m)
-        valid = (ranges > max(0.12, scan.range_min)) & (ranges < min(6.5, scan.range_max)) & np.isfinite(ranges)
+        # Filter valid physical range returns (exclude chassis self-reflections < 0.16m)
+        valid = (ranges > max(0.16, scan.range_min)) & (ranges < min(6.5, scan.range_max)) & np.isfinite(ranges)
         ranges = ranges[valid]
         angles = angles[valid]
 
@@ -256,10 +368,11 @@ class AMRAutoLocalizer(Node):
 
         local_x = ranges * np.cos(angles)
         local_y = ranges * np.sin(angles)
+        beam_weights = np.clip(ranges / 1.5, 0.6, 1.4)
 
         t0 = time.time()
 
-        # Vectorized Coarse Scan Matching
+        # Vectorized Coarse Scan Matching across all candidate locations and 72 yaws
         c_y = np.cos(self.cand_yaws)[:, None]
         s_y = np.sin(self.cand_yaws)[:, None]
         rot_x = c_y * local_x[None, :] - s_y * local_y[None, :]
@@ -280,7 +393,7 @@ class AMRAutoLocalizer(Node):
 
             lk = self.likelihood_map[gy_c, gx_c]
             lk[~in_b] = 0.0
-            scores = np.mean(lk, axis=1)
+            scores = np.average(lk, axis=1, weights=beam_weights)
             max_i = np.argmax(scores)
             if scores[max_i] > best_score:
                 best_score = scores[max_i]
@@ -290,11 +403,11 @@ class AMRAutoLocalizer(Node):
             self.get_logger().error("[AUTO_LOCALIZE] Global localization failed to converge.")
             return False, "Global search failed."
 
-        # Fine Grid Refinement (0.02m spatial step, 2.0 deg angular step)
+        # Fine Grid Refinement (0.02m spatial step, 1.5 deg angular step)
         bx, by, byaw = best_pose
-        fine_x = np.linspace(bx - 0.12, bx + 0.12, 7)
-        fine_y = np.linspace(by - 0.12, by + 0.12, 7)
-        fine_yaws = np.linspace(byaw - np.radians(12), byaw + np.radians(12), 13)
+        fine_x = np.linspace(bx - 0.10, bx + 0.10, 7)
+        fine_y = np.linspace(by - 0.10, by + 0.10, 7)
+        fine_yaws = np.linspace(byaw - np.radians(10), byaw + np.radians(10), 13)
 
         refined_best_score = best_score
         refined_pose = best_pose
@@ -306,6 +419,14 @@ class AMRAutoLocalizer(Node):
             rot_y_f = local_x * s_y_f + local_y * c_y_f
             for px in fine_x:
                 for py in fine_y:
+                    # Enforce strict clearance during fine refinement (never drift into walls)
+                    test_gx = int((px - self.map_origin_x) / self.map_res)
+                    test_gy = int((py - self.map_origin_y) / self.map_res)
+                    if not (0 <= test_gx < self.map_w and 0 <= test_gy < self.map_h):
+                        continue
+                    if self.dist_map[test_gy, test_gx] < 0.20:
+                        continue
+
                     gx = ((px + rot_x_f - self.map_origin_x) / self.map_res).astype(int)
                     gy = ((py + rot_y_f - self.map_origin_y) / self.map_res).astype(int)
                     in_b = (gx >= 0) & (gx < self.map_w) & (gy >= 0) & (gy < self.map_h)
@@ -313,7 +434,7 @@ class AMRAutoLocalizer(Node):
                     gy_c = np.clip(gy, 0, self.map_h - 1)
                     lk = self.likelihood_map[gy_c, gx_c]
                     lk[~in_b] = 0.0
-                    score = np.mean(lk)
+                    score = np.average(lk, weights=beam_weights)
                     if score > refined_best_score:
                         refined_best_score = score
                         refined_pose = (px, py, yaw)
@@ -322,7 +443,7 @@ class AMRAutoLocalizer(Node):
         final_x, final_y, final_yaw = refined_pose
         yaw_deg = math.degrees(final_yaw) % 360.0
 
-        # Construct and publish /initialpose
+        # Construct PoseWithCovarianceStamped
         msg = PoseWithCovarianceStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'map'
@@ -337,36 +458,52 @@ class AMRAutoLocalizer(Node):
         msg.pose.pose.orientation.z = q[2]
         msg.pose.pose.orientation.w = q[3]
 
-        # Covariance: small confident covariance
+        # Tightly bound confident covariance
         cov = [0.0] * 36
-        cov[0] = 0.05    # X variance (m^2)
-        cov[7] = 0.05    # Y variance (m^2)
-        cov[35] = 0.04   # Yaw variance (rad^2, ~11 deg)
+        cov[0] = 0.04    # X variance (0.2m std dev)
+        cov[7] = 0.04    # Y variance (0.2m std dev)
+        cov[35] = 0.03   # Yaw variance (~10 deg std dev)
         msg.pose.covariance = cov
 
+        self.last_solved_msg = msg
         self.initial_pose_pub.publish(msg)
 
-        # Trigger AMCL no-motion update so particle filter updates weights while stationary
+        # Also send via service if available
+        self._send_set_initial_pose_srv(msg)
+
+        # Trigger AMCL no-motion update so particle filter updates weights immediately
         self._trigger_amcl_nomotion_update()
 
         log_str = (
-            f"[AUTO_LOCALIZE] ✅ GLOBAL LOCALIZATION SUCCESS! "
+            f"[AUTO_LOCALIZE] ✅ GLOBAL LOCALIZATION SOLVED! "
             f"Physical Pose: X={final_x:.3f}m, Y={final_y:.3f}m, Yaw={yaw_deg:.1f}° | "
             f"Confidence Score={refined_best_score:.3f} | Solved in {elapsed_ms:.1f}ms"
         )
         self.get_logger().info("=" * 72)
         self.get_logger().info(log_str)
+        self.get_logger().info("  Initial pose published (TRANSIENT_LOCAL latched). AMCL filter active.")
         self.get_logger().info("=" * 72)
 
         return True, log_str
 
+    def _send_set_initial_pose_srv(self, pose_msg: PoseWithCovarianceStamped):
+        """Calls /set_initial_pose service if AMCL provides it."""
+        try:
+            if self.set_initial_pose_client.service_is_ready():
+                req = SetInitialPose.Request()
+                req.pose = pose_msg
+                self.set_initial_pose_client.call_async(req)
+        except Exception:
+            pass
+
     def _trigger_amcl_nomotion_update(self):
         """Calls AMCL's /request_nomotion_update service to converge particles immediately."""
-        if self.nomotion_client.wait_for_service(timeout_sec=1.0):
-            req = Empty.Request()
-            for _ in range(3):
+        try:
+            if self.nomotion_client.service_is_ready():
+                req = Empty.Request()
                 self.nomotion_client.call_async(req)
-                time.sleep(0.05)
+        except Exception:
+            pass
 
 
 def main(args=None):

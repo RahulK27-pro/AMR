@@ -195,19 +195,20 @@ class RouteRunner(Node):
         self.min_passable_gap = 0.35   # Minimum passage width for 22cm robot (0.22m + 0.13m corridor margin)
 
         # Declare configurable navigation parameters (auto-adapts for Physical Hardware vs Simulation)
-        self.declare_parameter('use_sim_time', False)
+        if not self.has_parameter('use_sim_time'):
+            self.declare_parameter('use_sim_time', False)
         self.use_sim_time = self.get_parameter('use_sim_time').value
 
         # Physical Hardware Defaults (calibrated minimum moving speeds) vs Simulation (fast test)
-        default_v_max = 0.75 if self.use_sim_time else 0.18
-        default_cruise_v = 0.45 if self.use_sim_time else 0.15
-        default_min_v = 0.08 if self.use_sim_time else 0.08
-        default_w_max = 1.80 if self.use_sim_time else 0.70
+        default_v_max = 0.75 if self.use_sim_time else 0.20
+        default_cruise_v = 0.45 if self.use_sim_time else 0.16
+        default_min_v = 0.08 if self.use_sim_time else 0.10
+        default_w_max = 1.80 if self.use_sim_time else 0.75
         default_lookahead = 0.75 if self.use_sim_time else 0.35
-        default_accel_v = 0.60 if self.use_sim_time else 0.25
-        default_decel_v = 0.90 if self.use_sim_time else 0.40
-        default_accel_w = 1.60 if self.use_sim_time else 0.80
-        default_kp_h = 1.40 if self.use_sim_time else 1.00
+        default_accel_v = 0.60 if self.use_sim_time else 0.35
+        default_decel_v = 0.90 if self.use_sim_time else 0.50
+        default_accel_w = 1.60 if self.use_sim_time else 1.20
+        default_kp_h = 1.40 if self.use_sim_time else 1.20
         default_standoff = 0.50 if self.use_sim_time else 0.30
         default_crit_prox = 0.20 if self.use_sim_time else 0.14
         default_noise_v = 0.30 if self.use_sim_time else 0.04
@@ -490,7 +491,10 @@ class RouteRunner(Node):
 
     def update_robot_pose(self):
         try:
-            t = self.tf_buffer.lookup_transform('map', 'base_link', rclpy.time.Time())
+            t = self.tf_buffer.lookup_transform(
+                'map', 'base_link', rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=0.08)
+            )
             self.current_x = t.transform.translation.x
             self.current_y = t.transform.translation.y
             self.current_yaw = self.get_yaw_from_quaternion(t.transform.rotation)
@@ -500,13 +504,14 @@ class RouteRunner(Node):
             self.odom_ready = True
             return True
         except TransformException:
-            if self.using_map_tf:
-                self.get_logger().warn("AMCL TF lost! Falling back to /odometry/filtered.")
-                self.using_map_tf = False
+            # If map TF was already acquired, retain the last known valid map pose.
+            # NEVER fall back to raw odom coordinates which have an arbitrary origin!
             return self.odom_ready
 
     def odom_callback(self, msg):
-        if not self.using_map_tf:
+        # On physical hardware with a static map, robot pose MUST strictly come from map -> base_link TF.
+        # Raw /odometry/filtered is in the 'odom' frame and must NEVER overwrite map coordinates!
+        if not self.using_map_tf and self.use_sim_time:
             self.current_x = msg.pose.pose.position.x
             self.current_y = msg.pose.pose.position.y
             self.current_yaw = self.get_yaw_from_quaternion(msg.pose.pose.orientation)
@@ -973,7 +978,8 @@ class RouteRunner(Node):
         # Cluster points around the obstacle location
         cluster_mask = np.linalg.norm(self.obstacles - np.array([block_pt[0], block_pt[1]]), axis=-1) < 0.60
         cluster_pts = self.obstacles[cluster_mask]
-        if len(cluster_pts) == 0:
+        # Require at least 4 contiguous LiDAR points to confirm a real physical obstacle (rejecting sensor noise / dust)
+        if len(cluster_pts) < 4:
             return None
 
         ox = float(np.mean(cluster_pts[:, 0]))
@@ -1738,9 +1744,9 @@ class RouteRunner(Node):
 
         if abs_h_err <= math.radians(35):
             corner_scale = 1.0
-        elif abs_h_err <= math.radians(75):
-            frac = (abs_h_err - math.radians(35)) / math.radians(40)
-            corner_scale = 0.20 + 0.80 * 0.5 * (1.0 + math.cos(math.pi * frac))
+        elif abs_h_err <= math.radians(70):
+            frac = (abs_h_err - math.radians(35)) / math.radians(35)
+            corner_scale = 0.30 + 0.70 * 0.5 * (1.0 + math.cos(math.pi * frac))
         else:
             corner_scale = 0.0  # Smooth in-place pivot for acute turns
 
@@ -1788,8 +1794,8 @@ class RouteRunner(Node):
         w_guidance = kp_heading * heading_error
 
         # In-place pivot torque boost: ensure sufficient angular velocity to overcome caster & wheel stiction
-        if corner_scale == 0.0 and abs(heading_error) > math.radians(6):
-            min_pivot_w = 0.55  # Minimum angular speed (rad/s) for guaranteed in-place turning
+        if corner_scale == 0.0 and abs(heading_error) > math.radians(5):
+            min_pivot_w = 0.65  # Minimum angular speed (rad/s) for guaranteed in-place turning
             if abs(w_guidance) < min_pivot_w:
                 w_guidance = math.copysign(min_pivot_w, heading_error)
 
@@ -2034,6 +2040,17 @@ class RouteRunner(Node):
         # Clamp within global physical limits
         cmd_v = float(np.clip(cmd_v, self.v_min, self.v_max))
         cmd_w = float(np.clip(cmd_w, -self.w_max, self.w_max))
+
+        # Motor Deadband & Breakaway Protection:
+        # Prevent outputting speeds that are too low to physically move the chassis (< 0.10 m/s crawl or < 0.60 rad/s pivot)
+        if abs(cmd_w) > 0.08 and cmd_v < 0.03:
+            # In-place pivot: enforce minimum angular speed to overcome caster friction
+            if abs(cmd_w) < 0.60:
+                cmd_w = math.copysign(0.60, cmd_w)
+            cmd_v = 0.0
+        elif cmd_v > 0.02 and cmd_v < self.min_linear_speed:
+            # Forward motion: snap to minimum reliable moving speed
+            cmd_v = self.min_linear_speed
 
         self.last_cmd_v = cmd_v
         self.last_cmd_w = cmd_w

@@ -58,9 +58,9 @@ def launch_setup(context, *args, **kwargs):
     init_x = float(LaunchConfiguration('initial_pose_x').perform(context).strip() or 0.0)
     init_y = float(LaunchConfiguration('initial_pose_y').perform(context).strip() or 0.0)
     init_yaw = float(LaunchConfiguration('initial_pose_yaw').perform(context).strip() or 0.0)
-    max_v = float(LaunchConfiguration('max_linear_speed').perform(context).strip() or 0.18)
-    max_w = float(LaunchConfiguration('max_angular_speed').perform(context).strip() or 0.70)
-    cruise_v = float(LaunchConfiguration('cruise_linear_speed').perform(context).strip() or 0.15)
+    max_v = float(LaunchConfiguration('max_linear_speed').perform(context).strip() or 0.20)
+    max_w = float(LaunchConfiguration('max_angular_speed').perform(context).strip() or 0.75)
+    cruise_v = float(LaunchConfiguration('cruise_linear_speed').perform(context).strip() or 0.16)
     lookahead_d = float(LaunchConfiguration('lookahead_dist').perform(context).strip() or 0.35)
 
     # ── 1. Resolve Map YAML File ──────────────────────────────────────
@@ -243,12 +243,12 @@ def launch_setup(context, *args, **kwargs):
                     'max_linear_speed': max_v,
                     'max_angular_speed': max_w,
                     'cruise_linear_speed': cruise_v,
-                    'min_linear_speed': 0.08,
+                    'min_linear_speed': 0.10,
                     'lookahead_dist': lookahead_d,
-                    'accel_lim_v': 0.25,
-                    'decel_lim_v': 0.40,
-                    'accel_lim_w': 0.80,
-                    'kp_heading': 1.0,
+                    'accel_lim_v': 0.35,
+                    'decel_lim_v': 0.50,
+                    'accel_lim_w': 1.20,
+                    'kp_heading': 1.20,
                     'safe_standoff': 0.30,
                     'critical_proximity': 0.14,
                 }],
@@ -303,6 +303,15 @@ def launch_setup(context, *args, **kwargs):
         ]
     )
 
+    # ── 8. Dedicated Real-Time Navigation Telemetry Logger ────────────
+    run_logger_node = Node(
+        package='agv_navigation',
+        executable='run_logger',
+        name='run_logger',
+        parameters=[{'use_sim_time': False}],
+        output='screen',
+    )
+
     return [
         localization_nodes,
         auto_localizer_node,
@@ -310,6 +319,7 @@ def launch_setup(context, *args, **kwargs):
         graph_vis_node,
         bt_manager_node,
         rviz_node,
+        run_logger_node,
     ]
 
 
@@ -347,17 +357,17 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'max_linear_speed',
-            default_value='0.18',
+            default_value='0.20',
             description='Max physical linear speed in m/s (calibrated moving crawl)'
         ),
         DeclareLaunchArgument(
             'max_angular_speed',
-            default_value='0.70',
+            default_value='0.75',
             description='Max physical angular turning rate in rad/s'
         ),
         DeclareLaunchArgument(
             'cruise_linear_speed',
-            default_value='0.15',
+            default_value='0.16',
             description='Target physical linear cruising speed in m/s'
         ),
         DeclareLaunchArgument(
