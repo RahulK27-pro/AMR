@@ -136,21 +136,15 @@ def launch_setup(context, *args, **kwargs):
     print("  [AMR PHYSICAL HARDWARE NAVIGATION SESSION]")
     print(f"  Active Map          : {map_stem} ({map_yaml_file})")
     print(f"  Roadmap Graph       : {graph_file}")
-    print(f"  Max Linear Speed    : {max_v:.2f} m/s (Hardware Safe Crawl)")
+    print(f"  Max Linear Speed    : {max_v:.2f} m/s (Calibrated Moving Crawl)")
     print(f"  Max Angular Speed   : {max_w:.2f} rad/s (~{max_w * 57.2958:.0f} deg/s)")
     print(f"  Cruise Speed        : {cruise_v:.2f} m/s")
     print(f"  Lookahead Distance  : {lookahead_d:.2f} m")
-    print(f"  Initial Pose        : X={init_x:.2f}m, Y={init_y:.2f}m, Yaw={init_yaw:.2f}rad")
+    print("  Auto-Localizer      : ZERO-PRIOR CORRELATIVE SCAN MATCHER (ACTIVE)")
+    print("                        Auto-detects robot position anywhere on startup!")
     print(f"  Local Controller    : 10 Hz Vectorized MPPI (route_runner)")
     print(f"  Behavior Tree       : Enabled={use_bt_val}")
     print(f"  RViz Display        : Enabled={use_rviz_val}")
-    print("")
-    print("  ⚠️  CRITICAL LOCALIZATION STEP (DO THIS ONCE RVIZ OPENS):")
-    print("  1. Inspect RViz: Does the cyan laser scan align with the map walls?")
-    print("  2. If the scan is tilted/offset: Click '2D Pose Estimate' on the")
-    print("     top toolbar and click-drag the robot's physical pose & heading.")
-    print("  3. Verify the cyan points snap ON TOP of the black map walls.")
-    print("  4. Once aligned: Click '2D Goal Pose' to send a navigation goal!")
     print("=" * 72)
 
     # Config files
@@ -161,6 +155,22 @@ def launch_setup(context, *args, **kwargs):
     rviz_config_file = os.path.join(pkg_agv, 'config', 'agv_hardware_nav.rviz')
     if not os.path.exists(rviz_config_file):
         rviz_config_file = os.path.join(ws_dir, 'src', 'agv_description', 'config', 'agv_hardware_nav.rviz')
+
+    has_manual_init = (init_x != 0.0 or init_y != 0.0 or init_yaw != 0.0)
+    amcl_params = [
+        nav2_hw_params,
+        {
+            'use_sim_time': False,
+            'set_initial_pose': has_manual_init,
+            'always_reset_initial_pose': True,
+        }
+    ]
+    if has_manual_init:
+        amcl_params[1].update({
+            'initial_pose_x': init_x,
+            'initial_pose_y': init_y,
+            'initial_pose_a': init_yaw,
+        })
 
     # ── 3. Localization Nodes: Map Server + AMCL + Lifecycle Manager ──
     localization_nodes = TimerAction(
@@ -183,16 +193,7 @@ def launch_setup(context, *args, **kwargs):
                 package='nav2_amcl',
                 executable='amcl',
                 name='amcl',
-                parameters=[
-                    nav2_hw_params,
-                    {
-                        'use_sim_time': False,
-                        'set_initial_pose': True,
-                        'initial_pose_x': init_x,
-                        'initial_pose_y': init_y,
-                        'initial_pose_a': init_yaw,
-                    }
-                ],
+                parameters=amcl_params,
                 output='screen',
             ),
             Node(
@@ -207,6 +208,24 @@ def launch_setup(context, *args, **kwargs):
                 }],
                 output='screen',
             ),
+        ]
+    )
+
+    # ── 3b. Zero-Prior Global Scan-Matching Auto-Localizer ────────────
+    auto_localizer_node = TimerAction(
+        period=1.8,
+        actions=[
+            Node(
+                package='agv_navigation',
+                executable='auto_localizer',
+                name='auto_localizer',
+                parameters=[{
+                    'map_name': map_stem,
+                    'use_sim_time': False,
+                    'auto_on_startup': True,
+                }],
+                output='screen',
+            )
         ]
     )
 
@@ -286,6 +305,7 @@ def launch_setup(context, *args, **kwargs):
 
     return [
         localization_nodes,
+        auto_localizer_node,
         route_runner_node,
         graph_vis_node,
         bt_manager_node,

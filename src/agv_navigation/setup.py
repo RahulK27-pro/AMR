@@ -29,6 +29,7 @@ setup(
             'dynamic_obstacle_manager = agv_navigation.dynamic_obstacle_manager:main',
             'obstacle_teleop = agv_navigation.obstacle_teleop:main',
             'bt_manager = agv_navigation.bt_manager:main',
+            'auto_localizer = agv_navigation.amr_auto_localizer:main',
         ],
     },
 )
