@@ -70,6 +70,18 @@ class RouteRunner(Node):
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, latched_map_qos)
 
         candidates = []
+        if map_name_param and os.path.isabs(map_name_param) and os.path.exists(map_name_param):
+            candidates.append(map_name_param)
+
+        ws_root = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main')
+        ws_root_maps = os.path.join(ws_root, 'maps')
+        ws_maps = os.path.join(ws_root, 'src', 'agv_description', 'maps')
+
+        if map_name_param:
+            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}_graph.json'))
+            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}.json'))
+            candidates.append(os.path.join(ws_maps, f'{map_name_param}_graph.json'))
+
         try:
             pkg_share = get_package_share_directory('agv_description')
             if map_name_param:
@@ -80,9 +92,6 @@ class RouteRunner(Node):
         except Exception:
             pass
 
-        ws_maps = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps')
-        if map_name_param:
-            candidates.append(os.path.join(ws_maps, f'{map_name_param}_graph.json'))
         candidates.append(os.path.join(ws_maps, 'warehouse_graph.json'))
         candidates.append(os.path.join(ws_maps, 'warehouse_map_graph.json'))
         candidates.append(os.path.join(ws_maps, 'warehouse_01_graph.json'))
@@ -270,6 +279,17 @@ class RouteRunner(Node):
     def _load_static_map_file(self, map_name_param):
         """Loads static map YAML and PGM file to construct a binary wall mask."""
         candidates = []
+        if map_name_param and os.path.isabs(map_name_param) and os.path.exists(map_name_param):
+            candidates.append(map_name_param)
+
+        ws_root = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main')
+        ws_root_maps = os.path.join(ws_root, 'maps')
+        ws_maps = os.path.join(ws_root, 'src', 'agv_description', 'maps')
+
+        if map_name_param:
+            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}.yaml'))
+            candidates.append(os.path.join(ws_maps, f'{map_name_param}.yaml'))
+
         try:
             pkg_share = get_package_share_directory('agv_description')
             if map_name_param:
@@ -279,9 +299,6 @@ class RouteRunner(Node):
         except Exception:
             pass
 
-        ws_maps = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps')
-        if map_name_param:
-            candidates.append(os.path.join(ws_maps, f'{map_name_param}.yaml'))
         candidates.append(os.path.join(ws_maps, 'hospital_map.yaml'))
         candidates.append(os.path.join(ws_maps, 'warehouse_map.yaml'))
 

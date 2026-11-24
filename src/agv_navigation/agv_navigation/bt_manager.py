@@ -170,6 +170,18 @@ class BTManagerNode(Node):
         map_name_param = self.get_parameter('map_name').get_parameter_value().string_value.strip()
 
         candidates = []
+        if map_name_param and os.path.isabs(map_name_param) and os.path.exists(map_name_param):
+            candidates.append(map_name_param)
+
+        ws_root = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main')
+        ws_root_maps = os.path.join(ws_root, 'maps')
+        ws_maps = os.path.join(ws_root, 'src', 'agv_description', 'maps')
+
+        if map_name_param:
+            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}_graph.json'))
+            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}.json'))
+            candidates.append(os.path.join(ws_maps, f'{map_name_param}_graph.json'))
+
         try:
             pkg_share = get_package_share_directory('agv_description')
             if map_name_param:
@@ -182,7 +194,6 @@ class BTManagerNode(Node):
         except Exception:
             pass
 
-        ws_maps = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main', 'src', 'agv_description', 'maps')
         if map_name_param:
             candidates.append(os.path.join(ws_maps, f'{map_name_param}_graph.json'))
         candidates.extend([
