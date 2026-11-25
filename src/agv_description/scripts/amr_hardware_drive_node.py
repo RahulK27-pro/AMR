@@ -76,11 +76,19 @@ class AMRHardwareDriveNode(Node):
         self.declare_parameter('wheel_radius', 0.035)
         self.declare_parameter('wheel_separation', 0.240)
         self.declare_parameter('ticks_per_rev', 4713)
-        self.declare_parameter('max_wheel_speed', 0.45)       # m/s (~122 RPM on 70mm diameter wheel)
-        self.declare_parameter('min_pwm', 25.0)               # % duty minimum deadband
-        self.declare_parameter('max_pwm', 100.0)              # % duty maximum
+        self.declare_parameter('max_wheel_speed', 0.65)       # m/s free speed calibration
+        self.declare_parameter('min_pwm', 18.0)               # retained for launch compatibility
+        self.declare_parameter('max_pwm', 100.0)              # % duty absolute max
+        self.declare_parameter('max_pwm_cap', 35.0)           # % duty safety ceiling for closed-loop PI
+        self.declare_parameter('min_pivot_pwm', 16.0)         # retained for launch compatibility
+        self.declare_parameter('max_pivot_pwm', 22.0)         # retained for launch compatibility
+        self.declare_parameter('ff_offset', 10.5)             # % duty kinetic friction offset
+        self.declare_parameter('ff_slope', 55.0)              # % duty per (m/s) feedforward slope
+        self.declare_parameter('breakaway_pwm', 17.5)         # % duty static stiction assist while stationary
+        self.declare_parameter('pid_kp', 75.0)                # % duty per (m/s) error
+        self.declare_parameter('pid_ki', 150.0)               # % duty per m integral error
         self.declare_parameter('odom_rate', 50.0)             # Hz
-        self.declare_parameter('cmd_vel_timeout', 0.5)        # seconds safety watchdog
+        self.declare_parameter('cmd_vel_timeout', 1.5)        # seconds safety watchdog
         self.declare_parameter('publish_tf', False)           # Set True only if EKF is disabled
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_link')
@@ -95,6 +103,14 @@ class AMRHardwareDriveNode(Node):
         self.max_speed = self.get_parameter('max_wheel_speed').value
         self.min_pwm = self.get_parameter('min_pwm').value
         self.max_pwm = self.get_parameter('max_pwm').value
+        self.max_pwm_cap = float(self.get_parameter('max_pwm_cap').value)
+        self.min_pivot_pwm = float(self.get_parameter('min_pivot_pwm').value)
+        self.max_pivot_pwm = float(self.get_parameter('max_pivot_pwm').value)
+        self.ff_offset = float(self.get_parameter('ff_offset').value)
+        self.ff_slope = float(self.get_parameter('ff_slope').value)
+        self.breakaway_pwm = float(self.get_parameter('breakaway_pwm').value)
+        self.pid_kp = float(self.get_parameter('pid_kp').value)
+        self.pid_ki = float(self.get_parameter('pid_ki').value)
         self.cmd_timeout = self.get_parameter('cmd_vel_timeout').value
         self.publish_tf = self.get_parameter('publish_tf').value
         self.odom_frame = self.get_parameter('odom_frame').value
@@ -127,6 +143,18 @@ class AMRHardwareDriveNode(Node):
 
         # Watchdog
         self.last_cmd_time = self.get_clock().now()
+        self._watchdog_stopped = True
+
+        # Closed-loop per-wheel PI controller state
+        self.target_vx = 0.0
+        self.target_wz = 0.0
+        self.active_duty_l = 0.0
+        self.active_duty_r = 0.0
+        self._last_motor_log_sec = 0.0
+        self._wheel_pi = {
+            'left':  {'v_filt': 0.0, 'integ': 0.0, 'prev_sign': 0},
+            'right': {'v_filt': 0.0, 'integ': 0.0, 'prev_sign': 0},
+        }
 
         # Hardware Initialization (lgpio)
         self.chip = None
@@ -234,20 +262,60 @@ class AMRHardwareDriveNode(Node):
         self.right_ticks += delta
         self.right_state = new_state
 
-    # ── Motor Driver Output ────────────────────────────────────────────────
-    def set_motors(self, v_left: float, v_right: float):
-        if self.mock_mode or self.chip is None:
+    # ── Motor Driver Output (50 Hz Per-Wheel Closed-Loop PI) ───────────────
+    def _compute_wheel_duty(self, side: str, target_v: float, dt: float) -> float:
+        """Compute closed-loop PWM duty (%) for one wheel from filtered encoder velocity."""
+        st = self._wheel_pi[side]
+        if abs(target_v) < 0.005:
+            st['integ'] = 0.0
+            st['prev_sign'] = 0
+            return 0.0
+
+        sign = 1 if target_v >= 0.0 else -1
+        if sign != st['prev_sign']:
+            # Reset integral windup on direction reversal so stops/pivots stay crisp
+            st['integ'] = 0.0
+            st['prev_sign'] = sign
+
+        speed_tgt = abs(target_v)
+        speed_meas = st['v_filt'] if sign > 0 else -st['v_filt']
+        err = speed_tgt - speed_meas
+
+        ff = self.ff_offset + self.ff_slope * speed_tgt
+        # Temporary static-friction boost only while rotor is nearly stalled (< 0.008 m/s)
+        kick = max(0.0, min(5.5, self.breakaway_pwm - ff)) if abs(st['v_filt']) < 0.008 else 0.0
+
+        u_unsat = ff + kick + self.pid_kp * err + self.pid_ki * st['integ']
+        duty = max(0.0, min(self.max_pwm_cap, u_unsat))
+
+        # Conditional anti-windup: freeze integrator if saturated in the error direction
+        if not ((duty >= self.max_pwm_cap and err > 0.0) or (duty <= 0.0 and err < 0.0)):
+            st['integ'] = max(-0.20, min(0.20, st['integ'] + err * dt))
+
+        return duty
+
+    def _apply_closed_loop_motors(self, dt: float, now_sec: float):
+        """Run independent L/R wheel PI loops and write GPIO PWM outputs."""
+        if abs(self.target_vx) < 0.005 and abs(self.target_wz) < 0.005:
+            self.stop_motors()
             return
 
-        # Left Motor: 0 = Forward, 1 = Reverse
-        fwd_left = (v_left >= 0.0)
-        dir_left = 0 if fwd_left else 1
-        duty_left = self._speed_to_duty(abs(v_left))
+        v_left = self.target_vx - (self.target_wz * self.L / 2.0)
+        v_right = self.target_vx + (self.target_wz * self.L / 2.0)
 
-        # Right Motor: 1 = Forward, 0 = Reverse
-        fwd_right = (v_right >= 0.0)
-        dir_right = 1 if fwd_right else 0
-        duty_right = self._speed_to_duty(abs(v_right))
+        # Left Motor: 0 = Forward, 1 = Reverse | Right Motor: 1 = Forward, 0 = Reverse
+        dir_left = 0 if v_left >= 0.0 else 1
+        dir_right = 1 if v_right >= 0.0 else 0
+
+        dt_ctrl = max(0.005, min(0.10, dt))
+        duty_left = self._compute_wheel_duty('left', v_left, dt_ctrl)
+        duty_right = self._compute_wheel_duty('right', v_right, dt_ctrl)
+
+        self.active_duty_l = duty_left
+        self.active_duty_r = duty_right
+
+        if self.mock_mode or self.chip is None:
+            return
 
         self.lgpio.gpio_write(self.chip, LEFT_DIR_PIN, dir_left)
         self.lgpio.tx_pwm(self.chip, LEFT_PWM_PIN, PWM_FREQ, duty_left)
@@ -255,20 +323,21 @@ class AMRHardwareDriveNode(Node):
         self.lgpio.gpio_write(self.chip, RIGHT_DIR_PIN, dir_right)
         self.lgpio.tx_pwm(self.chip, RIGHT_PWM_PIN, PWM_FREQ, duty_right)
 
-        if duty_left > 0.0 or duty_right > 0.0:
+        if (duty_left > 0.0 or duty_right > 0.0) and (now_sec - self._last_motor_log_sec >= 0.5):
+            self._last_motor_log_sec = now_sec
             self.get_logger().info(
-                f"[MOTORS] L: DIR={dir_left} PWM={duty_left:.1f}% ({v_left:+.2f}m/s) | "
-                f"R: DIR={dir_right} PWM={duty_right:.1f}% ({v_right:+.2f}m/s)"
+                f"[MOTORS PI] L: {v_left:+.3f}m/s (meas {self._wheel_pi['left']['v_filt']:+.3f}) PWM={duty_left:.1f}% | "
+                f"R: {v_right:+.3f}m/s (meas {self._wheel_pi['right']['v_filt']:+.3f}) PWM={duty_right:.1f}%"
             )
 
-    def _speed_to_duty(self, speed: float) -> float:
-        if speed < 0.012:
-            return 0.0
-        ratio = min(1.0, speed / self.max_speed)
-        duty = self.min_pwm + (self.max_pwm - self.min_pwm) * ratio
-        return max(0.0, min(100.0, duty))
-
     def stop_motors(self):
+        self.target_vx = 0.0
+        self.target_wz = 0.0
+        self.active_duty_l = 0.0
+        self.active_duty_r = 0.0
+        for st in self._wheel_pi.values():
+            st['integ'] = 0.0
+            st['prev_sign'] = 0
         if self.mock_mode or self.chip is None:
             return
         self.lgpio.tx_pwm(self.chip, LEFT_PWM_PIN, PWM_FREQ, 0)
@@ -276,16 +345,25 @@ class AMRHardwareDriveNode(Node):
 
     # ── Command Velocity Callback ──────────────────────────────────────────
     def cmd_vel_callback(self, msg: Twist):
-        self.last_cmd_time = self.get_clock().now()
+        now = self.get_clock().now()
+        self.last_cmd_time = now
 
         vx = msg.linear.x
         wz = msg.angular.z
 
-        # Differential drive inverse kinematics
-        v_left = vx - (wz * self.L / 2.0)
-        v_right = vx + (wz * self.L / 2.0)
+        if abs(vx) < 0.005 and abs(wz) < 0.005:
+            self._watchdog_stopped = True
+            self.stop_motors()
+            return
 
-        self.set_motors(v_left, v_right)
+        self._watchdog_stopped = False
+        was_idle = (self.active_duty_l == 0.0 and self.active_duty_r == 0.0)
+        self.target_vx = vx
+        self.target_wz = wz
+
+        # Apply immediately when waking from idle; ongoing ticks are regulated at 50 Hz in update_odometry
+        if was_idle:
+            self._apply_closed_loop_motors(0.02, now.nanoseconds / 1e9)
 
     # ── 50 Hz Odometry & Watchdog Loop ─────────────────────────────────────
     def update_odometry(self):
@@ -294,11 +372,23 @@ class AMRHardwareDriveNode(Node):
 
         if dt <= 0.0:
             return
+        dt_ctrl = min(dt, 0.25)
 
-        # Watchdog check: stop motors if /cmd_vel timed out
+        # Watchdog check: halt active motion once when /cmd_vel stream drops
         time_since_cmd = (current_time - self.last_cmd_time).nanoseconds / 1e9
-        if time_since_cmd > self.cmd_timeout:
-            self.stop_motors()
+        timed_out = (time_since_cmd > self.cmd_timeout)
+        if timed_out:
+            was_moving = (
+                self.active_duty_l > 0.0 or self.active_duty_r > 0.0 or
+                abs(self.target_vx) >= 0.005 or abs(self.target_wz) >= 0.005
+            )
+            if was_moving or not self._watchdog_stopped:
+                self.stop_motors()
+                self._watchdog_stopped = True
+                if was_moving:
+                    self.get_logger().warn(
+                        f"[WATCHDOG] /cmd_vel silent for {time_since_cmd:.2f}s (> {self.cmd_timeout:.2f}s); motors halted."
+                    )
 
         # Capture encoder deltas (swap channels if physically inverted)
         if self.swap_encoders:
@@ -331,9 +421,17 @@ class AMRHardwareDriveNode(Node):
         self.y += d_center * math.sin(self.theta + delta_theta / 2.0)
         self.theta = math.atan2(math.sin(self.theta + delta_theta), math.cos(self.theta + delta_theta))
 
-        # Velocities
-        vx = d_center / dt
-        wz = delta_theta / dt
+        # Velocities in verified kinematic robot frame (invariant to encoder channel inversion/swap)
+        vx = d_center / dt_ctrl
+        wz = delta_theta / dt_ctrl
+        v_l_meas = vx - (wz * self.L / 2.0)
+        v_r_meas = vx + (wz * self.L / 2.0)
+        self._wheel_pi['left']['v_filt'] = 0.45 * v_l_meas + 0.55 * self._wheel_pi['left']['v_filt']
+        self._wheel_pi['right']['v_filt'] = 0.45 * v_r_meas + 0.55 * self._wheel_pi['right']['v_filt']
+
+        # 50 Hz Closed-loop per-wheel PI velocity control
+        if not timed_out:
+            self._apply_closed_loop_motors(dt_ctrl, current_time.nanoseconds / 1e9)
 
         # Orientation Quaternion
         q = euler_to_quaternion(self.theta)
@@ -387,8 +485,8 @@ class AMRHardwareDriveNode(Node):
             (cur_r / self.ticks_per_rev) * 2.0 * math.pi
         ]
         js.velocity = [
-            (d_left / dt) / self.r,
-            (d_right / dt) / self.r
+            (d_left / dt_ctrl) / self.r,
+            (d_right / dt_ctrl) / self.r
         ]
         self.joint_pub.publish(js)
 
@@ -430,7 +528,8 @@ def main(args=None):
         node.get_logger().info("Shutting down AMR Hardware Drive Node...")
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

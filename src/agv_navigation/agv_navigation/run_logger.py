@@ -206,12 +206,22 @@ class AMRRunLogger(Node):
         except TransformException:
             pass
 
-        # 2. Compute Distance to Goal
+        # 2. Compute Distance to Goal & Active Waypoint Index
         if len(self.path_points) > 0:
             goal_x, goal_y = self.path_points[-1]
             self.dist_to_goal = math.hypot(goal_x - self.map_x, goal_y - self.map_y)
+            if self.has_map_tf:
+                best_i = 0
+                best_d2 = float('inf')
+                for idx_p, (px, py) in enumerate(self.path_points):
+                    d2 = (px - self.map_x) ** 2 + (py - self.map_y) ** 2
+                    if d2 < best_d2:
+                        best_d2 = d2
+                        best_i = idx_p
+                self.current_target_idx = best_i
         else:
             self.dist_to_goal = 0.0
+            self.current_target_idx = 0
 
         # 3. Write CSV row
         ros_time_sec = self.get_clock().now().nanoseconds / 1e9
@@ -246,7 +256,8 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

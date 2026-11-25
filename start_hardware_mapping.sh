@@ -17,12 +17,15 @@ set -e
 PI_IP="${1:-10.244.248.208}"
 
 # Automatically detect laptop IP on the route to the Pi
-LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -I | awk '{print $1}')
+LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || true)
+if [ -z "$LAPTOP_IP" ]; then
+    LAPTOP_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+fi
 
 echo "=================================================================="
 echo "  AMR Physical Hardware SLAM Mapping Session (SLAM Toolbox + RViz)"
 echo "  Pi IP     : $PI_IP"
-echo "  Laptop IP : $LAPTOP_IP"
+echo "  Laptop IP : ${LAPTOP_IP:-auto}"
 echo "=================================================================="
 
 # 1. Source ROS 2 Jazzy Core
@@ -36,8 +39,10 @@ fi
 
 WS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 2. Build agv_description if config or launch changed
+# 2. Build agv_description if config, launch, or rviz changed
 if [ ! -f "$WS_DIR/install/agv_description/share/agv_description/launch/hardware_mapping.launch.py" ] || \
+   [ "$WS_DIR/src/agv_description/launch/hardware_mapping.launch.py" -nt "$WS_DIR/install/agv_description/share/agv_description/launch/hardware_mapping.launch.py" ] || \
+   [ "$WS_DIR/src/agv_description/config/agv_hardware_mapping.rviz" -nt "$WS_DIR/install/agv_description/share/agv_description/config/agv_hardware_mapping.rviz" ] || \
    [ "$WS_DIR/src/agv_description/config/mapper_params_hardware.yaml" -nt "$WS_DIR/install/agv_description/share/agv_description/config/mapper_params_hardware.yaml" ]; then
     echo "[INFO] Updating agv_description installation..."
     (cd "$WS_DIR" && colcon build --packages-select agv_description --symlink-install)
@@ -50,13 +55,18 @@ fi
 
 # 3. Configure CycloneDDS unicast peering (Domain 7)
 CFG_FILE="/tmp/cyclonedds_mapping_$$.xml"
+if [ -n "$LAPTOP_IP" ]; then
+    NET_IFACE_XML="<NetworkInterface address=\"$LAPTOP_IP\"/>"
+else
+    NET_IFACE_XML="<NetworkInterface autodetermine=\"true\"/>"
+fi
 cat <<EOF > "$CFG_FILE"
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
     <General>
       <Interfaces>
-        <NetworkInterface address="$LAPTOP_IP"/>
+        $NET_IFACE_XML
       </Interfaces>
     </General>
     <Discovery>

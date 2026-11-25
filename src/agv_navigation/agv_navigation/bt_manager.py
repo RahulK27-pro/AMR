@@ -79,9 +79,9 @@ class ExecuteMPPINavigation(py_trees.behaviour.Behaviour):
     def update(self):
         status = self.blackboard.get("mission_status", "IDLE")
 
-        if status in ["NAVIGATING", "YIELDING", "PLANNING"]:
+        if status in ["NAVIGATING", "YIELDING", "PLANNING", "DETOURING", "RE_ROUTING", "RECOVERY", "ESTOP"]:
             return py_trees.common.Status.RUNNING
-        elif status in ["MISSION_COMPLETE", "IDLE"]:
+        elif status in ["MISSION_COMPLETE", "IDLE", "ARRIVED"]:
             if self.blackboard.get("current_goal") is not None:
                 self.node.get_logger().info("BT Orchestrator: Waypoint navigation complete.")
                 self.blackboard.set("current_goal", None)
@@ -110,7 +110,7 @@ class BackUpRecovery(py_trees.behaviour.Behaviour):
         elapsed = self._now_sec() - self.start_time
         if elapsed < 1.5:
             cmd = Twist()
-            cmd.linear.x = -0.15
+            cmd.linear.x = -0.08
             self.blackboard.get("cmd_pub").publish(cmd)
             return py_trees.common.Status.RUNNING
         else:
@@ -138,7 +138,7 @@ class SpinRecovery(py_trees.behaviour.Behaviour):
         elapsed = self._now_sec() - self.start_time
         if elapsed < 2.0:
             cmd = Twist()
-            cmd.angular.z = 0.5
+            cmd.angular.z = 0.35
             self.blackboard.get("cmd_pub").publish(cmd)
             return py_trees.common.Status.RUNNING
         else:

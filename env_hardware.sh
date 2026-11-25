@@ -25,14 +25,25 @@ else
     PI_IP="$DEFAULT_PI_IP"
 fi
 
-# Dynamically ensure cyclonedds.xml binds to eth0 and targets the active Pi IP
+# Auto-detect local interface IP on route to PI_IP (fallback to autodetermine)
+LOCAL_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || true)
+if [ -z "$LOCAL_IP" ]; then
+    LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+fi
+if [ -n "$LOCAL_IP" ]; then
+    NET_IFACE_XML="<NetworkInterface address=\"$LOCAL_IP\"/>"
+else
+    NET_IFACE_XML="<NetworkInterface autodetermine=\"true\"/>"
+fi
+
+# Dynamically ensure cyclonedds.xml binds to the active routed NIC and targets the active Pi IP
 cat <<EOF > "$WS_DIR/cyclonedds.xml"
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
     <General>
       <Interfaces>
-        <NetworkInterface name="eth0"/>
+        $NET_IFACE_XML
       </Interfaces>
     </General>
     <Discovery>
@@ -72,6 +83,6 @@ echo "=================================================================="
 echo "  [OK] Terminal configured for AMR Physical Robot Stack"
 echo "  ROS_DOMAIN_ID       : 7"
 echo "  RMW_IMPLEMENTATION  : rmw_cyclonedds_cpp"
-echo "  Interface           : eth0"
+echo "  Interface           : ${LOCAL_IP:-auto}"
 echo "  CYCLONEDDS_URI      : $CYCLONEDDS_URI (Unicast -> $PI_IP)"
 echo "=================================================================="

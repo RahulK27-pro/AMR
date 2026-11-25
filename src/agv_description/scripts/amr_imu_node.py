@@ -80,9 +80,10 @@ class AMRIMUNode(Node):
 
         # Orientation state (yaw integration)
         self.yaw = 0.0
-        self.last_time = self.get_clock().now()
+        self._i2c_err_count = 0
 
         self._init_i2c()
+        self.last_time = self.get_clock().now()
 
         self.imu_pub = self.create_publisher(Imu, '/imu/data', 10)
         self.pose_pub = self.create_publisher(PoseStamped, '/imu/pose', 10)
@@ -124,6 +125,7 @@ class AMRIMUNode(Node):
     def _calibrate_gyro(self):
         self.get_logger().info("Calibrating gyroscope zero-rate bias (keep robot stationary)...")
         samples = 200
+        valid_samples = 0
         sum_gx, sum_gy, sum_gz = 0.0, 0.0, 0.0
 
         for _ in range(samples):
@@ -132,16 +134,20 @@ class AMRIMUNode(Node):
                 sum_gx += gx
                 sum_gy += gy
                 sum_gz += gz
+                valid_samples += 1
                 time.sleep(0.01)
             except Exception:
                 pass
 
-        self.bias_gx = sum_gx / samples
-        self.bias_gy = sum_gy / samples
-        self.bias_gz = sum_gz / samples
+        if valid_samples > 0:
+            self.bias_gx = sum_gx / valid_samples
+            self.bias_gy = sum_gy / valid_samples
+            self.bias_gz = sum_gz / valid_samples
+        if valid_samples < 50:
+            self.get_logger().warn(f"IMU calibration only captured {valid_samples}/{samples} valid I2C samples.")
 
         self.get_logger().info(
-            f"Gyroscope calibration complete: bias_z = {self.bias_gz:.4f} rad/s"
+            f"Gyroscope calibration complete ({valid_samples}/{samples} samples): bias_z = {self.bias_gz:.4f} rad/s"
         )
 
     def _read_raw_16(self, reg, count=3):
@@ -169,6 +175,7 @@ class AMRIMUNode(Node):
         dt = (current_time - self.last_time).nanoseconds / 1e9
         if dt <= 0.0:
             return
+        dt_integ = min(dt, 0.1)
 
         if self.mock_mode:
             ax, ay, az = 0.0, 0.0, GRAVITY_MSS
@@ -198,14 +205,24 @@ class AMRIMUNode(Node):
                     gx = 0.0
                 if abs(gy) < self.gyro_deadband:
                     gy = 0.0
+                self._i2c_err_count = 0
 
-            except OSError:
-                # Occasional I2C bus noise/transient NACK — skip sample safely
+            except OSError as e:
+                # Occasional I2C bus noise/transient NACK — skip sample, wake chip if sustained
+                self._i2c_err_count += 1
+                if self._i2c_err_count == 25 or (self._i2c_err_count > 25 and self._i2c_err_count % 100 == 0):
+                    self.get_logger().warn(f"IMU I2C read error streak ({self._i2c_err_count}): {e}. Re-initializing registers...")
+                    try:
+                        self.bus.write_byte_data(self.addr, REG_PWR_MGMT_1, 0x00)
+                        self.bus.write_byte_data(self.addr, REG_ACCEL_CONFIG, 0x00)
+                        self.bus.write_byte_data(self.addr, REG_GYRO_CONFIG, 0x00)
+                    except Exception:
+                        pass
                 self.last_time = current_time
                 return
 
         # Simple yaw integration for planar orientation estimate
-        self.yaw += gz * dt
+        self.yaw += gz * dt_integ
         self.yaw = math.atan2(math.sin(self.yaw), math.cos(self.yaw))
 
         # Planar yaw orientation (roll=0, pitch=0 prevents upside-down vector flip in RViz)

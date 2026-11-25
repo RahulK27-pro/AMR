@@ -27,7 +27,7 @@ class AMRLidarNode(Node):
         self.declare_parameter('port', '/dev/ttyUSB0')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('frame_id', 'laser_frame')
-        self.declare_parameter('range_min', 0.12)
+        self.declare_parameter('range_min', 0.15)
         self.declare_parameter('range_max', 8.0)
         self.declare_parameter('num_bins', 360)
         self.declare_parameter('inverted', True)
@@ -42,7 +42,7 @@ class AMRLidarNode(Node):
         self.inverted = self.get_parameter('inverted').value
         self.angle_offset = float(self.get_parameter('angle_offset').value)
 
-        self.scan_pub = self.create_publisher(LaserScan, '/scan', 10)
+        self.scan_pub = self.create_publisher(LaserScan, '/scan', 5)
 
         self.running = True
         self.mock_mode = False
@@ -51,6 +51,13 @@ class AMRLidarNode(Node):
         # 360-degree range bin accumulator (default to inf)
         self.current_ranges = [float('inf')] * self.num_bins
         self.last_start_angle = 0.0
+        self._seen_ct_marker = False
+        self._scan_pkt_count = 0
+        self._last_scan_pub_time = time.monotonic()
+        self._last_scan_duration = 1.0 / 10.0
+        self._cs_verified_count = 0
+        self._cs_fail_streak = 0
+        self._cs_disabled = False
 
         self.thread = threading.Thread(target=self._lidar_worker_thread, daemon=True)
         self.thread.start()
@@ -88,14 +95,81 @@ class AMRLidarNode(Node):
             self.scan_pub.publish(scan)
             time.sleep(1.0 / rate)
 
+    def _verify_packet_checksum(self, pkt_type, sample_count, raw_fsa, raw_lsa, cs, data_bytes):
+        """Verify YDLIDAR X2 16-bit XOR checksum; auto-bypass if hardware omits standard CS."""
+        if self._cs_disabled:
+            return True
+        calc = 0x55AA ^ ((sample_count << 8) | pkt_type) ^ raw_fsa ^ raw_lsa
+        for idx in range(sample_count):
+            calc ^= struct.unpack_from('<H', data_bytes, idx * 2)[0]
+        if (calc & 0xFFFF) == cs:
+            self._cs_verified_count += 1
+            self._cs_fail_streak = 0
+            return True
+        self._cs_fail_streak += 1
+        if self._cs_verified_count == 0 and self._cs_fail_streak >= 25:
+            self._cs_disabled = True
+            self.get_logger().warn(
+                "YDLIDAR checksum format mismatch over 25 consecutive packets; disabling CS gate."
+            )
+            return True
+        return False
+
+    def _should_flush_scan(self, pkt_type, start_angle, now_mono):
+        """Determine scan revolution boundary without double-flushing near 0/360 deg."""
+        is_ct_start = (pkt_type & 0x01) != 0
+        dt_pub = now_mono - self._last_scan_pub_time
+        if is_ct_start:
+            self._seen_ct_marker = True
+            return self._scan_pkt_count >= 2 or dt_pub >= 0.05
+
+        angle_wrapped = (start_angle < self.last_start_angle and self.last_start_angle > 300.0)
+        if not angle_wrapped:
+            return False
+        # Only flush on angle wrap if CT markers are absent or a CT=1 packet dropped
+        if not self._seen_ct_marker:
+            return self._scan_pkt_count >= 2
+        return self._scan_pkt_count >= 4 and dt_pub >= 0.08
+
+    def _reopen_serial(self):
+        """Close and reopen the LiDAR serial port after a serial/USB error."""
+        if self.ser is not None:
+            try:
+                self.ser.close()
+            except Exception:
+                pass
+            self.ser = None
+        while self.running and rclpy.ok():
+            try:
+                import serial
+                self.ser = serial.Serial(
+                    port=self.port,
+                    baudrate=self.baudrate,
+                    timeout=1.0,
+                    bytesize=8,
+                    parity='N',
+                    stopbits=1
+                )
+                self.ser.reset_input_buffer()
+                self.current_ranges = [float('inf')] * self.num_bins
+                self._scan_pkt_count = 0
+                self.get_logger().info(f"Reconnected to LiDAR serial port: {self.port}")
+                return True
+            except Exception as e:
+                self.get_logger().warn(f"Waiting to reconnect LiDAR port {self.port}: {e}")
+                time.sleep(1.0)
+        return False
+
     def _serial_parse_loop(self):
         while self.running and rclpy.ok():
             try:
-                # Sync header: 0xAA 0x55
+                # Sync header: 0xAA 0x55 (preserve back-to-back 0xAA bytes during resync)
                 b1 = self.ser.read(1)
                 if not b1 or b1[0] != 0xAA:
                     continue
                 b2 = self.ser.read(1)
+                while b2 and b2[0] == 0xAA:
+                    b2 = self.ser.read(1)
                 if not b2 or b2[0] != 0x55:
                     continue
 
@@ -108,11 +182,12 @@ class AMRLidarNode(Node):
                 sample_count = hdr[1]
                 raw_fsa = struct.unpack_from('<H', hdr, 2)[0]
                 raw_lsa = struct.unpack_from('<H', hdr, 4)[0]
+                cs = struct.unpack_from('<H', hdr, 6)[0]
 
                 start_angle = (raw_fsa >> 1) / 64.0
                 end_angle = (raw_lsa >> 1) / 64.0
 
-                if sample_count == 0:
+                if sample_count == 0 or start_angle >= 360.0 or end_angle >= 360.0:
                     continue
 
                 # Read distance samples (2 bytes each)
@@ -120,18 +195,22 @@ class AMRLidarNode(Node):
                 if len(data_bytes) < sample_count * 2:
                     continue
 
-                # Check if this packet begins a new 360-degree rotation
-                # (either CT bit 0 is set OR angle wrapped around from ~350 to ~0)
-                is_new_scan = (pkt_type & 0x01 != 0) or (start_angle < self.last_start_angle and self.last_start_angle > 300.0)
+                if not self._verify_packet_checksum(pkt_type, sample_count, raw_fsa, raw_lsa, cs, data_bytes):
+                    continue
 
-                if is_new_scan:
-                    # Publish the completed 360-degree scan
-                    scan_msg = self._create_scan_msg(self.current_ranges)
+                now_mono = time.monotonic()
+                if self._should_flush_scan(pkt_type, start_angle, now_mono):
+                    dt_scan = now_mono - self._last_scan_pub_time
+                    if 0.04 <= dt_scan <= 0.30:
+                        self._last_scan_duration = dt_scan
+                    scan_msg = self._create_scan_msg(self.current_ranges, self._last_scan_duration)
                     self.scan_pub.publish(scan_msg)
-                    # Reset bin accumulator
                     self.current_ranges = [float('inf')] * self.num_bins
+                    self._scan_pkt_count = 0
+                    self._last_scan_pub_time = now_mono
 
                 self.last_start_angle = start_angle
+                self._scan_pkt_count += 1
 
                 # Interpolate sample angles and populate bins
                 angle_diff = end_angle - start_angle
@@ -152,17 +231,15 @@ class AMRLidarNode(Node):
                         else:
                             cur_ang = (raw_ang + self.angle_offset) % 360.0
 
-                        # Bin index [0, num_bins - 1]
                         bin_idx = int((cur_ang / 360.0) * self.num_bins) % self.num_bins
-                        # Store closest obstacle in bin
                         if dist_meters < self.current_ranges[bin_idx]:
                             self.current_ranges[bin_idx] = dist_meters
 
             except Exception as e:
-                self.get_logger().debug(f"Serial stream glitch: {e}")
-                time.sleep(0.01)
+                self.get_logger().warn(f"LiDAR serial read error ({e}); attempting port reconnect...")
+                self._reopen_serial()
 
-    def _create_scan_msg(self, ranges) -> LaserScan:
+    def _create_scan_msg(self, ranges, scan_duration=0.1) -> LaserScan:
         scan = LaserScan()
         scan.header.stamp = self.get_clock().now().to_msg()
         scan.header.frame_id = self.frame_id
@@ -170,8 +247,8 @@ class AMRLidarNode(Node):
         scan.angle_min = -math.pi
         scan.angle_max = math.pi - (2.0 * math.pi / self.num_bins)
         scan.angle_increment = (2.0 * math.pi) / self.num_bins
-        scan.time_increment = (1.0 / 10.0) / self.num_bins
-        scan.scan_time = 0.1
+        scan.scan_time = float(scan_duration)
+        scan.time_increment = float(scan_duration) / self.num_bins
         scan.range_min = float(self.range_min)
         scan.range_max = float(self.range_max)
 

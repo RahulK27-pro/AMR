@@ -17,12 +17,15 @@ set -e
 PI_IP="${1:-10.244.248.208}"
 
 # Automatically detect laptop IP on the route to the Pi
-LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -I | awk '{print $1}')
+LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || true)
+if [ -z "$LAPTOP_IP" ]; then
+    LAPTOP_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+fi
 
 echo "=================================================================="
 echo "  AMR Remote Laptop Visualizer (RViz2) -> Raspberry Pi"
 echo "  Pi IP     : $PI_IP"
-echo "  Laptop IP : $LAPTOP_IP"
+echo "  Laptop IP : ${LAPTOP_IP:-auto}"
 echo "=================================================================="
 
 # 1. Source ROS 2
@@ -40,13 +43,18 @@ fi
 
 # 2. Configure CycloneDDS unicast peer discovery (localhost + Pi)
 CFG_FILE="/tmp/cyclonedds_laptop_$$.xml"
+if [ -n "$LAPTOP_IP" ]; then
+    NET_IFACE_XML="<NetworkInterface address=\"$LAPTOP_IP\"/>"
+else
+    NET_IFACE_XML="<NetworkInterface autodetermine=\"true\"/>"
+fi
 cat <<EOF > "$CFG_FILE"
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
     <General>
       <Interfaces>
-        <NetworkInterface address="$LAPTOP_IP"/>
+        $NET_IFACE_XML
       </Interfaces>
     </General>
     <Discovery>

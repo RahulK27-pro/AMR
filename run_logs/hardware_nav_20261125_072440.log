@@ -1,0 +1,80 @@
+[INFO] [launch]: All log files can be found below /home/rahul/.ros/log/2026-11-25-07-24-41-166474-Rahul-24687
+[INFO] [launch]: Default logging verbosity is set to INFO
+========================================================================
+  [AMR PHYSICAL HARDWARE NAVIGATION SESSION]
+  Active Map          : prakash_room (/home/rahul/AMR/AMR-main/maps/prakash_room.yaml)
+  Roadmap Graph       : /home/rahul/AMR/AMR-main/maps/prakash_room_graph.json
+  Max Linear Speed    : 0.13 m/s (Calibrated Moving Crawl)
+  Max Angular Speed   : 0.40 rad/s (~23 deg/s)
+  Cruise Speed        : 0.10 m/s
+  Lookahead Distance  : 0.25 m
+  Auto-Localizer      : ZERO-PRIOR CORRELATIVE SCAN MATCHER (ACTIVE)
+                        Auto-detects robot position anywhere on startup!
+  Local Controller    : 10 Hz Vectorized MPPI (route_runner)
+  Behavior Tree       : Enabled=False
+  RViz Display        : Enabled=True
+========================================================================
+[INFO] [run_logger-1]: process started with pid [24691]
+[run_logger-1] [INFO] [1795591481.812246798] [run_logger]: [RUN_LOGGER] Telemetry active. Logging to /home/rahul/AMR/AMR-main/run_logs/navigation_run_20261125_072441.csv
+[INFO] [map_server-2]: process started with pid [24709]
+[INFO] [amcl-3]: process started with pid [24710]
+[INFO] [lifecycle_manager-4]: process started with pid [24711]
+[amcl-3] [INFO] [1795591482.482383494] [amcl]: 
+[amcl-3] 	amcl lifecycle node launched. 
+[amcl-3] 	Waiting on external lifecycle transitions to activate
+[amcl-3] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[amcl-3] [INFO] [1795591482.483585909] [amcl]: Creating
+[lifecycle_manager-4] [INFO] [1795591482.579223700] [lifecycle_manager_localization]: Creating
+[lifecycle_manager-4] [INFO] [1795591482.587169482] [lifecycle_manager_localization]: [34m[1mCreating and initializing lifecycle service clients[0m[0m
+[lifecycle_manager-4] [INFO] [1795591482.621639609] [lifecycle_manager_localization]: [34m[1mStarting managed nodes bringup...[0m[0m
+[lifecycle_manager-4] [INFO] [1795591482.621689786] [lifecycle_manager_localization]: [34m[1mConfiguring map_server[0m[0m
+[map_server-2] [INFO] [1795591482.622101272] [map_server]: 
+[map_server-2] 	map_server lifecycle node launched. 
+[map_server-2] 	Waiting on external lifecycle transitions to activate
+[map_server-2] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[map_server-2] [INFO] [1795591482.622509607] [map_server]: Creating
+[map_server-2] [INFO] [1795591482.623794920] [map_server]: Configuring
+[map_server-2] [INFO] [1795591482.623868559] [map_io]: Loading yaml file: /home/rahul/AMR/AMR-main/maps/prakash_room.yaml
+[map_server-2] [INFO] [1795591482.624234003] [map_io]: resolution: 0.05
+[map_server-2] [INFO] [1795591482.624283650] [map_io]: origin[0]: -2.121
+[map_server-2] [INFO] [1795591482.624291629] [map_io]: origin[1]: -1.763
+[map_server-2] [INFO] [1795591482.624296466] [map_io]: origin[2]: 0
+[map_server-2] [INFO] [1795591482.624301588] [map_io]: free_thresh: 0.196
+[map_server-2] [INFO] [1795591482.624306074] [map_io]: occupied_thresh: 0.65
+[map_server-2] [INFO] [1795591482.624312459] [map_io]: mode: trinary
+[map_server-2] [INFO] [1795591482.624317954] [map_io]: negate: 0
+[map_server-2] [INFO] [1795591482.624552223] [map_io]: Loading image_file: /home/rahul/AMR/AMR-main/maps/prakash_room.pgm
+[map_server-2] [INFO] [1795591482.624860677] [map_io]: Read map /home/rahul/AMR/AMR-main/maps/prakash_room.pgm: 68 X 60 map @ 0.05 m/cell
+[lifecycle_manager-4] [INFO] [1795591482.635142718] [lifecycle_manager_localization]: [34m[1mConfiguring amcl[0m[0m
+[amcl-3] [INFO] [1795591482.635713872] [amcl]: Configuring
+[amcl-3] [INFO] [1795591482.635834969] [amcl]: initTransforms
+[amcl-3] [INFO] [1795591482.641147362] [amcl]: initPubSub
+[amcl-3] [INFO] [1795591482.646220772] [amcl]: Subscribed to map topic.
+[lifecycle_manager-4] [INFO] [1795591482.651740103] [lifecycle_manager_localization]: [34m[1mActivating map_server[0m[0m
+[map_server-2] [INFO] [1795591482.652583295] [map_server]: Activating
+[map_server-2] [INFO] [1795591482.652845777] [map_server]: Creating bond (map_server) to lifecycle manager.
+[lifecycle_manager-4] [INFO] [1795591482.655745952] [lifecycle_manager_localization]: [34m[1mActivating amcl[0m[0m
+[amcl-3] [INFO] [1795591482.656059992] [amcl]: Activating
+[amcl-3] [INFO] [1795591482.656089235] [amcl]: Creating bond (amcl) to lifecycle manager.
+[lifecycle_manager-4] [INFO] [1795591482.658455368] [lifecycle_manager_localization]: [34m[1mManaged nodes are active[0m[0m
+[amcl-3] [INFO] [1795591482.850157108] [amcl]: Received a 68 X 60 map @ 0.050 m/pix
+[INFO] [auto_localizer-5]: process started with pid [24749]
+[auto_localizer-5] [INFO] [1795591484.110298883] [auto_localizer]: [AUTO_LOCALIZE] Initialized likelihood field from prakash_room.pgm (68x60, res=0.05m, 606 candidate poses).
+[auto_localizer-5] [INFO] [1795591484.110759185] [auto_localizer]: AMR Zero-Prior Global Auto-Localizer Active! Listening for LiDAR scan to auto-estimate arbitrary starting pose...
+[auto_localizer-5] [INFO] [1795591484.112092930] [auto_localizer]: [AUTO_LOCALIZE] Updated likelihood field from /map topic (68x60).
+[INFO] [route_runner-6]: process started with pid [24800]
+[INFO] [graph_visualizer-7]: process started with pid [24803]
+[route_runner-6] [INFO] [1795591485.686617690] [route_runner]: [MAP_MASK] Loaded static environment mask from prakash_room.pgm (68x60, res=0.05m, origin=(-2.12, -1.76)).
+[route_runner-6] [INFO] [1795591485.709646243] [route_runner]: Route Runner Active with KD-Tree (21 nodes), Proactive Detour & Active Reverse Escape.
+[route_runner-6] [INFO] [1795591485.710894114] [route_runner]: [MAP_MASK] Updated static wall mask from /map topic (68x60).
+[INFO] [rviz2-8]: process started with pid [24817]
+[graph_visualizer-7] [INFO] [1795591485.928702969] [graph_visualizer]: Graph Visualizer Active (21 nodes, 180 edges). Publishing batch SPHERE_LIST and LINE_LIST.
+[rviz2-8] [INFO] [1795591486.146250471] [rviz2]: Stereo is NOT SUPPORTED
+[rviz2-8] [INFO] [1795591486.146639024] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+[rviz2-8] [INFO] [1795591486.207582458] [rviz2]: Stereo is NOT SUPPORTED
+[amcl-3] [WARN] [1795591486.342790017] [amcl]: New subscription discovered on topic '/particle_cloud', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY
+[rviz2-8] [INFO] [1795591486.641934906] [rviz2]: Trying to create a map of size 68 x 60 using 1 swatches
+[rviz2-8] [ERROR] [1795591486.660352714] [rviz2]: rviz/glsl120/indexed_8bit_image.vert
+[rviz2-8] rviz/glsl120/indexed_8bit_image.frag
+[rviz2-8]  GLSL link result : 
+[rviz2-8] active samplers with a different type refer to the same texture image unit

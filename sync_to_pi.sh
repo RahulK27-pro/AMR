@@ -37,6 +37,13 @@ rsync -avz \
     --exclude='__pycache__' \
     "$SCRIPT_DIR/src/" "amr@$PI_IP:~/AMR/src/"
 
+rsync -avz \
+    "$SCRIPT_DIR/start_hardware.sh" \
+    "$SCRIPT_DIR/env_hardware.sh" \
+    "$SCRIPT_DIR/teleop_hardware.sh" \
+    "$SCRIPT_DIR/verify_hardware_topics.sh" \
+    "amr@$PI_IP:~/AMR/"
+
 echo ""
 echo "=================================================================="
 echo "  ✅ Source files synced successfully!"

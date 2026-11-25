@@ -1,0 +1,264 @@
+[INFO] [launch]: All log files can be found below /home/rahul/.ros/log/2026-11-25-08-43-30-689370-Rahul-1651
+[INFO] [launch]: Default logging verbosity is set to INFO
+========================================================================
+  [AMR PHYSICAL HARDWARE NAVIGATION SESSION]
+  Active Map          : prakash_room (/home/rahul/AMR/AMR-main/maps/prakash_room.yaml)
+  Roadmap Graph       : /home/rahul/AMR/AMR-main/maps/prakash_room_graph.json
+  Max Linear Speed    : 0.13 m/s (Calibrated Moving Crawl)
+  Max Angular Speed   : 0.40 rad/s (~23 deg/s)
+  Cruise Speed        : 0.10 m/s
+  Lookahead Distance  : 0.25 m
+  Auto-Localizer      : ZERO-PRIOR CORRELATIVE SCAN MATCHER (ACTIVE)
+                        Auto-detects robot position anywhere on startup!
+  Local Controller    : 10 Hz Vectorized MPPI (route_runner)
+  Behavior Tree       : Enabled=False
+  RViz Display        : Enabled=True
+========================================================================
+[INFO] [run_logger-1]: process started with pid [1661]
+[run_logger-1] [INFO] [1795596211.416573373] [run_logger]: [RUN_LOGGER] Telemetry active. Logging to /home/rahul/AMR/AMR-main/run_logs/navigation_run_20261125_084331.csv
+[INFO] [map_server-2]: process started with pid [1680]
+[INFO] [amcl-3]: process started with pid [1681]
+[INFO] [lifecycle_manager-4]: process started with pid [1682]
+[lifecycle_manager-4] [INFO] [1795596212.064920015] [lifecycle_manager_localization]: Creating
+[lifecycle_manager-4] [INFO] [1795596212.076325879] [lifecycle_manager_localization]: [34m[1mCreating and initializing lifecycle service clients[0m[0m
+[amcl-3] [INFO] [1795596212.123048663] [amcl]: 
+[amcl-3] 	amcl lifecycle node launched. 
+[amcl-3] 	Waiting on external lifecycle transitions to activate
+[amcl-3] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[amcl-3] [INFO] [1795596212.125861881] [amcl]: Creating
+[lifecycle_manager-4] [INFO] [1795596212.168065425] [lifecycle_manager_localization]: [34m[1mStarting managed nodes bringup...[0m[0m
+[lifecycle_manager-4] [INFO] [1795596212.168142124] [lifecycle_manager_localization]: [34m[1mConfiguring map_server[0m[0m
+[map_server-2] [INFO] [1795596212.168338128] [map_server]: 
+[map_server-2] 	map_server lifecycle node launched. 
+[map_server-2] 	Waiting on external lifecycle transitions to activate
+[map_server-2] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[map_server-2] [INFO] [1795596212.168409021] [map_server]: Creating
+[map_server-2] [INFO] [1795596212.168804846] [map_server]: Configuring
+[map_server-2] [INFO] [1795596212.168872870] [map_io]: Loading yaml file: /home/rahul/AMR/AMR-main/maps/prakash_room.yaml
+[map_server-2] [INFO] [1795596212.169911264] [map_io]: resolution: 0.05
+[map_server-2] [INFO] [1795596212.169953741] [map_io]: origin[0]: -2.121
+[map_server-2] [INFO] [1795596212.169981896] [map_io]: origin[1]: -1.763
+[map_server-2] [INFO] [1795596212.169987252] [map_io]: origin[2]: 0
+[map_server-2] [INFO] [1795596212.169990484] [map_io]: free_thresh: 0.196
+[map_server-2] [INFO] [1795596212.169993045] [map_io]: occupied_thresh: 0.65
+[map_server-2] [INFO] [1795596212.169997433] [map_io]: mode: trinary
+[map_server-2] [INFO] [1795596212.170000702] [map_io]: negate: 0
+[map_server-2] [INFO] [1795596212.173968815] [map_io]: Loading image_file: /home/rahul/AMR/AMR-main/maps/prakash_room.pgm
+[map_server-2] [INFO] [1795596212.175348605] [map_io]: Read map /home/rahul/AMR/AMR-main/maps/prakash_room.pgm: 68 X 60 map @ 0.05 m/cell
+[lifecycle_manager-4] [INFO] [1795596212.181625374] [lifecycle_manager_localization]: [34m[1mConfiguring amcl[0m[0m
+[amcl-3] [INFO] [1795596212.181905865] [amcl]: Configuring
+[amcl-3] [INFO] [1795596212.182002558] [amcl]: initTransforms
+[amcl-3] [INFO] [1795596212.191606022] [amcl]: initPubSub
+[amcl-3] [INFO] [1795596212.198401508] [amcl]: Subscribed to map topic.
+[lifecycle_manager-4] [INFO] [1795596212.203160209] [lifecycle_manager_localization]: [34m[1mActivating map_server[0m[0m
+[map_server-2] [INFO] [1795596212.203391893] [map_server]: Activating
+[map_server-2] [INFO] [1795596212.203568839] [map_server]: Creating bond (map_server) to lifecycle manager.
+[amcl-3] [INFO] [1795596212.203722512] [amcl]: Received a 68 X 60 map @ 0.050 m/pix
+[lifecycle_manager-4] [INFO] [1795596212.206588356] [lifecycle_manager_localization]: [34m[1mActivating amcl[0m[0m
+[amcl-3] [INFO] [1795596212.206800074] [amcl]: Activating
+[amcl-3] [INFO] [1795596212.206831258] [amcl]: Creating bond (amcl) to lifecycle manager.
+[lifecycle_manager-4] [INFO] [1795596212.208387132] [lifecycle_manager_localization]: [34m[1mManaged nodes are active[0m[0m
+[INFO] [auto_localizer-5]: process started with pid [1736]
+[auto_localizer-5] [INFO] [1795596213.592768593] [auto_localizer]: [AUTO_LOCALIZE] Initialized likelihood field from prakash_room.pgm (68x60, res=0.05m, 606 candidate poses).
+[auto_localizer-5] [INFO] [1795596213.593489789] [auto_localizer]: AMR Zero-Prior Global Auto-Localizer Active! Listening for LiDAR scan to auto-estimate arbitrary starting pose...
+[auto_localizer-5] [INFO] [1795596213.595010021] [auto_localizer]: [AUTO_LOCALIZE] Updated likelihood field from /map topic (68x60).
+[INFO] [route_runner-6]: process started with pid [1760]
+[INFO] [graph_visualizer-7]: process started with pid [1771]
+[route_runner-6] [INFO] [1795596215.015504266] [route_runner]: [MAP_MASK] Loaded static environment mask from prakash_room.pgm (68x60, res=0.05m, origin=(-2.12, -1.76)).
+[route_runner-6] [INFO] [1795596215.043285386] [route_runner]: Route Runner Active with KD-Tree (21 nodes), Proactive Detour & Active Reverse Escape.
+[route_runner-6] [INFO] [1795596215.044968394] [route_runner]: [MAP_MASK] Updated static wall mask from /map topic (68x60).
+[INFO] [rviz2-8]: process started with pid [1792]
+[graph_visualizer-7] [INFO] [1795596215.463281078] [graph_visualizer]: Graph Visualizer Active (21 nodes, 180 edges). Publishing batch SPHERE_LIST and LINE_LIST.
+[rviz2-8] [INFO] [1795596216.193227473] [rviz2]: Stereo is NOT SUPPORTED
+[rviz2-8] [INFO] [1795596216.193393159] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+[rviz2-8] [INFO] [1795596216.262768125] [rviz2]: Stereo is NOT SUPPORTED
+[amcl-3] [WARN] [1795596216.437122058] [amcl]: New subscription discovered on topic '/particle_cloud', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY
+[rviz2-8] [INFO] [1795596216.683075348] [rviz2]: Trying to create a map of size 68 x 60 using 1 swatches
+[rviz2-8] [ERROR] [1795596216.704327436] [rviz2]: rviz/glsl120/indexed_8bit_image.vert
+[rviz2-8] rviz/glsl120/indexed_8bit_image.frag
+[rviz2-8]  GLSL link result : 
+[rviz2-8] active samplers with a different type refer to the same texture image unit
+[amcl-3] [INFO] [1795596219.513716498] [amcl]: Message Filter dropping message: frame 'laser_frame' at time 1795596217.638 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[amcl-3] [INFO] [1795596223.676140382] [amcl]: Message Filter dropping message: frame 'laser_frame' at time 1795596219.586 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[amcl-3] [INFO] [1795596227.166427395] [amcl]: Message Filter dropping message: frame 'laser_frame' at time 1795596223.993 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[amcl-3] [INFO] [1795596230.176222418] [amcl]: createLaserObject
+[amcl-3] [WARN] [1795596230.187049146] [amcl]: AMCL cannot publish a pose or update the transform. Please set the initial pose...
+[rviz2-8] [INFO] [1795596230.477811974] [rviz2]: Message Filter dropping message: frame 'imu_link' at time 1795596228.538 for reason 'discarding message because the queue is full'
+[rviz2-8] [INFO] [1795596230.477948216] [rviz2]: Message Filter dropping message: frame 'imu_link' at time 1795596228.538 for reason 'discarding message because the queue is full'
+[amcl-3] [INFO] [1795596230.990794619] [amcl]: initialPoseReceived
+[amcl-3] [WARN] [1795596230.991603073] [amcl]: Failed to transform initial pose in time (Lookup would require extrapolation into the future.  Requested time 1795596230.990897 but the latest data is at time 1795596230.688068, when looking up transform from frame [base_link] to frame [odom])
+[amcl-3] [INFO] [1795596230.991679432] [amcl]: Setting pose (1795596230.991679): -0.021 0.054 -0.058
+[auto_localizer-5] [INFO] [1795596230.993960907] [auto_localizer]: ========================================================================
+[auto_localizer-5] [INFO] [1795596230.997117901] [auto_localizer]: [AUTO_LOCALIZE] ✅ GLOBAL LOCALIZATION SOLVED! Physical Pose: X=-0.021m, Y=0.054m, Yaw=356.7° | Confidence Score=0.856 | Solved in 312.2ms
+[auto_localizer-5] [INFO] [1795596230.998698572] [auto_localizer]:   Initial pose published (TRANSIENT_LOCAL latched). AMCL filter active.
+[amcl-3] [INFO] [1795596230.995170068] [amcl]: Requesting no-motion update
+[amcl-3] [INFO] [1795596230.995405539] [amcl]: initialPoseReceived
+[amcl-3] [WARN] [1795596230.995492208] [amcl]: Failed to transform initial pose in time (Lookup would require extrapolation into the future.  Requested time 1795596230.995433 but the latest data is at time 1795596230.688068, when looking up transform from frame [base_link] to frame [odom])
+[amcl-3] [INFO] [1795596230.995509085] [amcl]: Setting pose (1795596230.995509): -0.021 0.054 -0.058
+[auto_localizer-5] [INFO] [1795596231.000198064] [auto_localizer]: ========================================================================
+[rviz2-8] [INFO] [1795596231.149222959] [rviz2]: Message Filter dropping message: frame 'laser_frame' at time 1795596227.552 for reason 'discarding message because the queue is full'
+[auto_localizer-5] [INFO] [1795596231.294952369] [auto_localizer]: [AUTO_LOCALIZE] 🎉 AMCL active pose confirmed: X=-0.03m, Y=0.06m
+[route_runner-6] [INFO] [1795596232.537428563] [route_runner]: Localization Active! Received map -> base_link TF transform.
+[route_runner-6] [INFO] [1795596232.542891313] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.73, -0.08) | Vel=(-0.10, 0.80) Speed=0.80m/s | DistToRobot=0.72m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596233.662600870] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.76, -0.11) | Vel=(-0.21, 0.21) Speed=0.30m/s | DistToRobot=0.76m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596234.684843752] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.74, -0.08) | Vel=(-0.30, 0.95) Speed=0.99m/s | DistToRobot=0.73m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596235.894457882] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.76, -0.07) | Vel=(-0.14, 0.57) Speed=0.59m/s | DistToRobot=0.74m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596237.040910891] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.75, -0.07) | Vel=(0.11, 0.19) Speed=0.22m/s | DistToRobot=0.74m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596238.406593858] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.76, -0.07) | Vel=(-0.16, 0.19) Speed=0.25m/s | DistToRobot=0.75m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596240.206446703] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.76, -0.05) | Vel=(-0.09, 0.31) Speed=0.32m/s | DistToRobot=0.74m | RobotPose=(-0.03, 0.08)
+[rviz2-8] [INFO] [1795596240.210919809] [rviz2]: Message Filter dropping message: frame 'odom' at time 1795596230.608 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[rviz2-8] [INFO] [1795596240.541537344] [rviz2]: Message Filter dropping message: frame 'imu_link' at time 1795596230.778 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[rviz2-8] [INFO] [1795596240.541870959] [rviz2]: Message Filter dropping message: frame 'imu_link' at time 1795596230.778 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[route_runner-6] [INFO] [1795596241.258516090] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.75, -0.06) | Vel=(-0.09, 0.53) Speed=0.54m/s | DistToRobot=0.73m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596242.333145854] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.75, -0.07) | Vel=(-0.57, 1.70) Speed=1.79m/s | DistToRobot=0.74m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596244.253308109] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.74, -0.08) | Vel=(-0.04, 0.31) Speed=0.31m/s | DistToRobot=0.73m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596245.627133181] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.77, -0.10) | Vel=(-0.22, 0.12) Speed=0.26m/s | DistToRobot=0.76m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596246.812615679] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.74, -0.08) | Vel=(-0.08, 0.30) Speed=0.31m/s | DistToRobot=0.73m | RobotPose=(-0.03, 0.08)
+[route_runner-6] [INFO] [1795596247.966011626] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #1 at map(-0.77, -0.10) | Vel=(-0.24, 0.24) Speed=0.34m/s | DistToRobot=0.76m | RobotPose=(-0.03, 0.08)
+[rviz2-8] [INFO] [1795596248.056321511] [rviz2]: Setting goal pose: Frame:map, Position(-1.33938, -1.23626, 0), Orientation(0, 0, 0, 1) = Angle: 0
+[route_runner-6] [INFO] [1795596248.058450395] [route_runner]: Received Goal: (-1.34, -1.24)
+[route_runner-6] [INFO] [1795596248.064716010] [route_runner]: Snapping to nodes: Start=N6, Target=N18
+[route_runner-6] [INFO] [1795596248.066992087] [route_runner]: Active Plan: ['N6', 'N10', 'N18'] (14 waypoints, ending at destination (-1.34, -1.24))
+[route_runner-6] [INFO] [1795596248.159188893] [route_runner]: [NODE TRACK] Reached Node N6 (1/3 in plan) at (-0.03, 0.08), yaw=-3.0°
+[route_runner-6] [INFO] [1795596248.161807942] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.03, 0.08, -3.0°).
+[route_runner-6] [INFO] [1795596248.174942180] [route_runner]: [TELEMETRY] Pose=(-0.03, 0.08, -3.0°) | Node=N6 | GoalDist=1.86m | Cmd=(v=0.00m/s, w=-0.37rad/s) | MinObs=0.43m | DynObs=1 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596248.182458021] [route_runner]: [TURN TELEMETRY] Node=N6 | Pose=(-0.03, 0.08, -3.0°) | Wpt=3/14 (-0.25, -0.15) | HeadingErr=132.7° | Cmd=(v=0.00, w=-0.37) | MinObs=0.43m
+[route_runner-6] [INFO] [1795596248.247453787] [route_runner]: [BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at (-0.72, -0.16) [dist_along=0.70m, dist_robot=0.73m]. Re-planning route via connected roadmap nodes...
+[route_runner-6] [INFO] [1795596248.251171121] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (-0.72, -0.16) [R_safe=0.45m]: ['N6', 'N16', 'N18'] (14 waypoints, ending at (-1.34, -1.24)). Resuming navigation.
+[route_runner-6] [INFO] [1795596248.252516943] [route_runner]: [NODE TRACK] Reached Node N6 (1/3 in plan) at (-0.03, 0.08), yaw=-3.4°
+[route_runner-6] [INFO] [1795596249.058139182] [route_runner]: [TURN TELEMETRY] Node=N6 | Pose=(0.01, 0.06, -33.1°) | Wpt=3/14 (-0.20, -0.17) | HeadingErr=100.1° | Cmd=(v=0.00, w=-0.37) | MinObs=0.43m
+[route_runner-6] [INFO] [1795596249.756918493] [route_runner]: [TELEMETRY] Pose=(0.03, 0.05, -59.1°) | Node=N6 | GoalDist=1.88m | Cmd=(v=0.00m/s, w=-0.37rad/s) | MinObs=0.43m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596249.952859317] [route_runner]: [TURN TELEMETRY] Node=N6 | Pose=(0.04, 0.05, -64.9°) | Wpt=3/14 (-0.20, -0.17) | HeadingErr=72.1° | Cmd=(v=0.00, w=-0.37) | MinObs=0.43m
+[route_runner-6] [INFO] [1795596250.750398281] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(0.04, 0.05, -85.5°).
+[route_runner-6] [INFO] [1795596250.762033179] [route_runner]: [TURN TELEMETRY] Node=N6 | Pose=(0.04, 0.05, -85.5°) | Wpt=3/14 (-0.20, -0.17) | HeadingErr=50.7° | Cmd=(v=0.00, w=-0.37) | MinObs=0.43m
+[route_runner-6] [INFO] [1795596251.355581769] [route_runner]: [TELEMETRY] Pose=(0.05, 0.06, -105.6°) | Node=N6 | GoalDist=1.90m | Cmd=(v=0.00m/s, w=-0.37rad/s) | MinObs=0.44m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596251.657256423] [route_runner]: [TURN TELEMETRY] Node=N6 | Pose=(0.06, 0.06, -114.0°) | Wpt=3/14 (-0.20, -0.17) | HeadingErr=25.0° | Cmd=(v=0.00, w=-0.37) | MinObs=0.44m
+[amcl-3] [INFO] [1795596251.799702730] [amcl]: Message Filter dropping message: frame 'laser_frame' at time 1795596252.366 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[route_runner-6] [INFO] [1795596251.945222694] [route_runner]: [BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at (-0.63, -0.30) [dist_along=0.67m, dist_robot=0.78m]. Re-planning route via connected roadmap nodes...
+[route_runner-6] [INFO] [1795596251.947627553] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (-0.63, -0.30) [R_safe=0.41m]: ['N6', 'N11', 'N16', 'N18'] (14 waypoints, ending at (-1.34, -1.24)). Resuming navigation.
+[route_runner-6] [INFO] [1795596251.948866493] [route_runner]: [NODE TRACK] Reached Node N6 (1/4 in plan) at (0.07, 0.06), yaw=-121.8°
+[route_runner-6] [INFO] [1795596252.858313685] [route_runner]: [TELEMETRY] Pose=(0.02, 0.00, -119.7°) | Node=N6 | GoalDist=1.84m | Cmd=(v=0.08m/s, w=-0.09rad/s) | MinObs=0.49m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596253.845937627] [route_runner]: [NODE TRACK] Reached Node N11 (2/4 in plan) at (-0.03, -0.08), yaw=-121.5°
+[route_runner-6] [INFO] [1795596254.056938532] [route_runner]: [TURN TELEMETRY] Node=N6 | Pose=(-0.04, -0.10, -122.6°) | Wpt=4/14 (-0.12, -0.41) | HeadingErr=18.1° | Cmd=(v=0.09, w=0.36) | MinObs=0.57m
+[route_runner-6] [INFO] [1795596254.453331722] [route_runner]: [TELEMETRY] Pose=(-0.06, -0.14, -121.6°) | Node=N6 | GoalDist=1.68m | Cmd=(v=0.10m/s, w=0.13rad/s) | MinObs=0.56m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596255.545290784] [route_runner]: [BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at (-0.67, -0.31) [dist_along=0.58m, dist_robot=0.56m]. Re-planning route via connected roadmap nodes...
+[route_runner-6] [INFO] [1795596255.551172651] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (-0.67, -0.31) [R_safe=0.45m]: ['N11', 'N16', 'N18'] (12 waypoints, ending at (-1.34, -1.24)). Resuming navigation.
+[route_runner-6] [INFO] [1795596255.555792845] [route_runner]: [NODE TRACK] Reached Node N11 (1/3 in plan) at (-0.12, -0.23), yaw=-116.0°
+[route_runner-6] [INFO] [1795596255.953673823] [route_runner]: [TELEMETRY] Pose=(-0.14, -0.25, -115.2°) | Node=N11 | GoalDist=1.55m | Cmd=(v=0.09m/s, w=0.08rad/s) | MinObs=0.45m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596256.513198172] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #18 at map(-0.64, -0.10) | Vel=(0.46, 1.25) Speed=1.33m/s | DistToRobot=0.52m | RobotPose=(-0.16, -0.30)
+[route_runner-6] [INFO] [1795596256.549534936] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.16, -0.30, -112.8°).
+[route_runner-6] [INFO] [1795596256.551306643] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.23 rad/s (dist=0.52m)
+[route_runner-6] [INFO] [1795596258.063492023] [route_runner]: [TELEMETRY] Pose=(-0.18, -0.34, -108.5°) | Node=N11 | GoalDist=1.47m | Cmd=(v=0.09m/s, w=0.16rad/s) | MinObs=0.36m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596258.078288376] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #19 at map(-0.63, -0.09) | Vel=(0.12, 0.36) Speed=0.38m/s | DistToRobot=0.52m | RobotPose=(-0.18, -0.34)
+[route_runner-6] [INFO] [1795596258.148535977] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.18, -0.35, -107.3°).
+[route_runner-6] [INFO] [1795596258.363589340] [route_runner]: [TURN TELEMETRY] Node=N11 | Pose=(-0.19, -0.37, -105.7°) | Wpt=4/12 (-0.39, -0.68) | HeadingErr=16.5° | Cmd=(v=0.08, w=-0.34) | MinObs=0.34m
+[route_runner-6] [INFO] [1795596259.150418892] [route_runner]: [BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at (-0.68, -0.33) [dist_along=0.38m, dist_robot=0.48m]. Re-planning route via connected roadmap nodes...
+[route_runner-6] [INFO] [1795596259.154543921] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (-0.68, -0.33) [R_safe=0.43m]: ['N11', 'N16', 'N18'] (10 waypoints, ending at (-1.34, -1.24)). Resuming navigation.
+[route_runner-6] [INFO] [1795596259.156167971] [route_runner]: [NODE TRACK] Reached Node N11 (1/3 in plan) at (-0.21, -0.44), yaw=-110.9°
+[route_runner-6] [INFO] [1795596259.355417489] [route_runner]: [TURN TELEMETRY] Node=N11 | Pose=(-0.22, -0.46, -113.8°) | Wpt=3/10 (-0.52, -0.81) | HeadingErr=16.4° | Cmd=(v=0.08, w=-0.33) | MinObs=0.27m
+[route_runner-6] [INFO] [1795596259.653186461] [route_runner]: [TELEMETRY] Pose=(-0.24, -0.48, -117.7°) | Node=N11 | GoalDist=1.33m | Cmd=(v=0.08m/s, w=-0.27rad/s) | MinObs=0.26m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596260.647605841] [route_runner]: [NODE TRACK] Reached Node N16 (2/3 in plan) at (-0.30, -0.56), yaw=-129.3°
+[route_runner-6] [INFO] [1795596261.259645405] [route_runner]: [TELEMETRY] Pose=(-0.34, -0.60, -131.6°) | Node=N10 | GoalDist=1.19m | Cmd=(v=0.11m/s, w=-0.16rad/s) | MinObs=0.18m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596262.859493296] [route_runner]: [TELEMETRY] Pose=(-0.47, -0.71, -139.2°) | Node=N16 | GoalDist=1.02m | Cmd=(v=0.10m/s, w=0.01rad/s) | MinObs=0.19m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596264.461334851] [route_runner]: [TELEMETRY] Pose=(-0.60, -0.81, -144.1°) | Node=N16 | GoalDist=0.85m | Cmd=(v=0.10m/s, w=-0.02rad/s) | MinObs=0.30m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596266.053146122] [route_runner]: [TELEMETRY] Pose=(-0.76, -0.90, -148.5°) | Node=N15 | GoalDist=0.67m | Cmd=(v=0.10m/s, w=0.03rad/s) | MinObs=0.41m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596267.657269062] [route_runner]: [TELEMETRY] Pose=(-0.92, -0.98, -149.3°) | Node=N15 | GoalDist=0.49m | Cmd=(v=0.10m/s, w=0.01rad/s) | MinObs=0.45m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596268.649004495] [route_runner]: [NODE TRACK] Reached Node N18 (3/3 in plan) at (-1.03, -1.03), yaw=-148.9°
+[route_runner-6] [INFO] [1795596269.146693219] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-1.08, -1.05, -148.3°).
+[route_runner-6] [INFO] [1795596269.253327284] [route_runner]: [TELEMETRY] Pose=(-1.09, -1.06, -148.2°) | Node=N19 | GoalDist=0.31m | Cmd=(v=0.09m/s, w=0.04rad/s) | MinObs=0.37m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596270.154939325] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-1.17, -1.10, -144.8°).
+[route_runner-6] [INFO] [1795596270.757721581] [route_runner]: [TELEMETRY] Pose=(-1.23, -1.12, -142.4°) | Node=N18 | GoalDist=0.16m | Cmd=(v=0.05m/s, w=0.15rad/s) | MinObs=0.31m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596271.246124119] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-1.25, -1.14, -138.7°).
+[route_runner-6] [INFO] [1795596271.948098340] [route_runner]: [BRAIN: GOAL_ARRIVAL] FINAL DESTINATION REACHED at (-1.30, -1.17)! Target was (-1.34, -1.24) [Arrival Error: 0.079m]. Brain commanded full stop (v=0, w=0). Mission complete (1 goal(s) visited).
+[rviz2-8] [INFO] [1795596282.488204150] [rviz2]: Setting goal pose: Frame:map, Position(0.22317, -0.00348234, 0), Orientation(0, 0, 0, 1) = Angle: 0
+[route_runner-6] [INFO] [1795596282.490428170] [route_runner]: Received Goal: (0.22, -0.00)
+[route_runner-6] [INFO] [1795596282.491744774] [route_runner]: Snapping to nodes: Start=N18, Target=N7
+[route_runner-6] [INFO] [1795596282.492941932] [route_runner]: Active Plan: ['N18', 'N7'] (15 waypoints, ending at destination (0.22, -0.00))
+[route_runner-6] [INFO] [1795596282.560598795] [route_runner]: [BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at (-0.69, -0.43) [dist_along=0.92m, dist_robot=0.98m]. Re-planning route via connected roadmap nodes...
+[route_runner-6] [INFO] [1795596282.565130618] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (-0.69, -0.43) [R_safe=0.45m]: ['N18', 'N17', 'N7'] (15 waypoints, ending at (0.22, -0.00)). Resuming navigation.
+[route_runner-6] [INFO] [1795596282.567044984] [route_runner]: [NODE TRACK] Reached Node N18 (1/3 in plan) at (-1.32, -1.17), yaw=-131.2°
+[route_runner-6] [INFO] [1795596282.602978544] [route_runner]: [TELEMETRY] Pose=(-1.32, -1.17, -131.2°) | Node=N18 | GoalDist=1.94m | Cmd=(v=0.00m/s, w=0.38rad/s) | MinObs=0.23m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596282.616014359] [route_runner]: [TURN TELEMETRY] Node=N18 | Pose=(-1.32, -1.17, -131.2°) | Wpt=2/15 (-1.02, -1.11) | HeadingErr=142.5° | Cmd=(v=0.00, w=0.38) | MinObs=0.23m
+[route_runner-6] [INFO] [1795596283.453333032] [route_runner]: [TURN TELEMETRY] Node=N18 | Pose=(-1.35, -1.18, -97.9°) | Wpt=2/15 (-1.02, -1.11) | HeadingErr=108.7° | Cmd=(v=0.00, w=0.37) | MinObs=0.23m
+[route_runner-6] [INFO] [1795596284.154415053] [route_runner]: [TELEMETRY] Pose=(-1.36, -1.16, -75.5°) | Node=N18 | GoalDist=1.97m | Cmd=(v=0.00m/s, w=0.36rad/s) | MinObs=0.22m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596284.255643249] [route_runner]: [TURN TELEMETRY] Node=N18 | Pose=(-1.36, -1.16, -70.8°) | Wpt=2/15 (-1.02, -1.11) | HeadingErr=79.0° | Cmd=(v=0.00, w=0.37) | MinObs=0.22m
+[route_runner-6] [INFO] [1795596285.153240675] [route_runner]: [TURN TELEMETRY] Node=N18 | Pose=(-1.38, -1.14, -43.8°) | Wpt=2/15 (-1.02, -1.11) | HeadingErr=47.4° | Cmd=(v=0.00, w=0.37) | MinObs=0.21m
+[route_runner-6] [INFO] [1795596285.659824001] [route_runner]: [TELEMETRY] Pose=(-1.38, -1.12, -32.6°) | Node=N18 | GoalDist=1.96m | Cmd=(v=0.00m/s, w=0.37rad/s) | MinObs=0.21m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596286.067587191] [route_runner]: [TURN TELEMETRY] Node=N18 | Pose=(-1.40, -1.11, -20.4°) | Wpt=2/15 (-1.02, -1.11) | HeadingErr=19.4° | Cmd=(v=0.00, w=0.37) | MinObs=0.21m
+[route_runner-6] [INFO] [1795596287.254796316] [route_runner]: [TELEMETRY] Pose=(-1.33, -1.12, -10.0°) | Node=N18 | GoalDist=1.91m | Cmd=(v=0.09m/s, w=0.23rad/s) | MinObs=0.28m | DynObs=0 | State=NAVIGATING
+[amcl-3] [INFO] [1795596287.966263678] [amcl]: Message Filter dropping message: frame 'laser_frame' at time 1795596288.818 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[route_runner-6] [INFO] [1795596288.757314855] [route_runner]: [TELEMETRY] Pose=(-1.20, -1.13, 3.7°) | Node=N18 | GoalDist=1.81m | Cmd=(v=0.09m/s, w=0.16rad/s) | MinObs=0.43m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596290.265501440] [route_runner]: [TELEMETRY] Pose=(-1.05, -1.11, 13.4°) | Node=N19 | GoalDist=1.69m | Cmd=(v=0.09m/s, w=0.03rad/s) | MinObs=0.54m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596291.776614753] [route_runner]: [TELEMETRY] Pose=(-1.01, -1.10, 15.7°) | Node=N19 | GoalDist=1.65m | Cmd=(v=0.10m/s, w=0.02rad/s) | MinObs=0.53m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596293.354447531] [route_runner]: [TELEMETRY] Pose=(-0.86, -1.06, 18.2°) | Node=N19 | GoalDist=1.52m | Cmd=(v=0.10m/s, w=0.00rad/s) | MinObs=0.54m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596294.950393457] [route_runner]: [TELEMETRY] Pose=(-0.72, -1.01, 19.7°) | Node=N20 | GoalDist=1.38m | Cmd=(v=0.10m/s, w=-0.03rad/s) | MinObs=0.54m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596296.146893072] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.60, -0.98, 19.1°).
+[route_runner-6] [INFO] [1795596296.457916975] [route_runner]: [TELEMETRY] Pose=(-0.58, -0.97, 18.8°) | Node=N16 | GoalDist=1.25m | Cmd=(v=0.09m/s, w=0.00rad/s) | MinObs=0.41m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596297.245200031] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.51, -0.95, 19.4°).
+[route_runner-6] [INFO] [1795596297.550306502] [route_runner]: [BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at (-0.12, -0.65) [dist_along=0.47m, dist_robot=0.46m]. Re-planning route via connected roadmap nodes...
+[route_runner-6] [INFO] [1795596297.554522833] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (-0.12, -0.65) [R_safe=0.39m]: ['N16', 'N10', 'N6', 'N7'] (11 waypoints, ending at (0.22, -0.00)). Resuming navigation.
+[route_runner-6] [INFO] [1795596297.556324514] [route_runner]: [NODE TRACK] Reached Node N16 (1/4 in plan) at (-0.48, -0.94), yaw=19.2°
+[route_runner-6] [INFO] [1795596297.568145759] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.48, -0.94, 19.2°) | Wpt=3/11 (-0.52, -0.61) | HeadingErr=77.9° | Cmd=(v=0.00, w=0.37) | MinObs=0.30m
+[route_runner-6] [INFO] [1795596297.953050564] [route_runner]: [TELEMETRY] Pose=(-0.48, -0.93, 28.8°) | Node=N16 | GoalDist=1.17m | Cmd=(v=0.00m/s, w=0.37rad/s) | MinObs=0.29m | DynObs=0 | State=NAVIGATING
+[amcl-3] [INFO] [1795596298.219270367] [amcl]: Message Filter dropping message: frame 'laser_frame' at time 1795596298.032 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[route_runner-6] [INFO] [1795596298.455520362] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.46, -0.94, 45.5°) | Wpt=3/11 (-0.52, -0.61) | HeadingErr=54.4° | Cmd=(v=0.00, w=0.37) | MinObs=0.30m
+[route_runner-6] [INFO] [1795596298.549433995] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.46, -0.94, 48.1°).
+[route_runner-6] [INFO] [1795596299.259006524] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.45, -0.95, 68.5°) | Wpt=3/11 (-0.52, -0.61) | HeadingErr=32.8° | Cmd=(v=0.00, w=0.38) | MinObs=0.29m
+[route_runner-6] [INFO] [1795596299.551925906] [route_runner]: [TELEMETRY] Pose=(-0.45, -0.95, 74.3°) | Node=N16 | GoalDist=1.16m | Cmd=(v=0.00m/s, w=0.37rad/s) | MinObs=0.29m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596299.746156358] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.46, -0.95, 82.2°).
+[route_runner-6] [INFO] [1795596300.750737486] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.46, -0.89, 91.9°).
+[route_runner-6] [INFO] [1795596301.151203628] [route_runner]: [TELEMETRY] Pose=(-0.47, -0.86, 94.9°) | Node=N16 | GoalDist=1.10m | Cmd=(v=0.08m/s, w=0.15rad/s) | MinObs=0.32m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596301.244332385] [route_runner]: [BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at (-0.44, -0.40) [dist_along=0.46m, dist_robot=0.45m]. Re-planning route via connected roadmap nodes...
+[route_runner-6] [INFO] [1795596301.246393209] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (-0.44, -0.40) [R_safe=0.45m]: ['N15', 'N19', 'N17', 'N7'] (18 waypoints, ending at (0.22, -0.00)). Resuming navigation.
+[route_runner-6] [INFO] [1795596301.247422416] [route_runner]: [NODE TRACK] Reached Node N17 (3/4 in plan) at (-0.47, -0.86), yaw=95.3°
+[route_runner-6] [INFO] [1795596301.253821777] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.47, -0.86, 95.3°) | Wpt=3/18 (-0.81, -0.82) | HeadingErr=79.2° | Cmd=(v=0.00, w=0.38) | MinObs=0.32m
+[route_runner-6] [INFO] [1795596302.151884729] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.46, -0.86, 126.1°) | Wpt=3/18 (-0.81, -0.82) | HeadingErr=47.8° | Cmd=(v=0.00, w=0.38) | MinObs=0.30m
+[route_runner-6] [INFO] [1795596302.749533723] [route_runner]: [TELEMETRY] Pose=(-0.46, -0.87, 145.0°) | Node=N16 | GoalDist=1.10m | Cmd=(v=0.00m/s, w=0.36rad/s) | MinObs=0.30m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596302.952157131] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.46, -0.88, 149.6°) | Wpt=3/18 (-0.81, -0.82) | HeadingErr=21.6° | Cmd=(v=0.00, w=0.37) | MinObs=0.30m
+[route_runner-6] [INFO] [1795596304.253663335] [route_runner]: [TELEMETRY] Pose=(-0.53, -0.86, 163.4°) | Node=N16 | GoalDist=1.15m | Cmd=(v=0.09m/s, w=0.18rad/s) | MinObs=0.37m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596304.644724810] [route_runner]: [NODE TRACK] Reached Node N15 (1/4 in plan) at (-0.58, -0.85), yaw=165.6°
+[route_runner-6] [INFO] [1795596305.351846118] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.64, -0.84, 170.7°) | Wpt=5/18 (-0.92, -1.01) | HeadingErr=41.2° | Cmd=(v=0.05, w=0.38) | MinObs=0.29m
+[route_runner-6] [INFO] [1795596305.756803651] [route_runner]: [TELEMETRY] Pose=(-0.66, -0.84, 175.2°) | Node=N16 | GoalDist=1.22m | Cmd=(v=0.05m/s, w=0.37rad/s) | MinObs=0.28m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596306.154257307] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.68, -0.84, -175.5°) | Wpt=5/18 (-0.92, -1.01) | HeadingErr=31.5° | Cmd=(v=0.04, w=0.36) | MinObs=0.28m
+[route_runner-6] [INFO] [1795596306.952192753] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.71, -0.84, -157.7°) | Wpt=5/18 (-0.92, -1.01) | HeadingErr=16.3° | Cmd=(v=0.05, w=0.33) | MinObs=0.28m
+[route_runner-6] [INFO] [1795596307.358620078] [route_runner]: [TELEMETRY] Pose=(-0.74, -0.86, -154.3°) | Node=N15 | GoalDist=1.29m | Cmd=(v=0.07m/s, w=0.30rad/s) | MinObs=0.31m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596307.644347932] [route_runner]: Restored graph edges: [('N17', 'N3'), ('N16', 'N6'), ('N13', 'N5'), ('N19', 'N9'), ('N17', 'N9'), ('N6', 'N9'), ('N11', 'N18'), ('N11', 'N15'), ('N20', 'N3'), ('N14', 'N9'), ('N16', 'N19'), ('N20', 'N9'), ('N16', 'N8'), ('N10', 'N18'), ('N10', 'N15'), ('N13', 'N3'), ('N19', 'N4'), ('N18', 'N7'), ('N13', 'N9'), ('N18', 'N6'), ('N14', 'N4'), ('N4', 'N7'), ('N16', 'N17'), ('N20', 'N4'), ('N7', 'N8'), ('N4', 'N6'), ('N10', 'N7'), ('N13', 'N14'), ('N11', 'N19'), ('N1', 'N12'), ('N10', 'N6'), ('N12', 'N8'), ('N16', 'N2'), ('N12', 'N18'), ('N16', 'N9'), ('N13', 'N4'), ('N5', 'N9'), ('N12', 'N15'), ('N11', 'N8'), ('N18', 'N5'), ('N15', 'N7'), ('N1', 'N17'), ('N11', 'N5'), ('N1', 'N10'), ('N15', 'N6'), ('N16', 'N20'), ('N8', 'N9'), ('N10', 'N19'), ('N14', 'N16'), ('N3', 'N7'), ('N10', 'N13'), ('N10', 'N8'), ('N3', 'N6'), ('N10', 'N5'), ('N16', 'N5'), ('N7', 'N9'), ('N16', 'N4'), ('N1', 'N20'), ('N15', 'N8'), ('N10', 'N12'), ('N13', 'N16'), ('N19', 'N7'), ('N18', 'N9'), ('N11', 'N9'), ('N19', 'N6'), ('N10', 'N17'), ('N1', 'N5'), ('N14', 'N7'), ('N10', 'N3'), ('N16', 'N3'), ('N14', 'N6'), ('N10', 'N2'), ('N15', 'N17'), ('N11', 'N14'), ('N12', 'N5'), ('N10', 'N9'), ('N20', 'N6'), ('N18', 'N4'), ('N11', 'N4'), ('N10', 'N20'), ('N15', 'N2'), ('N17', 'N8'), ('N4', 'N5'), ('N1', 'N11'), ('N10', 'N14'), ('N1', 'N9'), ('N1', 'N16'), ('N10', 'N4'), ('N12', 'N3'), ('N20', 'N8'), ('N11', 'N3'), ('N2', 'N9'), ('N12', 'N9'), ('N5', 'N7'), ('N15', 'N5'), ('N15', 'N4'), ('N11', 'N16'), ('N2', 'N20'), ('N5', 'N6'), ('N13', 'N8'), ('N19', 'N2'), ('N14', 'N17'), ('N17', 'N2'), ('N13', 'N15'), ('N3', 'N5'), ('N4', 'N9'), ('N12', 'N14'), ('N10', 'N11'), ('N12', 'N4'), ('N10', 'N16'), ('N15', 'N3'), ('N5', 'N8'), ('N19', 'N5'), ('N16', 'N18'), ('N6', 'N8'), ('N17', 'N5'), ('N15', 'N9'), ('N15', 'N16'), ('N17', 'N4'), ('N14', 'N5'), ('N3', 'N9'), ('N20', 'N5'), ('N1', 'N15'), ('N12', 'N16'), ('N16', 'N7')]
+[route_runner-6] [INFO] [1795596308.152106070] [route_runner]: [NODE TRACK] Reached Node N19 (2/4 in plan) at (-0.79, -0.89), yaw=-145.7°
+[route_runner-6] [INFO] [1795596308.855013021] [route_runner]: [TURN TELEMETRY] Node=N15 | Pose=(-0.85, -0.94, -138.9°) | Wpt=7/18 (-0.76, -1.13) | HeadingErr=73.7° | Cmd=(v=0.00, w=0.37) | MinObs=0.42m
+[route_runner-6] [INFO] [1795596308.960781520] [route_runner]: [TELEMETRY] Pose=(-0.86, -0.94, -136.8°) | Node=N15 | GoalDist=1.43m | Cmd=(v=0.00m/s, w=0.37rad/s) | MinObs=0.65m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596309.760476936] [route_runner]: [TURN TELEMETRY] Node=N15 | Pose=(-0.86, -0.92, -107.6°) | Wpt=7/18 (-0.76, -1.13) | HeadingErr=41.4° | Cmd=(v=0.00, w=0.37) | MinObs=0.41m
+[route_runner-6] [INFO] [1795596310.558286089] [route_runner]: [TELEMETRY] Pose=(-0.84, -0.91, -82.5°) | Node=N15 | GoalDist=1.40m | Cmd=(v=0.09m/s, w=0.27rad/s) | MinObs=0.41m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596312.054327867] [route_runner]: [TURN TELEMETRY] Node=N19 | Pose=(-0.81, -1.03, -74.2°) | Wpt=9/18 (-0.44, -0.97) | HeadingErr=83.6° | Cmd=(v=0.00, w=0.37) | MinObs=0.54m
+[route_runner-6] [INFO] [1795596312.161757601] [route_runner]: [TELEMETRY] Pose=(-0.81, -1.05, -71.9°) | Node=N19 | GoalDist=1.47m | Cmd=(v=0.00m/s, w=0.36rad/s) | MinObs=0.56m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596312.860302009] [route_runner]: [TURN TELEMETRY] Node=N19 | Pose=(-0.81, -1.05, -47.7°) | Wpt=9/18 (-0.44, -0.97) | HeadingErr=59.4° | Cmd=(v=0.00, w=0.37) | MinObs=0.55m
+[route_runner-6] [INFO] [1795596313.762741327] [route_runner]: [TELEMETRY] Pose=(-0.82, -1.04, -16.4°) | Node=N19 | GoalDist=1.47m | Cmd=(v=0.00m/s, w=0.36rad/s) | MinObs=0.56m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596313.765375804] [route_runner]: [TURN TELEMETRY] Node=N19 | Pose=(-0.82, -1.04, -16.4°) | Wpt=9/18 (-0.44, -0.97) | HeadingErr=26.5° | Cmd=(v=0.00, w=0.36) | MinObs=0.56m
+[route_runner-6] [INFO] [1795596315.355511861] [route_runner]: [TELEMETRY] Pose=(-0.70, -1.04, 3.5°) | Node=N20 | GoalDist=1.39m | Cmd=(v=0.10m/s, w=0.33rad/s) | MinObs=0.55m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596315.359430503] [route_runner]: [TURN TELEMETRY] Node=N20 | Pose=(-0.70, -1.04, 3.5°) | Wpt=10/18 (-0.28, -0.89) | HeadingErr=16.2° | Cmd=(v=0.10, w=0.33) | MinObs=0.55m
+[route_runner-6] [INFO] [1795596316.958904959] [route_runner]: [TELEMETRY] Pose=(-0.57, -1.02, 20.0°) | Node=N20 | GoalDist=1.29m | Cmd=(v=0.10m/s, w=0.05rad/s) | MinObs=0.47m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596318.444736270] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.43, -0.96, 25.6°).
+[route_runner-6] [INFO] [1795596318.557366707] [route_runner]: [TELEMETRY] Pose=(-0.43, -0.96, 25.6°) | Node=N16 | GoalDist=1.15m | Cmd=(v=0.09m/s, w=-0.02rad/s) | MinObs=0.31m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596319.447433407] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.35, -0.92, 25.9°).
+[route_runner-6] [INFO] [1795596319.459561328] [route_runner]: [TURN TELEMETRY] Node=N16 | Pose=(-0.35, -0.92, 25.9°) | Wpt=12/18 (-0.04, -0.65) | HeadingErr=15.0° | Cmd=(v=0.08, w=0.30) | MinObs=0.22m
+[route_runner-6] [INFO] [1795596320.159529531] [route_runner]: [TELEMETRY] Pose=(-0.30, -0.89, 33.7°) | Node=N17 | GoalDist=1.03m | Cmd=(v=0.08m/s, w=0.18rad/s) | MinObs=0.18m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596320.448729602] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.28, -0.88, 36.6°).
+[route_runner-6] [INFO] [1795596321.546328108] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.20, -0.81, 44.3°).
+[route_runner-6] [INFO] [1795596321.759332775] [route_runner]: [TELEMETRY] Pose=(-0.19, -0.80, 45.8°) | Node=N17 | GoalDist=0.90m | Cmd=(v=0.10m/s, w=0.17rad/s) | MinObs=0.18m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596322.547389167] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.15, -0.75, 51.2°).
+[route_runner-6] [INFO] [1795596322.646026314] [route_runner]: Restored graph edges: [('N12', 'N19'), ('N17', 'N6'), ('N11', 'N20'), ('N13', 'N18'), ('N20', 'N7'), ('N11', 'N13'), ('N17', 'N19'), ('N13', 'N17'), ('N17', 'N18'), ('N11', 'N12'), ('N12', 'N17'), ('N11', 'N17'), ('N11', 'N7'), ('N11', 'N6'), ('N13', 'N19'), ('N17', 'N7')]
+[amcl-3] [INFO] [1795596322.707263195] [amcl]: Message Filter dropping message: frame 'laser_frame' at time 1795596323.448 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[route_runner-6] [INFO] [1795596323.359699945] [route_runner]: [TELEMETRY] Pose=(-0.09, -0.68, 56.7°) | Node=N17 | GoalDist=0.74m | Cmd=(v=0.10m/s, w=0.06rad/s) | MinObs=0.28m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596326.085468452] [route_runner]: [TELEMETRY] Pose=(-0.02, -0.57, 60.4°) | Node=N11 | GoalDist=0.62m | Cmd=(v=0.10m/s, w=-0.02rad/s) | MinObs=0.38m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596326.145272976] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(-0.01, -0.56, 60.5°).
+[route_runner-6] [INFO] [1795596327.146453887] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(0.03, -0.48, 62.4°).
+[route_runner-6] [INFO] [1795596327.650595475] [route_runner]: [TELEMETRY] Pose=(0.06, -0.44, 62.3°) | Node=N11 | GoalDist=0.47m | Cmd=(v=0.11m/s, w=-0.02rad/s) | MinObs=0.40m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596328.149114519] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(0.08, -0.39, 62.2°).
+[route_runner-6] [INFO] [1795596328.949596888] [route_runner]: [NODE TRACK] Reached Node N7 (4/4 in plan) at (0.12, -0.32), yaw=62.5°
+[route_runner-6] [INFO] [1795596329.155009312] [route_runner]: [TELEMETRY] Pose=(0.13, -0.31, 62.5°) | Node=N12 | GoalDist=0.32m | Cmd=(v=0.09m/s, w=0.02rad/s) | MinObs=0.32m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596329.245501469] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(0.13, -0.30, 62.6°).
+[route_runner-6] [INFO] [1795596330.249044858] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(0.17, -0.23, 65.0°).
+[route_runner-6] [INFO] [1795596330.755907509] [route_runner]: [TELEMETRY] Pose=(0.19, -0.19, 70.7°) | Node=N7 | GoalDist=0.19m | Cmd=(v=0.04m/s, w=0.19rad/s) | MinObs=0.21m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596331.344785990] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(0.20, -0.16, 76.8°).
+[route_runner-6] [INFO] [1795596332.352351170] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 8.0 -> 3.5. Robot pose=(0.22, -0.10, 76.8°).
+[route_runner-6] [INFO] [1795596332.364713429] [route_runner]: [TELEMETRY] Pose=(0.22, -0.10, 76.8°) | Node=N7 | GoalDist=0.10m | Cmd=(v=0.03m/s, w=0.17rad/s) | MinObs=0.21m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795596332.844822867] [route_runner]: [BRAIN: GOAL_ARRIVAL] FINAL DESTINATION REACHED at (0.22, -0.08)! Target was (0.22, -0.00) [Arrival Error: 0.079m]. Brain commanded full stop (v=0, w=0). Mission complete (1 goal(s) visited).

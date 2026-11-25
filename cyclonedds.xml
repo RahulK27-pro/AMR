@@ -3,7 +3,7 @@
   <Domain Id="7">
     <General>
       <Interfaces>
-        <NetworkInterface name="eth0"/>
+        <NetworkInterface address="10.12.99.190"/>
       </Interfaces>
     </General>
     <Discovery>

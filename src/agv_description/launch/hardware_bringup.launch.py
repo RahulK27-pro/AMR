@@ -85,9 +85,17 @@ def generate_launch_description():
             'wheel_radius': 0.035,
             'wheel_separation': 0.240,
             'ticks_per_rev': 4713,
-            'max_wheel_speed': 0.45,
-            'min_pwm': 25.0,
+            'max_wheel_speed': 0.65,
+            'min_pwm': 18.0,
             'max_pwm': 100.0,
+            'max_pwm_cap': 35.0,
+            'min_pivot_pwm': 16.0,
+            'max_pivot_pwm': 22.0,
+            'ff_offset': 10.5,
+            'ff_slope': 55.0,
+            'breakaway_pwm': 17.5,
+            'pid_kp': 75.0,
+            'pid_ki': 150.0,
             'odom_rate': 50.0,
             'cmd_vel_timeout': 1.5,
             'publish_tf': False,  # EKF publishes odom -> base_link
@@ -114,7 +122,7 @@ def generate_launch_description():
             'rate': 50.0,
             'calibrate_gyro': True,
             'invert_gyro_z': True,
-            'gyro_deadband': 0.05,
+            'gyro_deadband': 0.015,
             'use_sim_time': False
         }]
     )
@@ -140,7 +148,7 @@ def generate_launch_description():
             'port': '/dev/ttyUSB0',
             'baudrate': 115200,
             'frame_id': 'laser_frame',
-            'range_min': 0.12,
+            'range_min': 0.15,
             'range_max': 8.0,
             'num_bins': 360,
             'inverted': True,

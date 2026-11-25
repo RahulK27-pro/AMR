@@ -22,15 +22,18 @@ set -e
 
 PI_IP="${1:-10.244.248.208}"
 MAP_INPUT="${2:-prakash_room}"
-MAX_SPEED="${3:-0.20}"
+MAX_SPEED="${3:-0.13}"
 
 # Detect laptop IP on the route to the Pi
-LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -I | awk '{print $1}')
+LAPTOP_IP=$(ip route get "$PI_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || true)
+if [ -z "$LAPTOP_IP" ]; then
+    LAPTOP_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+fi
 
 echo "=================================================================="
 echo "  AMR Physical Hardware Autonomous Navigation Session"
 echo "  Target Pi IP      : $PI_IP"
-echo "  Laptop Host IP    : $LAPTOP_IP"
+echo "  Laptop Host IP    : ${LAPTOP_IP:-auto}"
 echo "  Selected Map      : $MAP_INPUT"
 echo "  Linear Speed Cap  : $MAX_SPEED m/s (Minimum Safe Crawl)"
 echo "=================================================================="
@@ -46,8 +49,25 @@ fi
 
 WS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 2. Build packages if modified
-if [ ! -f "$WS_DIR/install/agv_description/share/agv_description/launch/hardware_navigation.launch.py" ]; then
+# 2. Build packages if missing or source files updated
+NEEDS_BUILD=0
+if [ ! -f "$WS_DIR/install/agv_description/share/agv_description/launch/hardware_navigation.launch.py" ] || \
+   [ "$WS_DIR/src/agv_description/launch/hardware_navigation.launch.py" -nt "$WS_DIR/install/agv_description/share/agv_description/launch/hardware_navigation.launch.py" ] || \
+   [ "$WS_DIR/src/agv_description/config/nav2_params_hardware.yaml" -nt "$WS_DIR/install/agv_description/share/agv_description/config/nav2_params_hardware.yaml" ] || \
+   [ "$WS_DIR/src/agv_description/config/agv_hardware_nav.rviz" -nt "$WS_DIR/install/agv_description/share/agv_description/config/agv_hardware_nav.rviz" ]; then
+    NEEDS_BUILD=1
+fi
+if [ ! -f "$WS_DIR/install/agv_navigation/lib/agv_navigation/route_runner" ]; then
+    NEEDS_BUILD=1
+else
+    for pyf in "$WS_DIR"/src/agv_navigation/agv_navigation/*.py; do
+        if [ "$pyf" -nt "$WS_DIR/install/agv_navigation/lib/agv_navigation/route_runner" ]; then
+            NEEDS_BUILD=1
+            break
+        fi
+    done
+fi
+if [ "$NEEDS_BUILD" = "1" ]; then
     echo "[INFO] Updating package installation..."
     (cd "$WS_DIR" && colcon build --packages-select agv_description agv_navigation --symlink-install)
 fi
@@ -59,13 +79,18 @@ fi
 
 # 3. Configure CycloneDDS unicast peering (Domain 7)
 CFG_FILE="/tmp/cyclonedds_nav_$$.xml"
+if [ -n "$LAPTOP_IP" ]; then
+    NET_IFACE_XML="<NetworkInterface address=\"$LAPTOP_IP\"/>"
+else
+    NET_IFACE_XML="<NetworkInterface autodetermine=\"true\"/>"
+fi
 cat <<EOF > "$CFG_FILE"
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
     <General>
       <Interfaces>
-        <NetworkInterface address="$LAPTOP_IP"/>
+        $NET_IFACE_XML
       </Interfaces>
     </General>
     <Discovery>
@@ -87,7 +112,7 @@ trap "rm -f $CFG_FILE 2>/dev/null || true" EXIT
 
 # 0. Inter-machine system clock synchronization
 echo "[INFO] Synchronizing system clock with Raspberry Pi ($PI_IP)..."
-if ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no "amr@$PI_IP" "sudo date -s '@$(date +%s)'" 2>/dev/null; then
+if ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no "amr@$PI_IP" "sudo date -s '@$(date +%s.%N)'" 2>/dev/null; then
     echo "  ✅ Clock synchronized successfully with Raspberry Pi!"
 else
     echo "  ⚠️  Could not auto-sync clock over SSH without password."
@@ -153,6 +178,7 @@ echo ""
 ros2 launch agv_description hardware_navigation.launch.py \
     map:="$MAP_INPUT" \
     max_linear_speed:="$MAX_SPEED" \
-    cruise_linear_speed:="0.16" \
-    max_angular_speed:="0.75" \
+    cruise_linear_speed:="0.10" \
+    max_angular_speed:="0.40" \
+    lookahead_dist:="0.25" \
     use_rviz:=true 2>&1 | tee "$LAUNCH_LOG"

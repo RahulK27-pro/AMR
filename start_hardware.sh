@@ -43,11 +43,15 @@ fi
 # 3. Source AMR Workspace
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Auto-build if hardware_bringup.launch.py is not yet installed or source files were updated
+# Auto-build if installed files are missing or source files were updated
 if [ ! -f "$SCRIPT_DIR/install/agv_description/share/agv_description/launch/hardware_bringup.launch.py" ] || \
    [ "$SCRIPT_DIR/src/agv_description/urdf/warehouse_agv.urdf" -nt "$SCRIPT_DIR/install/agv_description/share/agv_description/urdf/warehouse_agv.urdf" ] || \
    [ "$SCRIPT_DIR/src/agv_description/launch/hardware_bringup.launch.py" -nt "$SCRIPT_DIR/install/agv_description/share/agv_description/launch/hardware_bringup.launch.py" ] || \
-   [ "$SCRIPT_DIR/src/agv_description/scripts/amr_hardware_drive_node.py" -nt "$SCRIPT_DIR/install/agv_description/lib/agv_description/amr_hardware_drive_node.py" ]; then
+   [ "$SCRIPT_DIR/src/agv_description/config/ekf_hardware.yaml" -nt "$SCRIPT_DIR/install/agv_description/share/agv_description/config/ekf_hardware.yaml" ] || \
+   [ "$SCRIPT_DIR/src/agv_description/config/mapper_params_hardware.yaml" -nt "$SCRIPT_DIR/install/agv_description/share/agv_description/config/mapper_params_hardware.yaml" ] || \
+   [ "$SCRIPT_DIR/src/agv_description/scripts/amr_hardware_drive_node.py" -nt "$SCRIPT_DIR/install/agv_description/lib/agv_description/amr_hardware_drive_node.py" ] || \
+   [ "$SCRIPT_DIR/src/agv_description/scripts/amr_imu_node.py" -nt "$SCRIPT_DIR/install/agv_description/lib/agv_description/amr_imu_node.py" ] || \
+   [ "$SCRIPT_DIR/src/agv_description/scripts/amr_lidar_node.py" -nt "$SCRIPT_DIR/install/agv_description/lib/agv_description/amr_lidar_node.py" ]; then
     echo "[INFO] Build or source update detected. Building agv_description package..."
     (cd "$SCRIPT_DIR" && colcon build --packages-select agv_description --symlink-install)
 fi
@@ -68,14 +72,22 @@ echo "[OK] ROS_DOMAIN_ID=7"
 if dpkg -s ros-jazzy-rmw-cyclonedds-cpp >/dev/null 2>&1; then
     CFG_FILE="/tmp/cyclonedds_pi.xml"
     if [ -n "$LAPTOP_IP" ]; then
-        PI_MY_IP=$(ip route get "$LAPTOP_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || hostname -I | awk '{print $1}')
+        PI_MY_IP=$(ip route get "$LAPTOP_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || true)
+        if [ -z "$PI_MY_IP" ]; then
+            PI_MY_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+        fi
+        if [ -n "$PI_MY_IP" ]; then
+            NET_IFACE_XML="<NetworkInterface address=\"$PI_MY_IP\"/>"
+        else
+            NET_IFACE_XML="<NetworkInterface autodetermine=\"true\"/>"
+        fi
         cat <<EOF > "$CFG_FILE"
 <?xml version="1.0" encoding="UTF-8" ?>
 <CycloneDDS xmlns="https://cdds.io/config">
   <Domain Id="7">
     <General>
       <Interfaces>
-        <NetworkInterface address="$PI_MY_IP"/>
+        $NET_IFACE_XML
       </Interfaces>
     </General>
     <Discovery>

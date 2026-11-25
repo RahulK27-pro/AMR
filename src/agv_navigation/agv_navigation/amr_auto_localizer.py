@@ -125,6 +125,7 @@ class AMRAutoLocalizer(Node):
         self.startup_timer = None
         self.verification_timer = None
         self.verification_attempts = 0
+        self._startup_scan_waits = 0
 
         # Attempt to load static map file directly from disk for instant readiness
         self._load_static_map_file()
@@ -264,6 +265,15 @@ class AMRAutoLocalizer(Node):
                 self.startup_timer = self.create_timer(0.5, self._run_startup_localizer)
                 return
 
+        # Briefly prefer a full 360 scan (>=60 valid beams) before settling on minimum threshold
+        if self.latest_scan is not None and self._startup_scan_waits < 4:
+            ranges = np.array(self.latest_scan.ranges)
+            valid_cnt = int(np.sum((ranges > max(0.16, self.latest_scan.range_min)) & (ranges < min(6.5, self.latest_scan.range_max)) & np.isfinite(ranges)))
+            if valid_cnt < 60:
+                self._startup_scan_waits += 1
+                self.startup_timer = self.create_timer(0.25, self._run_startup_localizer)
+                return
+
         success, log_msg = self.find_and_publish_global_pose()
         if success:
             self.has_localized = True
@@ -303,8 +313,10 @@ class AMRAutoLocalizer(Node):
                 self.verification_timer = None
             return
 
-        if self.verification_attempts == 2 and not self.amcl_confirmed:
-            # Gently request a nomotion update to prompt AMCL to publish TF without resetting particles
+        if self.verification_attempts in (2, 3) and not self.amcl_confirmed:
+            # Re-send initial pose service if needed and prompt AMCL nomotion update
+            if self.last_solved_msg is not None:
+                self._send_set_initial_pose_srv(self.last_solved_msg)
             self._trigger_amcl_nomotion_update()
         elif self.verification_attempts >= 5:
             # Stand down verification loop after 4 seconds

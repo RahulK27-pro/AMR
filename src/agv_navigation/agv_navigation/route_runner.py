@@ -147,6 +147,9 @@ class RouteRunner(Node):
         # Navigation state machine: IDLE, PLANNING, NAVIGATING, YIELDING, RE_ROUTING
         self.state = "IDLE"
         self._estop_active = False
+        self.actual_w = 0.0
+        self._is_pivoting = False
+        self.last_pub_w = 0.0
 
         # Diagnostic rate-limiters & tracking
         self._last_block_log_time = 0.0
@@ -199,18 +202,18 @@ class RouteRunner(Node):
             self.declare_parameter('use_sim_time', False)
         self.use_sim_time = self.get_parameter('use_sim_time').value
 
-        # Physical Hardware Defaults (calibrated minimum moving speeds) vs Simulation (fast test)
-        default_v_max = 0.75 if self.use_sim_time else 0.20
-        default_cruise_v = 0.45 if self.use_sim_time else 0.16
-        default_min_v = 0.08 if self.use_sim_time else 0.10
-        default_w_max = 1.80 if self.use_sim_time else 0.75
-        default_lookahead = 0.75 if self.use_sim_time else 0.35
-        default_accel_v = 0.60 if self.use_sim_time else 0.35
-        default_decel_v = 0.90 if self.use_sim_time else 0.50
-        default_accel_w = 1.60 if self.use_sim_time else 1.20
-        default_kp_h = 1.40 if self.use_sim_time else 1.20
+        # Physical Hardware Defaults (calibrated smooth slow speeds) vs Simulation (fast test)
+        default_v_max = 0.75 if self.use_sim_time else 0.13
+        default_cruise_v = 0.45 if self.use_sim_time else 0.10
+        default_min_v = 0.08 if self.use_sim_time else 0.04
+        default_w_max = 1.80 if self.use_sim_time else 0.40
+        default_lookahead = 0.75 if self.use_sim_time else 0.25
+        default_accel_v = 0.60 if self.use_sim_time else 0.18
+        default_decel_v = 0.90 if self.use_sim_time else 0.30
+        default_accel_w = 1.60 if self.use_sim_time else 0.60
+        default_kp_h = 1.40 if self.use_sim_time else 0.90
         default_standoff = 0.50 if self.use_sim_time else 0.30
-        default_crit_prox = 0.20 if self.use_sim_time else 0.14
+        default_crit_prox = 0.20 if self.use_sim_time else 0.10
         default_noise_v = 0.30 if self.use_sim_time else 0.04
         default_noise_w = 0.50 if self.use_sim_time else 0.08
         default_dyn_rep = 0.65 if self.use_sim_time else 0.42
@@ -228,6 +231,7 @@ class RouteRunner(Node):
         self.declare_parameter('kp_heading', default_kp_h)
         self.declare_parameter('safe_standoff', default_standoff)
         self.declare_parameter('critical_proximity', default_crit_prox)
+        self.declare_parameter('goal_arrival_tolerance', 0.08)
 
         self.v_max = float(self.get_parameter('max_linear_speed').value)
         self.cruise_linear_speed = float(self.get_parameter('cruise_linear_speed').value)
@@ -241,6 +245,11 @@ class RouteRunner(Node):
         self.kp_heading = float(self.get_parameter('kp_heading').value)
         self.safe_standoff = float(self.get_parameter('safe_standoff').value)
         self.critical_proximity = float(self.get_parameter('critical_proximity').value)
+        self.goal_arrival_tolerance = float(self.get_parameter('goal_arrival_tolerance').value)
+
+        # Final Goal Coordinates for precise lead-out navigation
+        self.final_goal_x = None
+        self.final_goal_y = None
 
         # Smooth Early Detour (Circumnavigation) state
         self.active_detour = None      # Stores {rejoin_idx, created_time, side} when circumnavigating
@@ -252,7 +261,7 @@ class RouteRunner(Node):
         self._stuck_counter = 0
         self._last_stuck_check_pos = None
         self._prev_heading_err = None  # Tracks heading error delta for kinematic stuck detection
-        self._stuck_threshold_ticks = 20  # ~2.0s of zero translation / spin triggers recovery
+        self._stuck_threshold_ticks = 45  # ~4.5s allows calm in-place pivot without false triggers
         self._recovery_phase = None        # None, 'BACKUP', or 'REROUTE'
         self._recovery_start_time = None
         self._recovery_backup_dur = 2.2   # Max seconds to reverse if standoff not yet achieved
@@ -271,7 +280,7 @@ class RouteRunner(Node):
 
         # MPPI Cost Weights
         self.w_dist = 4.0
-        self.w_heading = 3.0
+        self.w_heading = 4.5
         self.w_collision = 5000.0
         
         # Repulsion fields (tuned for physical indoor environments and 22cm robot)
@@ -280,8 +289,8 @@ class RouteRunner(Node):
         self.static_repulsive_dist = 0.22   # Wall repulsion activation distance (m) (tuned for narrow passages)
         self.static_w_repulsive = 50.0      # Quadratic wall repulsion (smooth gradient in narrow passages)
 
-        self.w_cross_track_nominal = 6.0
-        self.w_cross_track_evasion = 2.0   # Soften centerline tracking during evasion while preventing wandering
+        self.w_cross_track_nominal = 8.0
+        self.w_cross_track_evasion = 3.5   # Soften centerline tracking during evasion while preventing wandering
         self.w_cross_track = self.w_cross_track_nominal
 
         # Distance-gated evasion: only relax w_cross_track for obstacles within this range
@@ -436,9 +445,18 @@ class RouteRunner(Node):
         """Crisp immediate stop resetting command slew rates."""
         self.last_cmd_v = 0.0
         self.last_cmd_w = 0.0
+        self.last_pub_w = 0.0
         self.last_target_v = 0.0
         self.last_target_w = 0.0
+        self._is_pivoting = False
         self.cmd_pub.publish(Twist())
+
+    def destroy_node(self):
+        try:
+            self._stop_robot()
+        except Exception:
+            pass
+        super().destroy_node()
 
     def _now_sec(self):
         """Return current ROS time as float seconds (sim-time aware)."""
@@ -509,6 +527,8 @@ class RouteRunner(Node):
             return self.odom_ready
 
     def odom_callback(self, msg):
+        # Always capture physical angular velocity for rotation-gated scan filtering
+        self.actual_w = float(msg.twist.twist.angular.z)
         # On physical hardware with a static map, robot pose MUST strictly come from map -> base_link TF.
         # Raw /odometry/filtered is in the 'odom' frame and must NEVER overwrite map coordinates!
         if not self.using_map_tf and self.use_sim_time:
@@ -544,11 +564,10 @@ class RouteRunner(Node):
         r_local = np.sqrt(ox_local**2 + oy_local**2)
 
         # Precise robot footprint self-masking:
-        # - Chassis is a cylinder of radius 0.11m; caster is inside; wheels are at y = +/-0.13m, width 0.026m
-        # Mask points strictly inside physical chassis cylinder: r < 0.112m
-        is_chassis_self = r_local < 0.112
-        # Mask points strictly on the side wheel protrusions: |y| in [0.112, 0.148] and |x| <= 0.045
-        is_wheel_self = (np.abs(oy_local) >= 0.112) & (np.abs(oy_local) <= 0.148) & (np.abs(ox_local) <= 0.045)
+        # Mask points within the physical chassis perimeter (r < 0.160m)
+        is_chassis_self = r_local < 0.160
+        # Mask points strictly on the side wheel protrusions: |y| in [0.110, 0.165] and |x| <= 0.080
+        is_wheel_self = (np.abs(oy_local) >= 0.110) & (np.abs(oy_local) <= 0.165) & (np.abs(ox_local) <= 0.080)
 
         external_mask = (~is_chassis_self) & (~is_wheel_self)
         ranges = ranges[external_mask]
@@ -662,8 +681,8 @@ class RouteRunner(Node):
                             'age': track['age']
                         })
                 else:
-                    # New candidate track (suppress instantiation if robot is rotating fast)
-                    if abs(self.last_cmd_w) < 0.60:
+                    # New candidate track (suppress instantiation whenever commanded or physically rotating)
+                    if abs(self.last_pub_w) < 0.10 and abs(self.actual_w) < 0.12:
                         new_tid = self._next_track_id
                         self._next_track_id += 1
                         self._tracked_obstacles[new_tid] = {
@@ -796,6 +815,68 @@ class RouteRunner(Node):
         msg.data = json.dumps(payload)
         self.mission_pub.publish(msg)
 
+    def _build_lead_in(self, start_node, next_node=None):
+        """Builds smooth linear lead-in waypoints from current robot position to start node."""
+        if start_node not in self.map_data:
+            return []
+        sx = self.map_data[start_node]["x"]
+        sy = self.map_data[start_node]["y"]
+        if next_node and next_node in self.map_data:
+            nx = self.map_data[next_node]["x"]
+            ny = self.map_data[next_node]["y"]
+            dot = (sx - self.current_x) * (nx - self.current_x) + (sy - self.current_y) * (ny - self.current_y)
+            seg_d = self._dist_point_to_segment(self.current_x, self.current_y, sx, sy, nx, ny)
+            if dot < -0.01 and seg_d < 0.35:
+                return []
+        dist_to_start = math.hypot(sx - self.current_x, sy - self.current_y)
+        lead_in = []
+        if dist_to_start > 0.08:
+            num_lead = max(2, int(dist_to_start / 0.10))
+            lead_th = math.atan2(sy - self.current_y, sx - self.current_x)
+            for k in range(num_lead):
+                t = k / float(num_lead)
+                lx = self.current_x + t * (sx - self.current_x)
+                ly = self.current_y + t * (sy - self.current_y)
+                lead_in.append((lx, ly, lead_th))
+        return lead_in
+
+    def _build_lead_out(self, target_node, goal_x, goal_y):
+        """Builds smooth linear lead-out waypoints from target node to exact user-clicked goal."""
+        if target_node not in self.map_data or goal_x is None or goal_y is None:
+            return []
+        tx = self.map_data[target_node]["x"]
+        ty = self.map_data[target_node]["y"]
+        dist_to_goal = math.hypot(goal_x - tx, goal_y - ty)
+        lead_out = []
+        if dist_to_goal > 0.005:
+            num_lead_out = max(1, int(math.ceil(dist_to_goal / 0.10)))
+            lead_out_th = math.atan2(goal_y - ty, goal_x - tx)
+            for k in range(1, num_lead_out + 1):
+                t = k / float(num_lead_out)
+                lx = tx + t * (goal_x - tx)
+                ly = ty + t * (goal_y - ty)
+                lead_out.append((lx, ly, lead_out_th))
+        return lead_out
+
+    def _set_node_path_plan(self, node_path, start_node, goal_x, goal_y):
+        """Assemble densified trajectory with lead-in/lead-out and reset tracking indices."""
+        self.node_path = node_path
+        base_plan = self.densify_path(self.node_path, step_m=0.15)
+        next_node = node_path[1] if len(node_path) >= 2 else None
+        lead_in = self._build_lead_in(start_node, next_node=next_node)
+        end_node = node_path[-1] if node_path else self.target_node
+        lead_out = self._build_lead_out(end_node, goal_x, goal_y) if goal_x is not None else []
+        self.path_plan = lead_in + base_plan + lead_out
+
+        if len(lead_in) == 0 and len(self.path_plan) > 1:
+            search_end = min(len(self.path_plan), 10)
+            dists = [math.hypot(self.path_plan[k][0] - self.current_x, self.path_plan[k][1] - self.current_y) for k in range(search_end)]
+            self.current_target_index = int(np.argmin(dists))
+        else:
+            self.current_target_index = 0
+        self._visited_plan_nodes = set()
+        self._is_pivoting = False
+
     def goal_callback(self, msg):
         self.update_robot_pose()
         if not self.odom_ready:
@@ -804,6 +885,8 @@ class RouteRunner(Node):
 
         goal_x = msg.pose.position.x
         goal_y = msg.pose.position.y
+        self.final_goal_x = goal_x
+        self.final_goal_y = goal_y
 
         self.state = "PLANNING"
         self._publish_agv_state("PLANNING")
@@ -813,6 +896,7 @@ class RouteRunner(Node):
         self._recovery_phase = None
         self._stuck_counter = 0
         self._prev_heading_err = None
+        self._is_pivoting = False
         self.blocked_edges.clear()
         self.hazard_zones.clear()
 
@@ -821,34 +905,43 @@ class RouteRunner(Node):
 
         self.get_logger().info(f"Snapping to nodes: Start={start_node}, Target={self.target_node}")
 
-        self.node_path = self.calculate_dijkstra(start_node, self.target_node)
+        if start_node == self.target_node:
+            dist_direct = math.hypot(goal_x - self.current_x, goal_y - self.current_y)
+            if dist_direct < self.goal_arrival_tolerance:
+                self.get_logger().info(f"[BRAIN] Already at target destination ({dist_direct:.3f}m < {self.goal_arrival_tolerance:.2f}m). Arrival complete.")
+                self.state = "IDLE"
+                self._stop_robot()
+                self._publish_agv_state("ARRIVED")
+                return
+            num_pts = max(3, int(math.ceil(dist_direct / 0.08)))
+            direct_th = math.atan2(goal_y - self.current_y, goal_x - self.current_x)
+            self.node_path = [start_node]
+            self.path_plan = [
+                (self.current_x + (k / float(num_pts)) * (goal_x - self.current_x),
+                 self.current_y + (k / float(num_pts)) * (goal_y - self.current_y),
+                 direct_th)
+                for k in range(1, num_pts + 1)
+            ]
+            self.current_target_index = 0
+            self._visited_plan_nodes = set()
+        else:
+            node_path = self.calculate_dijkstra(start_node, self.target_node)
 
-        if not self.node_path:
-            self.state = "IDLE"
-            self._publish_agv_state("IDLE")
-            return
+            if not node_path:
+                self.state = "IDLE"
+                self._publish_agv_state("IDLE")
+                return
 
-        base_plan = self.densify_path(self.node_path, step_m=0.30)
-        sx = self.map_data[start_node]["x"]
-        sy = self.map_data[start_node]["y"]
-        dist_to_start = math.hypot(sx - self.current_x, sy - self.current_y)
-        lead_in = []
-        if dist_to_start > 0.10:
-            num_lead = max(2, int(dist_to_start / 0.15))
-            lead_th = math.atan2(sy - self.current_y, sx - self.current_x)
-            for k in range(num_lead):
-                t = k / float(num_lead)
-                lx = self.current_x + t * (sx - self.current_x)
-                ly = self.current_y + t * (sy - self.current_y)
-                lead_in.append((lx, ly, lead_th))
+            self._set_node_path_plan(node_path, start_node, goal_x, goal_y)
 
-        self.path_plan = lead_in + base_plan
-        self.get_logger().info(f"Dijkstra Path: {self.node_path} ({len(self.path_plan)} waypoints with {len(lead_in)} lead-in pts)")
+        self.get_logger().info(
+            f"Active Plan: {self.node_path} ({len(self.path_plan)} waypoints, "
+            f"ending at destination ({self.path_plan[-1][0]:.2f}, {self.path_plan[-1][1]:.2f}))"
+        )
 
-        self.current_target_index = 0
-        self._visited_plan_nodes = set()
         self.last_cmd_v = 0.0
         self.last_cmd_w = 0.0
+        self.last_pub_w = 0.0
         self.last_target_v = 0.0
         self.last_target_w = 0.0
         self.state = "NAVIGATING"
@@ -874,9 +967,9 @@ class RouteRunner(Node):
         """Finds target point along path arc-length to prevent corner cutting."""
         min_dist = float('inf')
         closest_idx = self.current_target_index
-        # Search window from slightly behind current index to max 8 waypoints ahead
-        start_search = max(0, self.current_target_index - 2)
-        search_window = min(len(self.path_plan), self.current_target_index + 8)
+        # Advance monotonically along the active path (prevents in-place rotation jitter regressions)
+        start_search = max(0, min(self.current_target_index, len(self.path_plan) - 1))
+        search_window = min(len(self.path_plan), start_search + 8)
         for i in range(start_search, search_window):
             px, py, _ = self.path_plan[i]
             dist = math.sqrt((px - self.current_x)**2 + (py - self.current_y)**2)
@@ -917,15 +1010,14 @@ class RouteRunner(Node):
         dist = np.sqrt(x_rel**2 + y_rel**2)
 
         # Front swept body corridor: check obstacles in the forward travel path
-        # Chassis half-width is 0.11m; swept half-width is 0.16m.
-        # Angular expansion accounts for forward trajectory up to +/-25 deg.
+        # Chassis footprint radius is ~0.155m; ignore internal self-reflections (x_rel <= 0.16m)
         front_lat_limit = np.maximum(0.16, x_rel * 0.466)
-        front_mask = (x_rel > 0.05) & (np.abs(y_rel) < front_lat_limit) & (dist < 6.0)
+        front_mask = (x_rel > 0.16) & (np.abs(y_rel) < front_lat_limit) & (dist < 6.0)
         d_front = float(np.min(dist[front_mask])) if np.any(front_mask) else 99.0
 
         # Rear swept body corridor: check obstacles directly behind chassis
         rear_lat_limit = np.maximum(0.16, -x_rel * 0.466)
-        rear_mask = (x_rel < -0.05) & (np.abs(y_rel) < rear_lat_limit) & (dist < 6.0)
+        rear_mask = (x_rel < -0.16) & (np.abs(y_rel) < rear_lat_limit) & (dist < 6.0)
         d_rear = float(np.min(dist[rear_mask])) if np.any(rear_mask) else 99.0
 
         return d_front, d_rear
@@ -938,26 +1030,38 @@ class RouteRunner(Node):
         if len(self.obstacles) == 0 or len(self.path_plan) < 5:
             return None
 
+        # Only consider unmapped obstacles so known static room walls don't cause start-node reroute loops
+        if self.static_wall_mask is not None:
+            unmapped_mask = np.array([not self.is_near_static_wall(p[0], p[1]) for p in self.obstacles], dtype=bool)
+            cand_obstacles = self.obstacles[unmapped_mask]
+        else:
+            cand_obstacles = self.obstacles
+
+        if len(cand_obstacles) == 0:
+            return None
+
         arc_dist = 0.0
         start_idx = self.current_target_index
-        upcoming_indices = [start_idx]
+        upcoming_indices = []
 
         for i in range(start_idx, len(self.path_plan) - 1):
             p1 = self.path_plan[i]
             p2 = self.path_plan[i + 1]
             seg_len = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
             arc_dist += seg_len
-            upcoming_indices.append(i + 1)
+            # Ignore points < 0.25m along path so corners/walls behind the robot don't trigger false detours
+            if arc_dist >= 0.25:
+                upcoming_indices.append(i + 1)
             if arc_dist >= lookahead_horizon:
                 break
 
-        if len(upcoming_indices) < 3:
+        if len(upcoming_indices) < 2:
             return None
 
         path_pts = np.array([[self.path_plan[i][0], self.path_plan[i][1]] for i in upcoming_indices])
 
-        # Distance from each obstacle point to upcoming path waypoints
-        dists_matrix = np.linalg.norm(self.obstacles[:, np.newaxis, :] - path_pts[np.newaxis, :, :], axis=-1)
+        # Distance from each unmapped obstacle point to upcoming path waypoints
+        dists_matrix = np.linalg.norm(cand_obstacles[:, np.newaxis, :] - path_pts[np.newaxis, :, :], axis=-1)
 
         # Swept corridor width for 22cm robot: points within 0.22m of path centerline
         min_dists_to_path = np.min(dists_matrix, axis=0)
@@ -969,15 +1073,20 @@ class RouteRunner(Node):
         block_idx = upcoming_indices[earliest_local_idx]
         block_pt = self.path_plan[block_idx]
 
+        # Ignore obstacle points in the immediate arrival zone (< 0.40m) of the final goal destination
+        final_x, final_y, _ = self.path_plan[-1]
+        if math.hypot(block_pt[0] - final_x, block_pt[1] - final_y) < 0.40:
+            return None
+
         # Calculate distance along path from robot to the obstacle
         d_along = 0.0
         for i in range(start_idx, block_idx):
             d_along += math.hypot(self.path_plan[i+1][0] - self.path_plan[i][0],
                                   self.path_plan[i+1][1] - self.path_plan[i][1])
 
-        # Cluster points around the obstacle location
-        cluster_mask = np.linalg.norm(self.obstacles - np.array([block_pt[0], block_pt[1]]), axis=-1) < 0.60
-        cluster_pts = self.obstacles[cluster_mask]
+        # Cluster unmapped points around the obstacle location
+        cluster_mask = np.linalg.norm(cand_obstacles - np.array([block_pt[0], block_pt[1]]), axis=-1) < 0.60
+        cluster_pts = cand_obstacles[cluster_mask]
         # Require at least 4 contiguous LiDAR points to confirm a real physical obstacle (rejecting sensor noise / dust)
         if len(cluster_pts) < 4:
             return None
@@ -1273,26 +1382,7 @@ class RouteRunner(Node):
                     if (u, v) not in self.blocked_edges:
                         self.blocked_edges[(u, v)] = (self._get_edge_cost(u, v), now + 25.0)
 
-                self.node_path = new_path
-                base_plan = self.densify_path(self.node_path, step_m=0.30)
-
-                # Smooth Lead-In spline from current robot pose to chosen_start node
-                sx = self.map_data[chosen_start]["x"]
-                sy = self.map_data[chosen_start]["y"]
-                dist_to_start = math.hypot(sx - self.current_x, sy - self.current_y)
-                lead_in = []
-                if dist_to_start > 0.10:
-                    num_lead = max(2, int(dist_to_start / 0.15))
-                    lead_th = math.atan2(sy - self.current_y, sx - self.current_x)
-                    for k in range(num_lead):
-                        t = k / float(num_lead)
-                        lx = self.current_x + t * (sx - self.current_x)
-                        ly = self.current_y + t * (sy - self.current_y)
-                        lead_in.append((lx, ly, lead_th))
-
-                self.path_plan = lead_in + base_plan
-                self.current_target_index = 0
-                self._visited_plan_nodes = set()
+                self._set_node_path_plan(new_path, chosen_start, self.final_goal_x, self.final_goal_y)
                 self._reroute_cooldown_time = now + 3.5  # Lock path for 3.5s to prevent flip-flopping
                 self.active_detour = None
                 self._swerve_bias = 0.0
@@ -1303,7 +1393,7 @@ class RouteRunner(Node):
                 self.get_logger().info(
                     f"[BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at "
                     f"({ox:.2f}, {oy:.2f}) [R_safe={safe_radius:.2f}m]: {self.node_path} "
-                    f"({len(self.path_plan)} waypoints with {len(lead_in)} lead-in pts starting from {chosen_start}). Resuming navigation."
+                    f"({len(self.path_plan)} waypoints, ending at ({self.path_plan[-1][0]:.2f}, {self.path_plan[-1][1]:.2f})). Resuming navigation."
                 )
                 return True
 
@@ -1406,26 +1496,7 @@ class RouteRunner(Node):
 
         new_path = self.calculate_dijkstra(start_node, self.target_node)
         if new_path and len(new_path) > 1:
-            self.node_path = new_path
-            base_plan = self.densify_path(self.node_path, step_m=0.30)
-
-            # Smooth Lead-In from robot pose
-            sx = self.map_data[start_node]["x"]
-            sy = self.map_data[start_node]["y"]
-            dist_to_start = math.hypot(sx - self.current_x, sy - self.current_y)
-            lead_in = []
-            if dist_to_start > 0.10:
-                num_lead = max(2, int(dist_to_start / 0.15))
-                lead_th = math.atan2(sy - self.current_y, sx - self.current_x)
-                for k in range(num_lead):
-                    t = k / float(num_lead)
-                    lx = self.current_x + t * (sx - self.current_x)
-                    ly = self.current_y + t * (sy - self.current_y)
-                    lead_in.append((lx, ly, lead_th))
-
-            self.path_plan = lead_in + base_plan
-            self.current_target_index = 0
-            self._visited_plan_nodes = set()
+            self._set_node_path_plan(new_path, start_node, self.final_goal_x, self.final_goal_y)
             self._reroute_cooldown_time = now + 3.5
             self._swerve_bias = 0.0
             self._swerve_lock_ticks = 0
@@ -1434,7 +1505,7 @@ class RouteRunner(Node):
             self.yield_start_time = None
             self.get_logger().info(
                 f"[BRAIN: DIJKSTRA_ROUTER] DYNAMIC REROUTE SUCCESSFUL! "
-                f"New route: {self.node_path} ({len(self.path_plan)} waypoints with {len(lead_in)} lead-in pts). Resuming navigation."
+                f"New route: {self.node_path} ({len(self.path_plan)} waypoints, ending at ({self.path_plan[-1][0]:.2f}, {self.path_plan[-1][1]:.2f})). Resuming navigation."
             )
         else:
             self.get_logger().warn(
@@ -1585,7 +1656,7 @@ class RouteRunner(Node):
         # Check final destination
         final_x, final_y, _ = self.path_plan[-1]
         dist_to_final = math.sqrt((final_x - self.current_x)**2 + (final_y - self.current_y)**2)
-        if dist_to_final < 0.30:
+        if dist_to_final < self.goal_arrival_tolerance:
             self._stop_robot()
             self.state = "IDLE"
             self.active_detour = None
@@ -1617,8 +1688,8 @@ class RouteRunner(Node):
                 self.get_logger().info("[BRAIN: DETOUR] Circumnavigation complete. Rejoined global roadmap.")
                 self.active_detour = None
 
-        # Proactive ahead-of-path corridor scan (up to 2.8m ahead on path)
-        corridor_obs = self.get_corridor_obstacle_analysis(lookahead_horizon=2.8)
+        # Proactive ahead-of-path corridor scan (scaled for room scale navigation)
+        corridor_obs = self.get_corridor_obstacle_analysis(lookahead_horizon=1.2)
         if corridor_obs is not None and dist_to_final > 0.8:
             # Proactively re-route via connected graph nodes around the obstacle ahead of reaching its close zone
             if now > self._reroute_cooldown_time:
@@ -1675,8 +1746,12 @@ class RouteRunner(Node):
             dists_to_path = np.min(np.linalg.norm(self.obstacles[:, np.newaxis, :] - path_pts[np.newaxis, :, :], axis=-1), axis=1)
             # Distance from each LiDAR point to robot
             dists_to_robot = np.linalg.norm(self.obstacles - np.array([self.current_x, self.current_y]), axis=-1)
-            # Only count points that are <0.18 m from path centreline AND <1.2 m from robot (0.18m = robot body width clearance)
-            block_mask = (dists_to_path < 0.18) & (dists_to_robot < 1.2)
+            # Ignore distant mapped static walls (>0.45m from chassis) so room boundaries don't weaken path tracking
+            if self.static_wall_mask is not None:
+                is_unmapped = np.array([not self.is_near_static_wall(p[0], p[1]) for p in self.obstacles], dtype=bool)
+            else:
+                is_unmapped = np.ones(len(self.obstacles), dtype=bool)
+            block_mask = (dists_to_path < 0.18) & ((is_unmapped & (dists_to_robot < 1.2)) | (dists_to_robot < 0.45))
             obstacle_blocking_path = bool(np.any(block_mask))
             if obstacle_blocking_path:
                 # Collect diagnostic: which point is closest to the path
@@ -1721,9 +1796,9 @@ class RouteRunner(Node):
 
         # --- MPPI Controller with Predictive Dynamic Rollout ---
         # 1. Sample control sequences
-        # Goal approach velocity scaling: smooth quadratic deceleration as robot nears destination
-        if dist_to_final < 0.45:
-            approach_scale = max(0.55, dist_to_final / 0.45)
+        # Goal approach velocity scaling: smooth deceleration as robot nears exact target coordinate
+        if dist_to_final < 0.35:
+            approach_scale = max(0.35, dist_to_final / 0.35)
         else:
             approach_scale = 1.0
 
@@ -1737,23 +1812,32 @@ class RouteRunner(Node):
                 if angle_diff < math.radians(60):
                     dyn_slowdown = min(dyn_slowdown, max(0.20, d_obs / 1.5))
 
-        # Heading-Velocity Coupling:
-        # Continuous C1-smooth cornering velocity profile without hard step cliff
+        # Heading-Velocity Coupling with Hysteresis Pivot Alignment:
+        # Align heading cleanly before accelerating so robot tracks path centerline & hits exact goal coordinates
         abs_h_err = abs(heading_error)
         heading_alignment = max(0.0, math.cos(heading_error))
 
-        if abs_h_err <= math.radians(35):
-            corner_scale = 1.0
-        elif abs_h_err <= math.radians(70):
-            frac = (abs_h_err - math.radians(35)) / math.radians(35)
-            corner_scale = 0.30 + 0.70 * 0.5 * (1.0 + math.cos(math.pi * frac))
+        pivot_enter = math.radians(25.0 if dist_to_final < 0.40 else 42.0)
+        pivot_exit = math.radians(12.0 if dist_to_final < 0.40 else 18.0)
+        if self._is_pivoting:
+            if abs_h_err <= pivot_exit:
+                self._is_pivoting = False
+        elif abs_h_err >= pivot_enter:
+            self._is_pivoting = True
+
+        if self._is_pivoting:
+            corner_scale = 0.0  # Pure in-place alignment pivot
         else:
-            corner_scale = 0.0  # Smooth in-place pivot for acute turns
+            frac = min(1.0, abs_h_err / math.radians(42.0))
+            corner_scale = 0.45 + 0.55 * 0.5 * (1.0 + math.cos(math.pi * frac))
 
         base_v = self.cruise_linear_speed * (heading_alignment ** 1.5) * corner_scale * approach_scale * dyn_slowdown
         v_mean = 0.0 if corner_scale == 0.0 else max(self.min_linear_speed, base_v)
 
-        v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
+        if self._is_pivoting:
+            v_seq = np.zeros((self.num_samples, self.horizon))
+        else:
+            v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
 
         # Swerve side commitment: guides MPPI sampling prior only for unexpected close dynamic obstacles
         if len(close_dyn) > 0 and is_evading:
@@ -1793,9 +1877,9 @@ class RouteRunner(Node):
         kp_heading = self.kp_heading
         w_guidance = kp_heading * heading_error
 
-        # In-place pivot torque boost: ensure sufficient angular velocity to overcome caster & wheel stiction
+        # In-place pivot torque boost: smooth, gentle angular velocity that preserves LiDAR scan fidelity and AMCL stability
         if corner_scale == 0.0 and abs(heading_error) > math.radians(5):
-            min_pivot_w = 0.65  # Minimum angular speed (rad/s) for guaranteed in-place turning
+            min_pivot_w = 0.35  # Rad/s (~20.0 deg/s) prevents 10Hz LiDAR motion blur & AMCL cloud divergence
             if abs(w_guidance) < min_pivot_w:
                 w_guidance = math.copysign(min_pivot_w, heading_error)
 
@@ -1981,7 +2065,8 @@ class RouteRunner(Node):
                     self.current_y - self._last_stuck_check_pos[1]
                 )
                 is_spinning = abs(optimal_w) > 0.20
-                is_halted = optimal_v < 0.06
+                halted_thresh = max(0.025, self.min_linear_speed * 0.65)
+                is_halted = optimal_v < halted_thresh
 
                 # Kinematic-Aware Turn Progress Guard:
                 # Differentiate intentional in-place turn toward target from physical stall
@@ -1989,13 +2074,16 @@ class RouteRunner(Node):
                 heading_err_abs = abs(heading_error)
                 heading_progress = False
                 if self._prev_heading_err is not None:
-                    # Heading error is actively reducing (>= 0.015 rad / ~0.85 deg per tick)
-                    heading_progress = (heading_err_abs < self._prev_heading_err - 0.015)
+                    # Heading error is actively reducing (~0.45 deg per tick)
+                    heading_progress = (heading_err_abs < self._prev_heading_err - 0.008)
                 self._prev_heading_err = heading_err_abs
 
                 if is_turning_in_place and heading_progress:
                     # Healthy in-place pivot toward waypoint: reset stuck counter!
                     self._stuck_counter = 0
+                elif dist_to_final < max(0.16, self.goal_arrival_tolerance * 2.0) and optimal_v >= halted_thresh:
+                    self._stuck_counter = 0
+                    self._last_stuck_check_pos = (self.current_x, self.current_y)
                 elif moved < 0.05 and (is_halted or is_spinning):
                     self._stuck_counter += 1
                 else:
@@ -2037,27 +2125,33 @@ class RouteRunner(Node):
         max_dw = self.accel_lim_w * self.dt
         cmd_w = self.last_cmd_w + float(np.clip(dw, -max_dw, max_dw))
 
-        # Clamp within global physical limits
-        cmd_v = float(np.clip(cmd_v, self.v_min, self.v_max))
-        cmd_w = float(np.clip(cmd_w, -self.w_max, self.w_max))
+        # Clamp continuous slew-limited commands within physical limits
+        slew_v = float(np.clip(cmd_v, self.v_min, self.v_max))
+        slew_w = float(np.clip(cmd_w, -self.w_max, self.w_max))
 
-        # Motor Deadband & Breakaway Protection:
-        # Prevent outputting speeds that are too low to physically move the chassis (< 0.10 m/s crawl or < 0.60 rad/s pivot)
-        if abs(cmd_w) > 0.08 and cmd_v < 0.03:
-            # In-place pivot: enforce minimum angular speed to overcome caster friction
-            if abs(cmd_w) < 0.60:
-                cmd_w = math.copysign(0.60, cmd_w)
-            cmd_v = 0.0
-        elif cmd_v > 0.02 and cmd_v < self.min_linear_speed:
+        # Store un-clamped slew state so minimum-pivot deadband never ratchets sign reversals
+        self.last_cmd_v = slew_v
+        self.last_cmd_w = slew_w
+
+        # Motor Deadband & Breakaway Protection applied only to the published command:
+        pub_v = slew_v
+        pub_w = slew_w
+        if self._is_pivoting or (abs(pub_w) > 0.06 and pub_v < 0.03):
+            pub_v = 0.0
+            if abs(target_w) > 0.04 and (target_w * pub_w) < 0.0:
+                # Decelerating through zero to reverse turn direction: pause briefly instead of pushing wrong way
+                pub_w = 0.0
+            elif abs(pub_w) > 0.04 and abs(pub_w) < 0.22:
+                pub_w = math.copysign(0.22, pub_w)
+        elif pub_v > 0.015 and pub_v < self.min_linear_speed:
             # Forward motion: snap to minimum reliable moving speed
-            cmd_v = self.min_linear_speed
+            pub_v = self.min_linear_speed
 
-        self.last_cmd_v = cmd_v
-        self.last_cmd_w = cmd_w
+        self.last_pub_w = pub_w
 
         twist = Twist()
-        twist.linear.x = cmd_v
-        twist.angular.z = cmd_w
+        twist.linear.x = pub_v
+        twist.angular.z = pub_w
         self.cmd_pub.publish(twist)
 
 

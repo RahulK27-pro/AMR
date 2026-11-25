@@ -296,36 +296,6 @@ Visualization Manager:
       Radius: 0.01
       Reference Frame: imu_link
       Value: true
-    # ── IMU 3D Visualizer (rviz_imu_plugin) ──────────────────────────────────
-    - Alpha: 1
-      Axes Length: 0.25
-      Axes Radius: 0.015
-      Box Alpha: 0.5
-      Box Color: 204; 51; 204
-      Box Length: 0.1
-      Box Width: 0.1
-      Box Height: 0.02
-      Class: rviz_imu_plugin/Imu
-      Color: 255; 50; 50
-      Enabled: true
-      Head Length: 0.05
-      Head Radius: 0.02
-      Name: IMU 3D Visualizer
-      Scale: 0.15
-      Shaft Length: 0.1
-      Shaft Radius: 0.01
-      Show Acceleration: true
-      Show Axes: true
-      Show Box: true
-      Show Orientation: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        Filter size: 10
-        History Policy: Keep Last
-        Reliability Policy: System Default
-        Value: /imu/data
-      Value: true
     - Alpha: 0.800000011920929
       Class: nav2_rviz_plugins/ParticleCloud
       Color: 255; 180; 0

@@ -58,10 +58,10 @@ def launch_setup(context, *args, **kwargs):
     init_x = float(LaunchConfiguration('initial_pose_x').perform(context).strip() or 0.0)
     init_y = float(LaunchConfiguration('initial_pose_y').perform(context).strip() or 0.0)
     init_yaw = float(LaunchConfiguration('initial_pose_yaw').perform(context).strip() or 0.0)
-    max_v = float(LaunchConfiguration('max_linear_speed').perform(context).strip() or 0.20)
-    max_w = float(LaunchConfiguration('max_angular_speed').perform(context).strip() or 0.75)
-    cruise_v = float(LaunchConfiguration('cruise_linear_speed').perform(context).strip() or 0.16)
-    lookahead_d = float(LaunchConfiguration('lookahead_dist').perform(context).strip() or 0.35)
+    max_v = float(LaunchConfiguration('max_linear_speed').perform(context).strip() or 0.13)
+    max_w = float(LaunchConfiguration('max_angular_speed').perform(context).strip() or 0.40)
+    cruise_v = float(LaunchConfiguration('cruise_linear_speed').perform(context).strip() or 0.10)
+    lookahead_d = float(LaunchConfiguration('lookahead_dist').perform(context).strip() or 0.25)
 
     # ── 1. Resolve Map YAML File ──────────────────────────────────────
     if os.path.isabs(map_input) and os.path.exists(map_input):
@@ -243,14 +243,15 @@ def launch_setup(context, *args, **kwargs):
                     'max_linear_speed': max_v,
                     'max_angular_speed': max_w,
                     'cruise_linear_speed': cruise_v,
-                    'min_linear_speed': 0.10,
+                    'min_linear_speed': 0.04,
                     'lookahead_dist': lookahead_d,
                     'accel_lim_v': 0.35,
                     'decel_lim_v': 0.50,
                     'accel_lim_w': 1.20,
                     'kp_heading': 1.20,
                     'safe_standoff': 0.30,
-                    'critical_proximity': 0.14,
+                    'critical_proximity': 0.10,
+                    'goal_arrival_tolerance': 0.08,
                 }],
                 output='screen',
             )
@@ -357,22 +358,22 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'max_linear_speed',
-            default_value='0.20',
-            description='Max physical linear speed in m/s (calibrated moving crawl)'
+            default_value='0.13',
+            description='Max physical linear speed in m/s (calibrated smooth crawl)'
         ),
         DeclareLaunchArgument(
             'max_angular_speed',
-            default_value='0.75',
+            default_value='0.40',
             description='Max physical angular turning rate in rad/s'
         ),
         DeclareLaunchArgument(
             'cruise_linear_speed',
-            default_value='0.16',
+            default_value='0.10',
             description='Target physical linear cruising speed in m/s'
         ),
         DeclareLaunchArgument(
             'lookahead_dist',
-            default_value='0.35',
+            default_value='0.25',
             description='Lookahead target distance along path arc in meters'
         ),
         OpaqueFunction(function=launch_setup),

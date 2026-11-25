@@ -1,0 +1,504 @@
+[INFO] [launch]: All log files can be found below /home/rahul/.ros/log/2026-11-24-17-17-00-911462-Rahul-41072
+[INFO] [launch]: Default logging verbosity is set to INFO
+========================================================================
+  [AMR PHYSICAL HARDWARE NAVIGATION SESSION]
+  Active Map          : prakash_room (/home/rahul/AMR/AMR-main/maps/prakash_room.yaml)
+  Roadmap Graph       : /home/rahul/AMR/AMR-main/maps/prakash_room_graph.json
+  Max Linear Speed    : 0.13 m/s (Calibrated Moving Crawl)
+  Max Angular Speed   : 0.38 rad/s (~22 deg/s)
+  Cruise Speed        : 0.10 m/s
+  Lookahead Distance  : 0.25 m
+  Auto-Localizer      : ZERO-PRIOR CORRELATIVE SCAN MATCHER (ACTIVE)
+                        Auto-detects robot position anywhere on startup!
+  Local Controller    : 10 Hz Vectorized MPPI (route_runner)
+  Behavior Tree       : Enabled=False
+  RViz Display        : Enabled=True
+========================================================================
+[INFO] [run_logger-1]: process started with pid [41076]
+[run_logger-1] [INFO] [1795540621.760578851] [run_logger]: [RUN_LOGGER] Telemetry active. Logging to /home/rahul/AMR/AMR-main/run_logs/navigation_run_20261124_171701.csv
+[INFO] [map_server-2]: process started with pid [41098]
+[INFO] [amcl-3]: process started with pid [41099]
+[INFO] [lifecycle_manager-4]: process started with pid [41100]
+[amcl-3] [INFO] [1795540622.399217185] [amcl]: 
+[amcl-3] 	amcl lifecycle node launched. 
+[amcl-3] 	Waiting on external lifecycle transitions to activate
+[amcl-3] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[amcl-3] [INFO] [1795540622.403634188] [amcl]: Creating
+[lifecycle_manager-4] [INFO] [1795540622.435048521] [lifecycle_manager_localization]: Creating
+[lifecycle_manager-4] [INFO] [1795540622.453304481] [lifecycle_manager_localization]: [34m[1mCreating and initializing lifecycle service clients[0m[0m
+[map_server-2] [INFO] [1795540622.470469198] [map_server]: 
+[map_server-2] 	map_server lifecycle node launched. 
+[map_server-2] 	Waiting on external lifecycle transitions to activate
+[map_server-2] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[map_server-2] [INFO] [1795540622.470640306] [map_server]: Creating
+[lifecycle_manager-4] [INFO] [1795540622.471435060] [lifecycle_manager_localization]: [34m[1mStarting managed nodes bringup...[0m[0m
+[lifecycle_manager-4] [INFO] [1795540622.471977775] [lifecycle_manager_localization]: [34m[1mConfiguring map_server[0m[0m
+[map_server-2] [INFO] [1795540622.472636671] [map_server]: Configuring
+[map_server-2] [INFO] [1795540622.472904305] [map_io]: Loading yaml file: /home/rahul/AMR/AMR-main/maps/prakash_room.yaml
+[map_server-2] [INFO] [1795540622.474609950] [map_io]: resolution: 0.05
+[map_server-2] [INFO] [1795540622.474668087] [map_io]: origin[0]: -2.121
+[map_server-2] [INFO] [1795540622.474724403] [map_io]: origin[1]: -1.763
+[map_server-2] [INFO] [1795540622.474734481] [map_io]: origin[2]: 0
+[map_server-2] [INFO] [1795540622.474739076] [map_io]: free_thresh: 0.196
+[map_server-2] [INFO] [1795540622.474742839] [map_io]: occupied_thresh: 0.65
+[map_server-2] [INFO] [1795540622.474770824] [map_io]: mode: trinary
+[map_server-2] [INFO] [1795540622.474779458] [map_io]: negate: 0
+[map_server-2] [INFO] [1795540622.477285120] [map_io]: Loading image_file: /home/rahul/AMR/AMR-main/maps/prakash_room.pgm
+[map_server-2] [INFO] [1795540622.479837598] [map_io]: Read map /home/rahul/AMR/AMR-main/maps/prakash_room.pgm: 68 X 60 map @ 0.05 m/cell
+[lifecycle_manager-4] [INFO] [1795540622.492123830] [lifecycle_manager_localization]: [34m[1mConfiguring amcl[0m[0m
+[amcl-3] [INFO] [1795540622.492556261] [amcl]: Configuring
+[amcl-3] [INFO] [1795540622.492922639] [amcl]: initTransforms
+[amcl-3] [INFO] [1795540622.505333474] [amcl]: initPubSub
+[amcl-3] [INFO] [1795540622.515145254] [amcl]: Subscribed to map topic.
+[lifecycle_manager-4] [INFO] [1795540622.520615618] [lifecycle_manager_localization]: [34m[1mActivating map_server[0m[0m
+[map_server-2] [INFO] [1795540622.520915994] [map_server]: Activating
+[map_server-2] [INFO] [1795540622.521284669] [map_server]: Creating bond (map_server) to lifecycle manager.
+[amcl-3] [INFO] [1795540622.521517047] [amcl]: Received a 68 X 60 map @ 0.050 m/pix
+[lifecycle_manager-4] [INFO] [1795540622.524881751] [lifecycle_manager_localization]: [34m[1mActivating amcl[0m[0m
+[amcl-3] [INFO] [1795540622.525127502] [amcl]: Activating
+[amcl-3] [INFO] [1795540622.525178227] [amcl]: Creating bond (amcl) to lifecycle manager.
+[lifecycle_manager-4] [INFO] [1795540622.527977093] [lifecycle_manager_localization]: [34m[1mManaged nodes are active[0m[0m
+[amcl-3] [INFO] [1795540622.712261740] [amcl]: createLaserObject
+[INFO] [auto_localizer-5]: process started with pid [41157]
+[amcl-3] [WARN] [1795540624.516380974] [amcl]: AMCL cannot publish a pose or update the transform. Please set the initial pose...
+[INFO] [route_runner-6]: process started with pid [41193]
+[auto_localizer-5] [INFO] [1795540624.655959492] [auto_localizer]: [AUTO_LOCALIZE] Initialized likelihood field from prakash_room.pgm (68x60, res=0.05m, 606 candidate poses).
+[auto_localizer-5] [INFO] [1795540624.657860573] [auto_localizer]: AMR Zero-Prior Global Auto-Localizer Active! Listening for LiDAR scan to auto-estimate arbitrary starting pose...
+[auto_localizer-5] [INFO] [1795540624.661858337] [auto_localizer]: [AUTO_LOCALIZE] Updated likelihood field from /map topic (68x60).
+[INFO] [graph_visualizer-7]: process started with pid [41196]
+[amcl-3] [INFO] [1795540625.478557897] [amcl]: initialPoseReceived
+[amcl-3] [INFO] [1795540625.479085365] [amcl]: Setting pose (1795540625.479084): 0.012 0.037 0.349
+[amcl-3] [INFO] [1795540625.480146507] [amcl]: Requesting no-motion update
+[amcl-3] [INFO] [1795540625.480385518] [amcl]: initialPoseReceived
+[amcl-3] [INFO] [1795540625.480420826] [amcl]: Setting pose (1795540625.480421): 0.012 0.037 0.349
+[auto_localizer-5] [INFO] [1795540625.481547587] [auto_localizer]: ========================================================================
+[auto_localizer-5] [INFO] [1795540625.483091256] [auto_localizer]: [AUTO_LOCALIZE] ✅ GLOBAL LOCALIZATION SOLVED! Physical Pose: X=0.012m, Y=0.037m, Yaw=20.0° | Confidence Score=0.858 | Solved in 311.0ms
+[auto_localizer-5] [INFO] [1795540625.484568680] [auto_localizer]:   Initial pose published (TRANSIENT_LOCAL latched). AMCL filter active.
+[auto_localizer-5] [INFO] [1795540625.486151176] [auto_localizer]: ========================================================================
+[auto_localizer-5] [INFO] [1795540625.524190252] [auto_localizer]: [AUTO_LOCALIZE] 🎉 AMCL active pose confirmed: X=-0.01m, Y=0.05m
+[INFO] [rviz2-8]: process started with pid [41199]
+[route_runner-6] [INFO] [1795540625.954047619] [route_runner]: [MAP_MASK] Loaded static environment mask from prakash_room.pgm (68x60, res=0.05m, origin=(-2.12, -1.76)).
+[route_runner-6] [INFO] [1795540625.998013444] [route_runner]: Route Runner Active with KD-Tree (21 nodes), Proactive Detour & Active Reverse Escape.
+[route_runner-6] [INFO] [1795540626.008097105] [route_runner]: [MAP_MASK] Updated static wall mask from /map topic (68x60).
+[graph_visualizer-7] [INFO] [1795540626.216440516] [graph_visualizer]: Graph Visualizer Active (21 nodes, 180 edges). Publishing batch SPHERE_LIST and LINE_LIST.
+[rviz2-8] [INFO] [1795540626.672925636] [rviz2]: Stereo is NOT SUPPORTED
+[rviz2-8] [INFO] [1795540626.673104318] [rviz2]: OpenGl version: 4.5 (GLSL 4.5)
+[rviz2-8] [INFO] [1795540626.757381518] [rviz2]: Stereo is NOT SUPPORTED
+[rviz2-8] [ERROR] [1795540626.964918089] [rviz2]: PluginlibFactory: The plugin for class 'rviz_imu_plugin/Imu' failed to load. Error: According to the loaded plugin descriptions the class rviz_imu_plugin/Imu with base class type rviz_common::Display does not exist. Declared types are  nav2_rviz_plugins/ParticleCloud rviz_default_plugins/AccelStamped rviz_default_plugins/Axes rviz_default_plugins/Camera rviz_default_plugins/CameraInfo rviz_default_plugins/DepthCloud rviz_default_plugins/Effort rviz_default_plugins/FluidPressure rviz_default_plugins/Grid rviz_default_plugins/GridCells rviz_default_plugins/Illuminance rviz_default_plugins/Image rviz_default_plugins/InteractiveMarkers rviz_default_plugins/LaserScan rviz_default_plugins/Map rviz_default_plugins/Marker rviz_default_plugins/MarkerArray rviz_default_plugins/Odometry rviz_default_plugins/Path rviz_default_plugins/PointCloud rviz_default_plugins/PointCloud2 rviz_default_plugins/PointStamped rviz_default_plugins/Polygon rviz_default_plugins/Pose rviz_default_plugins/PoseArray rviz_default_plugins/PoseWithCovariance rviz_default_plugins/Range rviz_default_plugins/RelativeHumidity rviz_default_plugins/RobotModel rviz_default_plugins/TF rviz_default_plugins/Temperature rviz_default_plugins/TwistStamped rviz_default_plugins/Wrench
+[amcl-3] [WARN] [1795540627.142768812] [amcl]: New subscription discovered on topic '/particle_cloud', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY_QOS_POLICY
+[rviz2-8] [INFO] [1795540627.583332352] [rviz2]: Trying to create a map of size 68 x 60 using 1 swatches
+[rviz2-8] [ERROR] [1795540627.588355798] [rviz2]: rviz/glsl120/indexed_8bit_image.vert
+[rviz2-8] rviz/glsl120/indexed_8bit_image.frag
+[rviz2-8]  GLSL link result : 
+[rviz2-8] active samplers with a different type refer to the same texture image unit
+[rviz2-8] [INFO] [1795540627.879918888] [rviz2]: Message Filter dropping message: frame 'imu_link' at time 1795540627.702 for reason 'discarding message because the queue is full'
+[rviz2-8] [INFO] [1795540627.880067863] [rviz2]: Message Filter dropping message: frame 'imu_link' at time 1795540627.723 for reason 'discarding message because the queue is full'
+[rviz2-8] [INFO] [1795540627.880227764] [rviz2]: Message Filter dropping message: frame 'odom' at time 1795540627.625 for reason 'discarding message because the queue is full'
+[rviz2-8] [INFO] [1795540627.880285998] [rviz2]: Message Filter dropping message: frame 'laser_frame' at time 1795540627.653 for reason 'discarding message because the queue is full'
+[route_runner-6] [INFO] [1795540629.023590709] [route_runner]: Localization Active! Received map -> base_link TF transform.
+[route_runner-6] [INFO] [1795540629.028239963] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #5 at map(-0.78, -0.26) | Vel=(0.24, -0.99) Speed=1.02m/s | DistToRobot=0.83m | RobotPose=(-0.01, 0.06)
+[rviz2-8] [ERROR] [1795540629.183743954] [rviz2]: Lookup would require extrapolation into the future.  Requested time 1795540629.531837 but the latest data is at time 1795540629.464840, when looking up transform from frame [laser_frame] to frame [map]
+[route_runner-6] [INFO] [1795540630.207475499] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #5 at map(-0.77, -0.30) | Vel=(0.07, -0.35) Speed=0.36m/s | DistToRobot=0.84m | RobotPose=(-0.01, 0.06)
+[rviz2-8] [INFO] [1795540631.271101312] [rviz2]: Message Filter dropping message: frame 'laser_frame' at time 1795540629.130 for reason 'discarding message because the queue is full'
+[route_runner-6] [INFO] [1795540631.753459723] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #5 at map(-0.79, -0.25) | Vel=(-0.05, 0.24) Speed=0.25m/s | DistToRobot=0.83m | RobotPose=(-0.01, 0.06)
+[route_runner-6] [INFO] [1795540633.238118218] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #5 at map(-0.77, -0.29) | Vel=(0.09, -0.23) Speed=0.25m/s | DistToRobot=0.83m | RobotPose=(-0.01, 0.06)
+[route_runner-6] [INFO] [1795540634.331932853] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #5 at map(-0.77, -0.31) | Vel=(0.13, -0.46) Speed=0.48m/s | DistToRobot=0.84m | RobotPose=(-0.01, 0.06)
+[rviz2-8] [INFO] [1795540636.919681173] [rviz2]: Message Filter dropping message: frame 'odom' at time 1795540629.145 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[rviz2-8] [INFO] [1795540638.776191816] [rviz2]: Message Filter dropping message: frame 'imu_link' at time 1795540629.122 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[rviz2-8] [INFO] [1795540638.776663918] [rviz2]: Message Filter dropping message: frame 'imu_link' at time 1795540629.122 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[rviz2-8] [INFO] [1795540657.262392442] [rviz2]: Setting goal pose: Frame:map, Position(-0.130097, -0.839067, 0), Orientation(0, 0, 0, 1) = Angle: 0
+[route_runner-6] [INFO] [1795540657.264474085] [route_runner]: Received Goal: (-0.13, -0.84)
+[route_runner-6] [INFO] [1795540657.266488341] [route_runner]: Snapping to nodes: Start=N6, Target=N17
+[route_runner-6] [INFO] [1795540657.268452959] [route_runner]: Active Plan: ['N6', 'N17'] (6 waypoints, ending at destination (-0.12, -0.81))
+[route_runner-6] [INFO] [1795540657.300856675] [route_runner]: [BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at (0.08, -0.87) [dist_along=0.93m, dist_robot=0.93m]. Re-planning route via connected roadmap nodes...
+[route_runner-6] [WARN] [1795540657.307970844] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] No clear connected node path found around obstacle at (0.08, -0.87) to N17!
+[route_runner-6] [INFO] [1795540657.309370904] [route_runner]: [NODE TRACK] Reached Node N6 (1/2 in plan) at (-0.01, 0.06), yaw=20.5°
+[route_runner-6] [INFO] [1795540657.314293124] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-0.01, 0.06, 20.5°).
+[route_runner-6] [INFO] [1795540657.324737128] [route_runner]: [TELEMETRY] Pose=(-0.01, 0.06, 20.5°) | Node=N6 | GoalDist=0.88m | Cmd=(v=0.01m/s, w=-0.34rad/s) | MinObs=0.54m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540657.330142974] [route_runner]: [TURN TELEMETRY] Node=N6 | Pose=(-0.01, 0.06, 20.5°) | Wpt=3/6 (-0.12, -0.28) | HeadingErr=127.9° | Cmd=(v=0.01, w=-0.34) | MinObs=0.54m
+[route_runner-6] [INFO] [1795540657.699201132] [route_runner]: [BRAIN: CORRIDOR_SCAN] Detected stationary obstacle in path corridor at (0.19, -0.92) [dist_along=0.93m, dist_robot=1.00m]. Re-planning route via connected roadmap nodes...
+[route_runner-6] [WARN] [1795540657.709795994] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] No clear connected node path found around obstacle at (0.19, -0.92) to N17!
+[route_runner-6] [INFO] [1795540658.204428702] [route_runner]: [TURN TELEMETRY] Node=N6 | Pose=(0.04, 0.00, -53.2°) | Wpt=3/6 (-0.12, -0.28) | HeadingErr=66.6° | Cmd=(v=0.09, w=-0.35) | MinObs=0.58m
+[route_runner-6] [INFO] [1795540658.541348860] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #10 at map(-0.57, -0.59) | Vel=(0.32, -0.94) Speed=1.00m/s | DistToRobot=0.85m | RobotPose=(0.10, -0.09)
+[route_runner-6] [INFO] [1795540658.798460091] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.14, -0.15, -65.1°).
+[route_runner-6] [INFO] [1795540658.900466078] [route_runner]: [TELEMETRY] Pose=(0.16, -0.18, -66.6°) | Node=N7 | GoalDist=0.69m | Cmd=(v=0.09m/s, w=-0.35rad/s) | MinObs=0.82m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540659.120063100] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.19, -0.24, -70.3°) | Wpt=4/6 (-0.12, -0.55) | HeadingErr=64.5° | Cmd=(v=0.09, w=-0.35) | MinObs=0.65m
+[route_runner-6] [INFO] [1795540659.999235377] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.25, -0.56, -90.4°).
+[route_runner-6] [INFO] [1795540660.009269226] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.25, -0.56, -90.4°) | Wpt=5/6 (-0.12, -0.81) | HeadingErr=55.8° | Cmd=(v=0.09, w=-0.35) | MinObs=0.39m
+[route_runner-6] [INFO] [1795540660.408879095] [route_runner]: [TELEMETRY] Pose=(0.22, -0.70, -101.1°) | Node=N12 | GoalDist=0.36m | Cmd=(v=0.10m/s, w=-0.35rad/s) | MinObs=0.33m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540660.498194943] [route_runner]: [NODE TRACK] Reached Node N17 (2/2 in plan) at (0.20, -0.73), yaw=-104.3°
+[route_runner-6] [INFO] [1795540660.810599778] [route_runner]: [TURN TELEMETRY] Node=N17 | Pose=(0.11, -0.82, -115.9°) | Wpt=5/6 (-0.12, -0.81) | HeadingErr=64.8° | Cmd=(v=0.09, w=-0.35) | MinObs=1.29m
+[route_runner-6] [INFO] [1795540660.815101397] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #24 at map(0.43, -1.51) | Vel=(-1.13, -0.67) Speed=1.31m/s | DistToRobot=0.76m | RobotPose=(0.11, -0.82)
+[route_runner-6] [INFO] [1795540661.002690598] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.05, -0.87, -123.0°).
+[route_runner-6] [INFO] [1795540661.705869456] [route_runner]: [TURN TELEMETRY] Node=N17 | Pose=(-0.16, -1.05, -143.6°) | Wpt=5/6 (-0.12, -0.81) | HeadingErr=135.6° | Cmd=(v=0.01, w=-0.35) | MinObs=0.61m
+[route_runner-6] [INFO] [1795540661.966805214] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #31 at map(0.45, -1.50) | Vel=(0.31, 0.10) Speed=0.33m/s | DistToRobot=0.81m | RobotPose=(-0.26, -1.11)
+[route_runner-6] [INFO] [1795540662.001909776] [route_runner]: [TELEMETRY] Pose=(-0.27, -1.11, -151.5°) | Node=N20 | GoalDist=0.33m | Cmd=(v=0.01m/s, w=-0.35rad/s) | MinObs=0.72m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [WARN] [1795540662.404042792] [route_runner]: [DEVIATION ALERT] Robot off-path: cross-track error = 0.46m (> 0.45m) at (-0.41, -1.18).
+[route_runner-6] [INFO] [1795540662.607572208] [route_runner]: [TURN TELEMETRY] Node=N20 | Pose=(-0.50, -1.19, -170.4°) | Wpt=5/6 (-0.12, -0.81) | HeadingErr=144.7° | Cmd=(v=0.01, w=-0.35) | MinObs=0.95m
+[route_runner-6] [INFO] [1795540662.798609598] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-0.59, -1.18, -176.7°).
+[route_runner-6] [INFO] [1795540663.281993914] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #44 at map(-1.03, -1.05) | Vel=(0.96, 1.30) Speed=1.61m/s | DistToRobot=0.25m | RobotPose=(-0.78, -1.09)
+[route_runner-6] [WARN] [1795540663.299955242] [route_runner]: [BRAIN: PROXIMITY_ESCAPE] Critical front proximity (0.10m < 0.14m)! Halting forward motion and engaging Active Reverse Escape...
+[route_runner-6] [WARN] [1795540663.301137315] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (-0.90, -1.10) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540663.301923418] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (-0.80, -1.08). Front proximity=0.10m, Rear clearance=2.23m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540663.399516205] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=99.00m, elapsed=0.1s). Halting reverse.
+[route_runner-6] [WARN] [1795540663.400852583] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (-0.81, -1.06) with safe standoff 99.00m.
+[route_runner-6] [WARN] [1795540663.401960226] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Commanded ROUTE CHANGE to avoid blockage! Blocked edge (N6 <-> N17) temporarily penalized (+999.0 for 25s).
+[route_runner-6] [INFO] [1795540663.406886343] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] DYNAMIC REROUTE SUCCESSFUL! New route: ['N16', 'N17'] (5 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540663.506425224] [route_runner]: [TELEMETRY] Pose=(-0.81, -1.05, 172.4°) | Node=N19 | GoalDist=0.73m | Cmd=(v=0.01m/s, w=-0.36rad/s) | MinObs=1.01m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540663.508895364] [route_runner]: [TURN TELEMETRY] Node=N19 | Pose=(-0.81, -1.05, 172.4°) | Wpt=2/5 (-0.62, -0.90) | HeadingErr=134.2° | Cmd=(v=0.01, w=-0.36) | MinObs=1.01m
+[route_runner-6] [WARN] [1795540663.702975462] [route_runner]: [BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). Cause: Stationary unmapped obstacle at map(-0.962, -1.047), dist_to_path=0.156m, dist_to_robot=0.145m, MPPI_best_cost=75011.3. Holding position up to 1.0s before re-routing...
+[route_runner-6] [INFO] [1795540663.800815629] [route_runner]: [BRAIN: STATE_MACHINE] Corridor cleared! Resuming NAVIGATING mode. Robot at (-0.85, -1.09).
+[route_runner-6] [INFO] [1795540664.355919189] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #42 at map(-0.75, -0.58) | Vel=(-0.44, 0.16) Speed=0.47m/s | DistToRobot=0.52m | RobotPose=(-1.00, -1.04)
+[route_runner-6] [INFO] [1795540664.404029837] [route_runner]: [TURN TELEMETRY] Node=N19 | Pose=(-1.00, -1.04, 82.1°) | Wpt=2/5 (-0.62, -0.90) | HeadingErr=61.8° | Cmd=(v=0.09, w=-0.35) | MinObs=0.53m
+[route_runner-6] [INFO] [1795540664.700331736] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-1.13, -0.93, 63.4°).
+[route_runner-6] [WARN] [1795540664.711528157] [route_runner]: [BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). Cause: Stationary unmapped obstacle at map(-0.020, -0.705), dist_to_path=0.148m, dist_to_robot=1.129m, MPPI_best_cost=10015.4. Holding position up to 1.0s before re-routing...
+[route_runner-6] [INFO] [1795540664.809489321] [route_runner]: [BRAIN: STATE_MACHINE] Corridor cleared! Resuming NAVIGATING mode. Robot at (-1.16, -0.89).
+[route_runner-6] [WARN] [1795540665.101229326] [route_runner]: [DEVIATION ALERT] Robot off-path: cross-track error = 0.48m (> 0.45m) at (-1.19, -0.77).
+[route_runner-6] [INFO] [1795540665.109220996] [route_runner]: [TELEMETRY] Pose=(-1.19, -0.77, 56.2°) | Node=N14 | GoalDist=1.07m | Cmd=(v=0.09m/s, w=-0.35rad/s) | MinObs=0.38m | DynObs=1 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540665.203430640] [route_runner]: [TURN TELEMETRY] Node=N14 | Pose=(-1.18, -0.73, 56.0°) | Wpt=2/5 (-0.62, -0.90) | HeadingErr=72.3° | Cmd=(v=0.02, w=-0.34) | MinObs=0.28m
+[route_runner-6] [INFO] [1795540665.418812491] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #42 at map(-1.16, -0.35) | Vel=(-0.29, 0.10) Speed=0.30m/s | DistToRobot=0.30m | RobotPose=(-1.16, -0.65)
+[route_runner-6] [INFO] [1795540665.998475139] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-0.99, -0.43, 36.2°).
+[route_runner-6] [INFO] [1795540666.110099810] [route_runner]: [TURN TELEMETRY] Node=N9 | Pose=(-0.95, -0.41, 33.4°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=59.2° | Cmd=(v=0.08, w=-0.36) | MinObs=0.23m
+[route_runner-6] [INFO] [1795540666.498420487] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #60 at map(-0.22, -0.41) | Vel=(-1.36, -1.28) Speed=1.87m/s | DistToRobot=0.62m | RobotPose=(-0.83, -0.34)
+[route_runner-6] [INFO] [1795540666.502291166] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #42 at map(-1.07, -0.20) | Vel=(0.51, 0.12) Speed=0.52m/s | DistToRobot=0.27m | RobotPose=(-0.83, -0.34)
+[route_runner-6] [INFO] [1795540666.706183111] [route_runner]: [TELEMETRY] Pose=(-0.76, -0.35, 18.0°) | Node=N9 | GoalDist=0.79m | Cmd=(v=0.10m/s, w=-0.35rad/s) | MinObs=0.18m | DynObs=1 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540666.903600188] [route_runner]: [TURN TELEMETRY] Node=N10 | Pose=(-0.69, -0.34, 12.6°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=52.1° | Cmd=(v=0.10, w=-0.35) | MinObs=0.21m
+[route_runner-6] [WARN] [1795540667.003731054] [route_runner]: [BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). Cause: Stationary unmapped obstacle at map(-0.489, -0.765), dist_to_path=0.058m, dist_to_robot=0.448m, MPPI_best_cost=75032.3. Holding position up to 1.0s before re-routing...
+[route_runner-6] [INFO] [1795540667.100537817] [route_runner]: [BRAIN: STATE_MACHINE] Corridor cleared! Resuming NAVIGATING mode. Robot at (-0.63, -0.36).
+[route_runner-6] [INFO] [1795540667.203497349] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-0.62, -0.37, 6.3°).
+[route_runner-6] [WARN] [1795540667.209948110] [route_runner]: [BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). Cause: Dynamic obstacle at map(-0.505, -0.791), dist_to_path=0.027m, dist_to_robot=0.435m, MPPI_best_cost=30023.6. Holding position up to 4.0s before re-routing...
+[route_runner-6] [INFO] [1795540667.591604883] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #68 at map(-0.71, -0.38) | Vel=(1.29, -0.45) Speed=1.37m/s | DistToRobot=0.18m | RobotPose=(-0.53, -0.40)
+[route_runner-6] [INFO] [1795540667.707461699] [route_runner]: [TURN TELEMETRY] Node=N10 | Pose=(-0.49, -0.41, 0.2°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=47.5° | Cmd=(v=0.03, w=-0.37) | MinObs=0.16m
+[route_runner-6] [INFO] [1795540668.105215798] [route_runner]: [BRAIN: STATE_MACHINE] Corridor cleared! Resuming NAVIGATING mode. Robot at (-0.38, -0.48).
+[route_runner-6] [INFO] [1795540668.299203698] [route_runner]: [NODE TRACK] Reached Node N17 (2/2 in plan) at (-0.31, -0.52), yaw=-12.3°
+[route_runner-6] [INFO] [1795540668.302474168] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-0.31, -0.52, -12.3°).
+[route_runner-6] [WARN] [1795540668.318087519] [route_runner]: [BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). Cause: Stationary unmapped obstacle at map(0.002, -0.788), dist_to_path=0.125m, dist_to_robot=0.413m, MPPI_best_cost=20015.1. Holding position up to 1.0s before re-routing...
+[route_runner-6] [INFO] [1795540668.399986632] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.35 rad/s (dist=0.15m)
+[route_runner-6] [INFO] [1795540668.504361082] [route_runner]: [TELEMETRY] Pose=(-0.27, -0.55, -14.8°) | Node=N11 | GoalDist=0.30m | Cmd=(v=0.11m/s, w=-0.36rad/s) | MinObs=0.15m | DynObs=1 | State=YIELDING
+[route_runner-6] [INFO] [1795540668.603349116] [route_runner]: [BRAIN: STATE_MACHINE] Corridor cleared! Resuming NAVIGATING mode. Robot at (-0.25, -0.57).
+[route_runner-6] [INFO] [1795540668.608826828] [route_runner]: [TURN TELEMETRY] Node=N11 | Pose=(-0.25, -0.57, -16.0°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=47.3° | Cmd=(v=0.12, w=-0.35) | MinObs=0.16m
+[route_runner-6] [INFO] [1795540668.628137398] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #63 at map(-0.40, -0.68) | Vel=(-0.34, -0.74) Speed=0.81m/s | DistToRobot=0.20m | RobotPose=(-0.23, -0.58)
+[route_runner-6] [INFO] [1795540668.630088010] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #73 at map(-0.54, -0.72) | Vel=(0.51, -0.36) Speed=0.62m/s | DistToRobot=0.34m | RobotPose=(-0.23, -0.58)
+[route_runner-6] [INFO] [1795540669.303871779] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.07, -0.69, -27.5°).
+[route_runner-6] [WARN] [1795540669.313478432] [route_runner]: [BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). Cause: Dynamic obstacle at map(-0.116, -0.806), dist_to_path=0.009m, dist_to_robot=0.215m, MPPI_best_cost=30163.7. Holding position up to 4.0s before re-routing...
+[route_runner-6] [INFO] [1795540669.405269318] [route_runner]: [TURN TELEMETRY] Node=N17 | Pose=(0.08, -0.70, -27.9°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=123.7° | Cmd=(v=0.01, w=-0.35) | MinObs=0.26m
+[route_runner-6] [INFO] [1795540669.503311308] [route_runner]: [BRAIN: STATE_MACHINE] Corridor cleared! Resuming NAVIGATING mode. Robot at (0.08, -0.73).
+[route_runner-6] [INFO] [1795540669.687483820] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #79 at map(-0.14, -0.75) | Vel=(0.26, -0.13) Speed=0.29m/s | DistToRobot=0.22m | RobotPose=(0.07, -0.81)
+[route_runner-6] [WARN] [1795540669.716349880] [route_runner]: [BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). Cause: Dynamic obstacle at map(-0.125, -0.808), dist_to_path=0.006m, dist_to_robot=0.199m, MPPI_best_cost=50214.7. Holding position up to 4.0s before re-routing...
+[route_runner-6] [INFO] [1795540669.912779167] [route_runner]: [BRAIN: STATE_MACHINE] Corridor cleared! Resuming NAVIGATING mode. Robot at (0.05, -0.82).
+[route_runner-6] [INFO] [1795540670.006865600] [route_runner]: [TELEMETRY] Pose=(0.05, -0.82, -67.2°) | Node=N17 | GoalDist=0.17m | Cmd=(v=0.01m/s, w=-0.34rad/s) | MinObs=1.18m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540670.307738687] [route_runner]: [TURN TELEMETRY] Node=N17 | Pose=(0.04, -0.88, -89.3°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=113.2° | Cmd=(v=0.01, w=-0.34) | MinObs=0.17m
+[route_runner-6] [INFO] [1795540670.690760022] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #79 at map(-0.23, -0.77) | Vel=(-0.53, -0.30) Speed=0.60m/s | DistToRobot=0.25m | RobotPose=(-0.10, -0.98)
+[route_runner-6] [INFO] [1795540670.698214879] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-0.10, -0.99, -101.4°).
+[route_runner-6] [INFO] [1795540671.209401626] [route_runner]: [TURN TELEMETRY] Node=N17 | Pose=(-0.19, -1.12, -114.4°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=168.9° | Cmd=(v=0.01, w=-0.35) | MinObs=0.17m
+[route_runner-6] [INFO] [1795540671.602541919] [route_runner]: [TELEMETRY] Pose=(-0.28, -1.20, -126.1°) | Node=N20 | GoalDist=0.42m | Cmd=(v=0.01m/s, w=-0.35rad/s) | MinObs=1.18m | DynObs=1 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540671.716940780] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #95 at map(-1.09, -1.11) | Vel=(-0.38, 0.01) Speed=0.38m/s | DistToRobot=0.79m | RobotPose=(-0.31, -1.21)
+[route_runner-6] [INFO] [1795540672.111993054] [route_runner]: [TURN TELEMETRY] Node=N20 | Pose=(-0.39, -1.25, -135.6°) | Wpt=3/5 (-0.52, -0.81) | HeadingErr=118.3° | Cmd=(v=0.02, w=-0.34) | MinObs=1.16m
+[route_runner-6] [INFO] [1795540672.199910753] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-0.41, -1.28, -136.5°).
+[route_runner-6] [WARN] [1795540672.301576794] [route_runner]: [DEVIATION ALERT] Robot off-path: cross-track error = 0.46m (> 0.45m) at (-0.44, -1.35).
+[route_runner-6] [INFO] [1795540672.772613744] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #92 at map(-0.47, -1.19) | Vel=(-0.05, -0.22) Speed=0.22m/s | DistToRobot=0.32m | RobotPose=(-0.50, -1.51)
+[route_runner-6] [INFO] [1795540673.002741576] [route_runner]: [TURN TELEMETRY] Node=N20 | Pose=(-0.50, -1.46, -145.9°) | Wpt=2/5 (-0.62, -0.90) | HeadingErr=112.8° | Cmd=(v=0.02, w=-0.35) | MinObs=1.16m
+[route_runner-6] [INFO] [1795540673.100651803] [route_runner]: [TELEMETRY] Pose=(-0.50, -1.45, -147.8°) | Node=N20 | GoalDist=0.74m | Cmd=(v=0.01m/s, w=-0.34rad/s) | MinObs=1.14m | DynObs=0 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540673.858990075] [route_runner]: [TURN TELEMETRY] Node=N20 | Pose=(-0.46, -1.38, -153.6°) | Wpt=2/5 (-0.62, -0.90) | HeadingErr=98.5° | Cmd=(v=0.02, w=-0.35) | MinObs=0.17m
+[route_runner-6] [INFO] [1795540673.999110363] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-0.44, -1.33, -155.9°).
+[route_runner-6] [INFO] [1795540674.244473472] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #103 at map(-1.11, -0.82) | Vel=(0.33, 1.03) Speed=1.08m/s | DistToRobot=0.82m | RobotPose=(-0.42, -1.26)
+[route_runner-6] [INFO] [1795540674.245879892] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #105 at map(-1.13, -1.06) | Vel=(-0.38, 1.37) Speed=1.42m/s | DistToRobot=0.74m | RobotPose=(-0.42, -1.26)
+[route_runner-6] [WARN] [1795540674.507228728] [route_runner]: [BRAIN: STATE_MACHINE] Commanded YIELD (v=0.0). Cause: Dynamic obstacle at map(-0.628, -0.939), dist_to_path=0.045m, dist_to_robot=0.367m, MPPI_best_cost=20121.3. Holding position up to 4.0s before re-routing...
+[route_runner-6] [INFO] [1795540674.603719339] [route_runner]: [TELEMETRY] Pose=(-0.35, -1.20, -165.2°) | Node=N20 | GoalDist=0.45m | Cmd=(v=0.02m/s, w=-0.35rad/s) | MinObs=0.18m | DynObs=1 | State=YIELDING
+[route_runner-6] [INFO] [1795540674.700746253] [route_runner]: [BRAIN: STATE_MACHINE] Corridor cleared! Resuming NAVIGATING mode. Robot at (-0.33, -1.21).
+[route_runner-6] [INFO] [1795540674.703141202] [route_runner]: [TURN TELEMETRY] Node=N20 | Pose=(-0.33, -1.21, -168.6°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=128.8° | Cmd=(v=0.02, w=-0.34) | MinObs=1.16m
+[route_runner-6] [INFO] [1795540675.103289205] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(-0.12, -1.13, 156.2°).
+[route_runner-6] [INFO] [1795540675.247798520] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #103 at map(-0.31, -0.31) | Vel=(1.18, 0.59) Speed=1.32m/s | DistToRobot=0.83m | RobotPose=(-0.09, -1.11)
+[route_runner-6] [INFO] [1795540675.249227417] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #105 at map(-0.44, -0.65) | Vel=(0.96, 0.66) Speed=1.17m/s | DistToRobot=0.58m | RobotPose=(-0.09, -1.11)
+[route_runner-6] [INFO] [1795540675.507781162] [route_runner]: [TURN TELEMETRY] Node=N17 | Pose=(-0.04, -1.04, 149.6°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=40.1° | Cmd=(v=0.10, w=-0.35) | MinObs=1.13m
+[route_runner-6] [INFO] [1795540675.603862837] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.17 rad/s (dist=0.69m)
+[route_runner-6] [INFO] [1795540676.209823604] [route_runner]: [TELEMETRY] Pose=(0.17, -0.82, 149.9°) | Node=N17 | GoalDist=0.29m | Cmd=(v=0.11m/s, w=0.36rad/s) | MinObs=1.14m | DynObs=1 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540676.324291016] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #105 at map(0.05, 0.02) | Vel=(0.24, 0.19) Speed=0.31m/s | DistToRobot=0.76m | RobotPose=(0.25, -0.72)
+[route_runner-6] [INFO] [1795540676.325249713] [route_runner]: [LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #116 at map(-0.09, -0.28) | Vel=(0.23, 0.22) Speed=0.32m/s | DistToRobot=0.55m | RobotPose=(0.25, -0.72)
+[route_runner-6] [INFO] [1795540676.405309980] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.27, -0.68, 148.7°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=49.6° | Cmd=(v=0.11, w=0.35) | MinObs=1.14m
+[route_runner-6] [WARN] [1795540676.503477277] [route_runner]: [DEVIATION ALERT] Robot off-path: cross-track error = 0.45m (> 0.45m) at (0.29, -0.63).
+[route_runner-6] [INFO] [1795540676.504756709] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (1 dynamic obstacle(s) within 0.8m). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.63, 148.8°).
+[route_runner-6] [INFO] [1795540677.313198927] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=57.7° | Cmd=(v=0.10, w=0.34) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540677.499979145] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540677.808012821] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.34rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540678.116357993] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=57.7° | Cmd=(v=0.10, w=0.35) | MinObs=0.18m
+[amcl-3] [INFO] [1795540678.576070928] [amcl]: Message Filter dropping message: frame 'laser_frame' at time 1795540676.527 for reason 'the timestamp on the message is earlier than all the data in the transform cache'
+[route_runner-6] [INFO] [1795540678.601158246] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540679.010874246] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=57.7° | Cmd=(v=0.10, w=0.35) | MinObs=0.18m
+[route_runner-6] [WARN] [1795540679.101418138] [route_runner]: [DEVIATION ALERT] Robot off-path: cross-track error = 0.46m (> 0.45m) at (0.29, -0.60).
+[route_runner-6] [INFO] [1795540679.410394818] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.35rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540679.700571780] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540679.808973005] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=57.7° | Cmd=(v=0.10, w=0.35) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540680.702092241] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540680.708945660] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=4/5 (-0.12, -0.81) | HeadingErr=57.7° | Cmd=(v=0.10, w=0.35) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540681.007093660] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.35rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [WARN] [1795540681.012164586] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540681.013215664] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540681.014122179] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540681.015475143] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540681.017131713] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540681.018196460] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance around obstacle at (0.35, -0.39)...
+[route_runner-6] [INFO] [1795540681.021527218] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.39) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540681.107096959] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540681.608391065] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540681.799113599] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540682.007338943] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540682.511325836] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.09m/s, w=0.34rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540682.519315955] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.34) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540682.803166375] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540682.903519705] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540683.412401034] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.34) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540683.799618079] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540683.903503077] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540684.005236215] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.09m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540684.313889494] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.34) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540684.698892377] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540684.999045141] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540685.113663611] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540685.510187210] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.34rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540685.598890629] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540685.605942159] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540685.607539981] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540685.609471891] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540685.610526571] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540685.611730522] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540685.613181293] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540685.621582759] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540685.700069742] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540686.008468151] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540686.100355946] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540686.599955571] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540686.810054221] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.34) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540687.102853087] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540687.117874737] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.09m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540687.509389606] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540687.710086750] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.34) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540688.205642915] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540688.400158792] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540688.497736076] [route_runner]: Restored graph edges: [('N6', 'N17'), ('N17', 'N6')]
+[route_runner-6] [INFO] [1795540688.608948760] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540688.716461021] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.09m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540689.300933600] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540689.302379422] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540689.413807657] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540690.199383964] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540690.211901994] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540690.212646580] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540690.213121361] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540690.213606854] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540690.216520519] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540690.219618313] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540690.229565011] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540690.302816516] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540690.304700439] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540690.314998084] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.31rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540690.320542913] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.31) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540691.203086490] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540691.213533869] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540691.399603063] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540691.904637602] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.09m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540692.099483245] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540692.111720424] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540692.405256034] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540692.911722861] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540693.000865538] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540693.411381792] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540693.500175750] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540693.711986596] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540693.906421306] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540694.508557931] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540694.602998744] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540694.800777985] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540694.822371628] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540694.826084681] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540694.828211126] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540694.829845521] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540694.833309063] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540694.838136924] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540694.847150269] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540694.903319903] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540694.910174211] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540695.312196844] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540695.601695276] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540695.803734480] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540696.122557350] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540696.433152205] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540696.609245113] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540696.701136043] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540697.017744609] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540697.602156805] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540697.703906083] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540697.821391210] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540698.023940644] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540698.508951166] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540698.703782040] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540698.723209987] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540699.401025315] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540699.427109664] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540699.431808508] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540699.433954858] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540699.437310780] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540699.441963621] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540699.445150936] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540699.455785361] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540699.504015461] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540699.625120926] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.09m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540699.644779035] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540699.806084349] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540700.408255913] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540700.429581237] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540700.809395977] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540701.129173656] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.09m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540701.228345186] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540701.301599040] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540701.901101857] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540702.120412882] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.35) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540702.203773438] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540702.723304832] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540702.912021484] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540702.935314854] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540703.105867507] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540703.820865521] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540703.903917347] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540704.001966324] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540704.029531317] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540704.033882491] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540704.035721003] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540704.038675994] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540704.041690283] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540704.044847957] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540704.060649392] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540704.107842962] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540704.221177690] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.09m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540704.719777240] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540705.000917703] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540705.003700449] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540705.523934988] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540705.819744803] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.34rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540705.906933990] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540706.003183532] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540706.101646568] [route_runner]: Restored graph edges: [('N11', 'N18'), ('N20', 'N6'), ('N12', 'N7'), ('N17', 'N7'), ('N18', 'N5'), ('N7', 'N9'), ('N11', 'N13'), ('N20', 'N4'), ('N12', 'N9'), ('N14', 'N20'), ('N11', 'N7'), ('N15', 'N18'), ('N3', 'N7'), ('N13', 'N17'), ('N13', 'N15'), ('N12', 'N3'), ('N15', 'N4'), ('N18', 'N6'), ('N15', 'N2'), ('N15', 'N16'), ('N20', 'N8'), ('N14', 'N17'), ('N12', 'N5'), ('N14', 'N15'), ('N12', 'N17'), ('N18', 'N4'), ('N19', 'N2'), ('N18', 'N2'), ('N12', 'N15'), ('N13', 'N14'), ('N6', 'N7'), ('N13', 'N18'), ('N15', 'N8'), ('N4', 'N7'), ('N16', 'N20'), ('N13', 'N4'), ('N13', 'N16'), ('N15', 'N19'), ('N14', 'N18'), ('N12', 'N6'), ('N19', 'N8'), ('N10', 'N20'), ('N18', 'N8'), ('N14', 'N16'), ('N20', 'N7'), ('N1', 'N20'), ('N18', 'N19'), ('N13', 'N8'), ('N19', 'N3'), ('N5', 'N7'), ('N10', 'N15'), ('N15', 'N7'), ('N13', 'N19'), ('N7', 'N8'), ('N10', 'N12'), ('N1', 'N15'), ('N1', 'N12'), ('N20', 'N3'), ('N14', 'N19'), ('N19', 'N7'), ('N18', 'N7'), ('N16', 'N18'), ('N15', 'N9'), ('N10', 'N14'), ('N10', 'N18'), ('N11', 'N15'), ('N11', 'N12'), ('N12', 'N14'), ('N15', 'N3'), ('N13', 'N7'), ('N19', 'N9'), ('N12', 'N18'), ('N17', 'N18'), ('N10', 'N13'), ('N2', 'N20'), ('N15', 'N5'), ('N12', 'N4'), ('N12', 'N13'), ('N12', 'N16'), ('N14', 'N7'), ('N15', 'N17'), ('N18', 'N3'), ('N13', 'N9'), ('N16', 'N8'), ('N20', 'N9'), ('N19', 'N5'), ('N11', 'N20'), ('N16', 'N19'), ('N13', 'N3'), ('N12', 'N8'), ('N10', 'N19'), ('N15', 'N6'), ('N13', 'N5'), ('N20', 'N5'), ('N12', 'N19'), ('N17', 'N19'), ('N1', 'N19'), ('N15', 'N20'), ('N19', 'N6'), ('N18', 'N9'), ('N1', 'N18'), ('N16', 'N7'), ('N19', 'N20'), ('N11', 'N19'), ('N18', 'N20'), ('N10', 'N7'), ('N19', 'N4'), ('N13', 'N6'), ('N11', 'N14')]
+[route_runner-6] [INFO] [1795540706.422022762] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540706.813203574] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540707.003511205] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540707.319642896] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540707.418673618] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540707.705414828] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540708.109161350] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540708.125505130] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540708.600400752] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540708.620338437] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540708.622385469] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540708.624024418] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540708.625692044] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540708.628547100] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540708.632848896] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540708.642403386] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540708.711040568] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540709.013066573] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540709.019617079] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540709.199940438] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540709.604004313] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540709.904400728] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540710.209887628] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540710.501667748] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540710.602864173] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540710.803756257] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540711.301225975] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540711.399861811] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540711.712538704] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540712.112420808] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540712.300163721] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540712.399107186] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540712.611978650] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540713.199760850] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540713.212255152] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540713.214522563] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540713.215430126] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540713.216168637] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540713.217301823] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540713.218615689] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540713.238004126] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540713.300980349] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540713.402378624] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540713.417279648] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540713.708388029] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.34rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540714.201243127] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540714.312026562] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540714.503008035] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540715.105219867] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540715.123377815] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.31) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540715.310505911] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.31rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540715.598761452] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540715.913514716] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540716.000219817] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540716.604502306] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540716.814871021] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540716.817143728] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540716.902925339] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540717.698793731] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540717.711654540] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540717.799740283] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540717.816017161] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540717.818339259] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540717.820104650] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540717.820900782] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540717.821896603] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540717.823116556] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540717.829405331] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540717.908941850] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540718.325894317] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540718.528710375] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540718.715451547] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540718.816307205] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540719.318393583] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540719.701928468] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540719.809240698] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540719.914052440] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540720.122165925] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540720.606232314] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540720.807788707] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540721.026965143] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540721.426526557] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.09m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540721.504295560] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540721.905128031] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540721.942026012] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540722.411569289] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540722.431255131] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540722.433598831] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540722.435676824] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540722.437383053] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540722.441070850] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540722.445130248] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540722.465760096] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540722.512638272] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540722.821584618] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540722.916539458] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540723.018655439] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540723.402493941] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540723.728215266] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540724.004389775] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540724.301510851] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540724.530326356] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540724.542863807] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540725.008507313] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540725.211897186] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540725.433405233] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.11, w=0.32) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540726.109444823] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540726.116860141] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540726.136190286] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.32rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540726.329203338] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540727.020438340] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [WARN] [1795540727.051547702] [route_runner]: [BRAIN: STUCK_DETECTOR] Stuck for 45 ticks (4.5s) at (0.29, -0.60). Triggering recovery.
+[route_runner-6] [WARN] [1795540727.054332011] [route_runner]: [BRAIN: HAZARD_ZONE] Registered hazard memory at (0.35, -0.39) for 30s to prevent circular re-collision.
+[route_runner-6] [WARN] [1795540727.057818823] [route_runner]: [BRAIN: RECOVERY] Active Reverse Escape initiated at (0.29, -0.60). Front proximity=0.51m, Rear clearance=1.15m. Reversing to safe standoff distance (0.30m)...
+[route_runner-6] [INFO] [1795540727.061498143] [route_runner]: [BRAIN: RECOVERY] Standoff distance achieved (front=0.51m, elapsed=0.0s). Halting reverse.
+[route_runner-6] [WARN] [1795540727.064471919] [route_runner]: [BRAIN: RECOVERY] Re-orienting & REROUTING via Dijkstra from (0.29, -0.60) with safe standoff 0.51m.
+[route_runner-6] [WARN] [1795540727.073515901] [route_runner]: [BRAIN: DIJKSTRA_ROUTER] Triggering connected node avoidance from corridor scan around (0.35, -0.41)...
+[route_runner-6] [INFO] [1795540727.099563855] [route_runner]: [BRAIN: TOPOLOGICAL_AVOIDANCE] Successfully planned CONNECTED NODE path around obstacle at (0.35, -0.41) [R_safe=0.45m]: ['N11', 'N17'] (6 waypoints, ending at (-0.12, -0.81)). Resuming navigation.
+[route_runner-6] [INFO] [1795540727.111937212] [route_runner]: [BRAIN: MPPI_CONTROLLER] Tactical evasion active (2 dynamic obstacle(s) within 0.8m, static obstacle near path). Brain tweaked controller: relaxed centerline weight w_cross_track 6.0 -> 2.0. Robot pose=(0.29, -0.60, 149.0°).
+[route_runner-6] [INFO] [1795540727.116166366] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540727.226445734] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.10, w=0.33) | MinObs=0.18m
+[route_runner-6] [INFO] [1795540727.617611129] [route_runner]: [TELEMETRY] Pose=(0.29, -0.60, 149.0°) | Node=N12 | GoalDist=0.46m | Cmd=(v=0.10m/s, w=0.33rad/s) | MinObs=0.18m | DynObs=3 | State=NAVIGATING
+[route_runner-6] [INFO] [1795540728.007914034] [route_runner]: [BRAIN: SWERVE] Committed dynamic evasion swerve LEFT (obs on RIGHT) for 8 ticks | bias=+0.22 rad/s (dist=0.55m)
+[route_runner-6] [INFO] [1795540728.030902367] [route_runner]: [TURN TELEMETRY] Node=N12 | Pose=(0.29, -0.60, 149.0°) | Wpt=3/6 (-0.02, -0.46) | HeadingErr=6.1° | Cmd=(v=0.09, w=0.32) | MinObs=0.18m
