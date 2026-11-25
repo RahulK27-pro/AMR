@@ -24,14 +24,14 @@ Run (after sourcing ROS 2 workspace):
   python3 bridge_server.py
 """
 
+import argparse
 import asyncio
 import base64
 import io
 import json
 import math
 import os
-os.environ['RCUTILS_LOGGING_SEVERITY_THRESHOLD'] = 'ERROR'
-os.environ['ROS_LOCALHOST_ONLY'] = '1'
+import re
 import signal
 import subprocess
 import sys
@@ -47,6 +47,94 @@ from typing import List, Optional, Tuple, Dict, Any
 
 logger = logging.getLogger("amr_bridge")
 logging.basicConfig(level=logging.INFO)
+
+_WS_EARLY = Path(os.environ.get("AMR_WS", Path.home() / "AMR" / "AMR-main"))
+
+
+def _parse_runtime_args():
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--mode", default=os.environ.get("AMR_MODE", "sim"))
+    parser.add_argument("--pi-ip", dest="pi_ip", default=os.environ.get("AMR_PI_IP", "10.244.248.208"))
+    known, _ = parser.parse_known_args()
+    mode = str(known.mode or "sim").strip().lower()
+    if mode in ("hw", "hardware"):
+        mode = "hardware"
+    else:
+        mode = "sim"
+    pi_ip = str(known.pi_ip or "10.244.248.208").strip()
+    return mode, pi_ip
+
+
+def _detect_local_ip_for_peer(peer_ip: str) -> str:
+    try:
+        res = subprocess.run(
+            ["ip", "route", "get", peer_ip],
+            capture_output=True, text=True, timeout=1.5
+        )
+        if res.returncode == 0:
+            tokens = res.stdout.split()
+            for idx, tok in enumerate(tokens):
+                if tok == "src" and idx + 1 < len(tokens):
+                    return tokens[idx + 1]
+    except Exception:
+        pass
+    try:
+        res = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=1.5)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip().split()[0]
+    except Exception:
+        pass
+    return ""
+
+
+def _write_cyclonedds_xml(ws_root: Path, pi_ip: str) -> Path:
+    local_ip = _detect_local_ip_for_peer(pi_ip)
+    net_iface_xml = f'<NetworkInterface address="{local_ip}"/>' if local_ip else '<NetworkInterface autodetermine="true"/>'
+    xml_path = ws_root / "cyclonedds.xml"
+    xml_body = (
+        '<?xml version="1.0" encoding="UTF-8" ?>\n'
+        '<CycloneDDS xmlns="https://cdds.io/config">\n'
+        '  <Domain Id="7">\n'
+        '    <General>\n'
+        '      <Interfaces>\n'
+        f'        {net_iface_xml}\n'
+        '      </Interfaces>\n'
+        '    </General>\n'
+        '    <Discovery>\n'
+        '      <Peers>\n'
+        '        <Peer Address="127.0.0.1"/>\n'
+        f'        <Peer Address="{pi_ip}"/>\n'
+        '      </Peers>\n'
+        '    </Discovery>\n'
+        '  </Domain>\n'
+        '</CycloneDDS>\n'
+    )
+    xml_path.write_text(xml_body, encoding="utf-8")
+    return xml_path
+
+
+def _configure_dds_environment(mode: str, pi_ip: str):
+    os.environ["RCUTILS_LOGGING_SEVERITY_THRESHOLD"] = "ERROR"
+    os.environ["AMR_MODE"] = mode
+    os.environ["AMR_PI_IP"] = pi_ip
+    os.environ["ROS_DOMAIN_ID"] = os.environ.get("ROS_DOMAIN_ID", "7")
+    os.environ["RMW_IMPLEMENTATION"] = os.environ.get("RMW_IMPLEMENTATION", "rmw_cyclonedds_cpp")
+    if mode == "hardware":
+        os.environ.pop("ROS_LOCALHOST_ONLY", None)
+        try:
+            xml_path = _write_cyclonedds_xml(_WS_EARLY, pi_ip)
+            os.environ["CYCLONEDDS_URI"] = f"file://{xml_path}"
+        except Exception as e:
+            logger.warning(f"[bridge] Failed to write cyclonedds.xml: {e}")
+    else:
+        os.environ["ROS_LOCALHOST_ONLY"] = "1"
+        os.environ.pop("CYCLONEDDS_URI", None)
+
+
+AMR_MODE, AMR_PI_IP = _parse_runtime_args()
+_configure_dds_environment(AMR_MODE, AMR_PI_IP)
+_PENDING_REEXEC: Optional[Tuple[str, str]] = None
+_UVICORN_SERVER: Optional[Any] = None
 
 
 from PIL import Image, ImageDraw
@@ -95,16 +183,97 @@ from pydantic import BaseModel
 import uvicorn
 
 # ---------------------------------------------------------------------------
-# Config — map image path (static pre-computed PNG)
+# Config — unified map paths (simulation + hardware coexistence)
 # ---------------------------------------------------------------------------
 _WORKSPACE_ROOT = Path(os.environ.get("AMR_WS", Path.home() / "AMR" / "AMR-main"))
-# Floorplan image and graph paths
-_MAP_PNG_PATH       = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_map.png"
-_MAP_PNG_GRAPH_PATH = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_map_graph_vis.png"
-_GRAPH_JSON_PATH    = _WORKSPACE_ROOT / "src" / "agv_description" / "maps" / "warehouse_map_graph.json"
+_SIM_MAPS_DIR   = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+_HW_MAPS_DIR    = _WORKSPACE_ROOT / "maps"
+_APP_MAPS_DIR   = _WORKSPACE_ROOT / "app" / "src" / "agv_description" / "maps"
+_DARK_CACHE_DIR = Path("/tmp/amr_map_dark_cache")
+
+# Floorplan image and graph defaults
+_MAP_PNG_PATH       = _SIM_MAPS_DIR / "warehouse_map.png"
+_MAP_PNG_GRAPH_PATH = _SIM_MAPS_DIR / "warehouse_map_graph_vis.png"
+_GRAPH_JSON_PATH    = _SIM_MAPS_DIR / "warehouse_map_graph.json"
+
+# Calibrated Speed Profiles (matching teleop_wasd.py & hardware_navigation.launch.py)
+SIM_TELEOP_LIMITS = {
+    'max_linear': 0.80,
+    'min_linear': 0.05,
+    'default_linear': 0.64,
+    'linear_step': 0.05,
+    'max_angular': 1.80,
+    'min_angular': 0.20,
+    'default_angular': 1.44,
+    'angular_step': 0.15,
+}
+HW_TELEOP_LIMITS = {
+    'max_linear': 0.45,      # teleop_wasd.py MAX_LINEAR_SPEED
+    'min_linear': 0.04,      # teleop_wasd.py MIN_LINEAR_SPEED
+    'default_linear': 0.18,  # teleop_wasd.py DEFAULT_LINEAR
+    'linear_step': 0.02,     # teleop_wasd.py LINEAR_STEP
+    'max_angular': 2.00,     # teleop_wasd.py MAX_ANGULAR_SPEED
+    'min_angular': 0.20,     # teleop_wasd.py MIN_ANGULAR_SPEED
+    'default_angular': 0.80, # teleop_wasd.py DEFAULT_ANGULAR
+    'angular_step': 0.10,    # teleop_wasd.py ANGULAR_STEP
+    'presets': [
+        {'label': 'Slow', 'linear': 0.10, 'angular': 0.50},
+        {'label': 'Normal', 'linear': 0.20, 'angular': 0.80},
+        {'label': 'Fast', 'linear': 0.35, 'angular': 1.40},
+    ],
+}
+HW_NAV_LIMITS = {
+    'max_linear_speed': 0.13,
+    'cruise_linear_speed': 0.10,
+    'max_angular_speed': 0.40,
+    'lookahead_dist': 0.25,
+    'use_bt': False,
+}
+
+
+def _get_map_search_dirs(mode: Optional[str] = None) -> List[Path]:
+    active_mode = mode or AMR_MODE
+    if active_mode == 'hardware':
+        dirs = [_HW_MAPS_DIR, _SIM_MAPS_DIR, _APP_MAPS_DIR]
+    else:
+        dirs = [_SIM_MAPS_DIR, _HW_MAPS_DIR, _APP_MAPS_DIR]
+    return [d for d in dirs if d.exists()]
+
+
+def _find_map_file(map_name: str, suffixes: Tuple[str, ...], mode: Optional[str] = None) -> Optional[Path]:
+    target = map_name.strip()
+    for d in _get_map_search_dirs(mode):
+        for suf in suffixes:
+            cand = d / f"{target}{suf}"
+            if cand.exists():
+                return cand
+    return None
+
+
+def _get_primary_map_dir(map_name: str) -> Path:
+    yaml_p = _find_map_file(map_name, ('.yaml',))
+    if yaml_p is not None:
+        return yaml_p.parent
+    graph_p = _find_map_file(map_name, ('_graph.json', '.json'))
+    if graph_p is not None:
+        return graph_p.parent
+    return _HW_MAPS_DIR if AMR_MODE == 'hardware' else _SIM_MAPS_DIR
+
+
+def _default_map_for_mode(mode: str) -> str:
+    if mode == 'hardware':
+        for candidate in ('prakash_room', 'final_map', 'my_clean_warehouse11_map'):
+            if _find_map_file(candidate, ('.yaml', '_graph.json'), mode='hardware'):
+                return candidate
+        if _HW_MAPS_DIR.exists():
+            yamls = sorted(_HW_MAPS_DIR.glob('*.yaml'))
+            if yamls:
+                return yamls[0].stem
+    return 'hospital_map'
+
 
 # Import graph extractor engine
-_MAPS_DIR = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
+_MAPS_DIR = _SIM_MAPS_DIR
 if str(_MAPS_DIR) not in sys.path:
     sys.path.insert(0, str(_MAPS_DIR))
 try:
@@ -123,34 +292,27 @@ MAP_HEIGHT_PX  = 275           # default rows
 
 def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
     """Read map metadata (resolution, origin, width, height) dynamically from <map_name>.yaml and image."""
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target = (map_name or 'hospital_map').strip()
-    yaml_path = maps_dir / f"{target}.yaml"
-    if not yaml_path.exists():
+    target = (map_name or _default_map_for_mode(AMR_MODE)).strip()
+    yaml_path = _find_map_file(target, ('.yaml',))
+    if yaml_path is None:
         if target in ('warehouse_map', 'warehouse'):
-            yaml_path = maps_dir / "warehouse_map.yaml"
+            yaml_path = _find_map_file('warehouse_map', ('.yaml',))
         elif target == 'hospital_map':
-            yaml_path = maps_dir / "hospital_map.yaml"
+            yaml_path = _find_map_file('hospital_map', ('.yaml',))
         else:
-            matches = list(maps_dir.glob(f"*{target}*.yaml"))
-            if matches:
-                yaml_path = matches[0]
+            for d in _get_map_search_dirs():
+                matches = list(d.glob(f"*{target}*.yaml"))
+                if matches:
+                    yaml_path = matches[0]
+                    break
 
     # Map-specific calibrated fallbacks
     if target in ('hospital', 'hospital_map'):
-        res = 0.05
-        ox = -8.5
-        oy = -6.5
-        width = 340
-        height = 260
+        res, ox, oy, width, height = 0.05, -8.5, -6.5, 340, 260
     else:
-        res = 0.05
-        ox = -7.397
-        oy = -6.596
-        width = 329
-        height = 275
+        res, ox, oy, width, height = 0.05, -7.397, -6.596, 329, 275
 
-    if yaml_path.exists():
+    if yaml_path and yaml_path.exists():
         try:
             with open(yaml_path, 'r', encoding='utf-8') as f:
                 ydata = yaml.safe_load(f)
@@ -163,13 +325,12 @@ def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
                 img_name = ydata.get('image', f"{target}.png")
                 img_file = yaml_path.parent / img_name
                 if not img_file.exists():
-                    img_file = maps_dir / f"{target}.png"
+                    img_file = _find_map_file(target, ('.png', '.pgm')) or img_file
                 if not img_file.exists():
-                    img_file = maps_dir / f"{yaml_path.stem}.png"
-                
+                    img_file = _find_map_file(yaml_path.stem, ('.png', '.pgm')) or img_file
+
                 if img_file.exists():
                     try:
-                        from PIL import Image
                         with Image.open(img_file) as pimg:
                             width, height = pimg.size
                     except Exception:
@@ -187,26 +348,54 @@ def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
     }
 
 
+def _synthesize_dark_map_png(src_img_path: Path, map_name: str) -> Optional[Path]:
+    """Convert grayscale/light PGM-style PNGs (e.g. hardware maps) to dark-slate/cyan theme in cache."""
+    try:
+        _DARK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = _DARK_CACHE_DIR / f"{map_name}_dark.png"
+        if out_path.exists() and out_path.stat().st_mtime >= src_img_path.stat().st_mtime:
+            return out_path
+
+        with Image.open(src_img_path) as im:
+            rgb = np.array(im.convert('RGB'))
+
+        # Skip conversion if image already has a dark floor (e.g., warehouse_map.png)
+        dark_floor = np.mean((rgb[:, :, 0] < 45) & (rgb[:, :, 1] < 50) & (rgb[:, :, 2] < 70))
+        if dark_floor > 0.35:
+            return src_img_path
+
+        out = np.zeros_like(rgb)
+        gray = np.mean(rgb.astype(np.float32), axis=2)
+        out[(gray >= 150) & (gray < 235)] = [26, 32, 46]     # unknown -> dark slate
+        out[gray >= 235] = [12, 16, 28]                        # free -> deep navy
+        out[gray < 150] = [0, 212, 255]                        # occupied -> cyan wall
+        Image.fromarray(out).save(out_path, format='PNG')
+        return out_path
+    except Exception:
+        return src_img_path
+
+
 def resolve_map_image_path(map_name: Optional[str] = None, theme: str = 'dark') -> Optional[Path]:
-    """Find or convert the clean floorplan PNG for a given map and theme."""
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    app_maps_dir = _WORKSPACE_ROOT / "app" / "src" / "agv_description" / "maps"
-    target = (map_name or 'hospital_map').strip()
+    """Find or convert the clean floorplan PNG across simulation & hardware map directories."""
+    target = (map_name or _default_map_for_mode(AMR_MODE)).strip()
+    search_dirs = _get_map_search_dirs()
 
     if theme == 'light':
-        for d in (maps_dir, app_maps_dir):
+        for d in search_dirs:
             lp = d / f"{target}_light.png"
             if lp.exists():
                 return lp
 
     # 1. Direct png file
-    for d in (maps_dir, app_maps_dir):
+    for d in search_dirs:
         dp = d / f"{target}.png"
         if dp.exists():
+            if theme == 'dark' and target != 'hospital_map':
+                return _synthesize_dark_map_png(dp, target)
             return dp
 
     # 2. Check yaml
-    for d in (maps_dir, app_maps_dir):
+    for d in search_dirs:
         yaml_path = d / f"{target}.yaml"
         if yaml_path.exists():
             try:
@@ -215,29 +404,27 @@ def resolve_map_image_path(map_name: Optional[str] = None, theme: str = 'dark') 
                 if isinstance(yd, dict) and 'image' in yd:
                     im_path = d / yd['image']
                     direct_png = d / f"{target}.png"
-                    if im_path.suffix.lower() == '.pgm' and not direct_png.exists():
+                    if im_path.suffix.lower() == '.pgm' and im_path.exists() and not direct_png.exists():
                         try:
-                            from PIL import Image
                             with Image.open(im_path) as pimg:
                                 pimg.save(direct_png, format='PNG')
-                            return direct_png
+                            return _synthesize_dark_map_png(direct_png, target) if (theme == 'dark' and target != 'hospital_map') else direct_png
                         except Exception:
                             pass
                     if im_path.exists() and im_path.suffix.lower() == '.png':
-                        return im_path
+                        return _synthesize_dark_map_png(im_path, target) if (theme == 'dark' and target != 'hospital_map') else im_path
             except Exception:
                 pass
 
     # 3. If .pgm exists, convert to png
-    for d in (maps_dir, app_maps_dir):
+    for d in search_dirs:
         pgm_path = d / f"{target}.pgm"
         direct_png = d / f"{target}.png"
         if pgm_path.exists():
             try:
-                from PIL import Image
                 with Image.open(pgm_path) as pimg:
                     pimg.save(direct_png, format='PNG')
-                return direct_png
+                return _synthesize_dark_map_png(direct_png, target) if (theme == 'dark' and target != 'hospital_map') else direct_png
             except Exception:
                 pass
 
@@ -246,7 +433,7 @@ def resolve_map_image_path(map_name: Optional[str] = None, theme: str = 'dark') 
 
 def world_to_pixel(wx: float, wy: float, map_name: Optional[str] = None):
     """Convert world (x,y) metres → (col, row) pixel in the map image."""
-    meta = get_map_metadata_by_name(map_name or (node.active_map_name if 'node' in globals() and node else 'hospital_map'))
+    meta = get_map_metadata_by_name(map_name or (node.active_map_name if 'node' in globals() and node else _default_map_for_mode(AMR_MODE)))
     col = int((wx - meta['origin_x']) / meta['resolution'])
     row = meta['height'] - int((wy - meta['origin_y']) / meta['resolution'])
     return col, row
@@ -365,8 +552,9 @@ class MappingManager:
                 f"export QT_QPA_PLATFORM=xcb && "
                 f"export ROS_DOMAIN_ID=\"{domain_id}\" && "
                 f"export RMW_IMPLEMENTATION=\"{rmw_impl}\" && "
-                f"export ROS_LOCALHOST_ONLY=1 && "
-                f"export LIBGL_ALWAYS_SOFTWARE=1 && "
+                + (f"export ROS_LOCALHOST_ONLY=1 && " if AMR_MODE == 'sim' else f"unset ROS_LOCALHOST_ONLY && ")
+                + (f"export CYCLONEDDS_URI=\"{os.environ.get('CYCLONEDDS_URI', '')}\" && " if (AMR_MODE == 'hardware' and os.environ.get('CYCLONEDDS_URI')) else "")
+                + f"export LIBGL_ALWAYS_SOFTWARE=1 && "
                 f"export GALLIUM_DRIVER=llvmpipe && "
                 f"export MESA_GL_VERSION_OVERRIDE=4.5 && "
                 f"source /opt/ros/jazzy/setup.bash && "
@@ -383,7 +571,10 @@ class MappingManager:
                 sub_env['QT_QPA_PLATFORM'] = 'xcb'
                 sub_env['ROS_DOMAIN_ID'] = domain_id
                 sub_env['RMW_IMPLEMENTATION'] = rmw_impl
-                sub_env['ROS_LOCALHOST_ONLY'] = '1'
+                if AMR_MODE == 'sim':
+                    sub_env['ROS_LOCALHOST_ONLY'] = '1'
+                else:
+                    sub_env.pop('ROS_LOCALHOST_ONLY', None)
                 sub_env['LIBGL_ALWAYS_SOFTWARE'] = '1'
                 sub_env['GALLIUM_DRIVER'] = 'llvmpipe'
                 sub_env['MESA_GL_VERSION_OVERRIDE'] = '4.5'
@@ -424,8 +615,8 @@ class MappingManager:
                 cmd = (
                     f"export ROS_DOMAIN_ID=\"{domain_id}\" && "
                     f"export RMW_IMPLEMENTATION=\"{rmw_impl}\" && "
-                    f"export ROS_LOCALHOST_ONLY=1 && "
-                    f"source /opt/ros/jazzy/setup.bash && "
+                    + ("export ROS_LOCALHOST_ONLY=1 && " if AMR_MODE == 'sim' else "unset ROS_LOCALHOST_ONLY && ")
+                    + f"source /opt/ros/jazzy/setup.bash && "
                     f"source {self.ws_root}/install/setup.bash && "
                     f"ros2 run explore_lite explore --ros-args -r __node:=explore_node "
                     f"--params-file {self.ws_root}/src/agv_description/config/nav2_params_explore.yaml "
@@ -1006,13 +1197,15 @@ system_mgr = SystemLaunchManager(_WORKSPACE_ROOT)
 # ---------------------------------------------------------------------------
 
 class AmrBridgeNode(Node):
-    def __init__(self):
+    def __init__(self, use_sim_time: Optional[bool] = None):
+        is_sim = (AMR_MODE == 'sim') if use_sim_time is None else bool(use_sim_time)
         super().__init__(
             'amr_web_bridge',
             parameter_overrides=[
-                rclpy.parameter.Parameter('use_sim_time', rclpy.parameter.Parameter.Type.BOOL, True)
+                rclpy.parameter.Parameter('use_sim_time', rclpy.parameter.Parameter.Type.BOOL, is_sim)
             ]
         )
+        self.use_sim_time = is_sim
         try:
             rclpy.logging.get_logger('tf2_buffer').set_level(rclpy.logging.LoggingSeverity.FATAL)
         except Exception:
@@ -1038,9 +1231,9 @@ class AmrBridgeNode(Node):
         self.create_subscription(String,        '/obstacle_alert',    self._alert_cb,   10)
         self.create_subscription(Imu,           '/imu/data',          self._imu_cb,     qos_profile_sensor_data)
         self.create_subscription(String,        '/mission_progress',  self._mission_cb, 10)
-        # AMCL pose — authoritative map-frame localization (replaces raw odom for pose display)
+        # AMCL pose — authoritative map-frame localization (VOLATILE matches both sim & hw AMCL)
         self.create_subscription(
-            PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, latched_map_qos
+            PoseWithCovarianceStamped, '/amcl_pose', self._amcl_cb, 10
         )
         # Live /map subscription from SLAM Toolbox
         self.create_subscription(OccupancyGrid, '/map', self._map_cb, latched_map_qos)
@@ -1060,6 +1253,11 @@ class AmrBridgeNode(Node):
         self._using_map_tf = False
         self._last_map_tf_time = 0.0
         self._last_sim_time = 0.0
+        self._last_scan_rx_time = 0.0
+        self._last_odom_rx_time = 0.0
+        self._last_amcl_rx_time = 0.0
+        self._last_state_rx_time = 0.0
+        self._estop_latched = False
         self._tf_buffer   = None
         self._tf_listener = None
         if _TF2_AVAILABLE:
@@ -1085,7 +1283,7 @@ class AmrBridgeNode(Node):
         self.obstacle_alert: Optional[str] = None
         self.imu              = {'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0}
         self.mission          = {}
-        self.active_map_name: str = 'hospital_map'
+        self.active_map_name: str = _default_map_for_mode(AMR_MODE)
         self._cached_graphs: Dict[str, dict] = {}
         self._cached_graph: Optional[dict] = None
         self.active_place_nav: Optional[dict] = None
@@ -1117,7 +1315,7 @@ class AmrBridgeNode(Node):
 
     def reset_simulation_state(self):
         """Reset all telemetry state, waypoints, and TF buffer for clean new run."""
-        logger.info("[bridge] Resetting simulation state and clearing buffers...")
+        logger.info("[bridge] Resetting telemetry state and clearing buffers...")
         self.pose = {'x': 0.0, 'y': 0.0, 'yaw': 0.0}
         self.velocity = {'linear': 0.0, 'angular': 0.0}
         self.min_obstacle_dist = float('inf')
@@ -1137,6 +1335,11 @@ class AmrBridgeNode(Node):
         self._using_map_tf = False
         self._last_map_tf_time = 0.0
         self._last_sim_time = 0.0
+        self._last_scan_rx_time = 0.0
+        self._last_odom_rx_time = 0.0
+        self._last_amcl_rx_time = 0.0
+        self._last_state_rx_time = 0.0
+        self._estop_latched = False
         if self._tf_buffer is not None:
             try:
                 self._tf_buffer.clear()
@@ -1202,13 +1405,14 @@ class AmrBridgeNode(Node):
         }
 
     def _odom_cb(self, msg):
+        self._last_odom_rx_time = time.time()
         # Use odom only for velocity; pose comes from AMCL / TF (map frame)
         self.velocity['linear']  = msg.twist.twist.linear.x
         self.velocity['angular'] = msg.twist.twist.angular.z
 
-        # Detect simulation restart (time jump backward > 2.0s)
+        # Detect simulation restart (time jump backward > 2.0s) only in sim mode
         stamp_sec = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        if hasattr(self, '_last_sim_time') and stamp_sec > 0 and self._last_sim_time > 0:
+        if self.use_sim_time and hasattr(self, '_last_sim_time') and stamp_sec > 0 and self._last_sim_time > 0:
             if stamp_sec < (self._last_sim_time - 2.0):
                 logger.warning(f"[bridge] Detected simulation time jump backward ({self._last_sim_time:.2f}s -> {stamp_sec:.2f}s)! Resetting simulation state.")
                 self.reset_simulation_state()
@@ -1229,6 +1433,7 @@ class AmrBridgeNode(Node):
     def _amcl_cb(self, msg):
         """AMCL pose — map-frame, highest-confidence source for robot position."""
         self._amcl_pose_received = True
+        self._last_amcl_rx_time = time.time()
         self.pose['x']   = round(float(msg.pose.pose.position.x), 3)
         self.pose['y']   = round(float(msg.pose.pose.position.y), 3)
         self.pose['yaw'] = self._quat_to_yaw(msg.pose.pose.orientation)
@@ -1252,6 +1457,7 @@ class AmrBridgeNode(Node):
             self._using_map_tf = False
 
     def _scan_cb(self, msg):
+        self._last_scan_rx_time = time.time()
         self.scan_ranges    = list(msg.ranges)
         self.scan_angle_min = msg.angle_min
         self.scan_angle_inc = msg.angle_increment
@@ -1259,7 +1465,12 @@ class AmrBridgeNode(Node):
         self.min_obstacle_dist = min(valid) if valid else float('inf')
 
     def _state_cb(self, msg):
+        self._last_state_rx_time = time.time()
         self.nav_state = msg.data
+        if msg.data == 'ESTOP':
+            self._estop_latched = True
+        elif self._estop_latched and msg.data in ('IDLE', 'PLANNING', 'NAVIGATING'):
+            self._estop_latched = False
         if msg.data == 'IDLE' and not self.active_place_nav:
             self.path_waypoints = []
         if self.active_place_nav:
@@ -1418,11 +1629,15 @@ class AmrBridgeNode(Node):
             self.explore_status_label = 'Exploring frontier...'
 
     def publish_estop(self, active: bool):
+        self._estop_latched = bool(active)
         b = Bool()
         b.data = active
         self.estop_pub.publish(b)
         if active:
+            self.nav_state = 'ESTOP'
             self.publish_explore_resume(False)
+        elif self.nav_state == 'ESTOP':
+            self.nav_state = 'IDLE'
 
     def publish_initial_pose(self, x: float, y: float, theta: float):
         msg = PoseWithCovarianceStamped()
@@ -1573,40 +1788,35 @@ class AmrBridgeNode(Node):
 
     def set_active_map(self, map_name: str):
         target_name = map_name.strip()
-        maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-        valid_map = (
-            (maps_dir / f"{target_name}.yaml").exists() or 
-            (maps_dir / f"{target_name}_graph.json").exists() or 
-            (maps_dir / f"{target_name}.png").exists()
-        )
-        if not valid_map:
+        found_asset = _find_map_file(target_name, ('.yaml', '_graph.json', '.png', '.pgm'))
+        if not found_asset:
             raise FileNotFoundError(f"Map '{target_name}' not found on disk.")
-            
+
         self.active_map_name = target_name
         # Pre-cache graph for active map
         self.get_graph_data(target_name)
-        
-        # 1. Synchronize active graph to warehouse_graph.json for ROS2 route_runner
-        src_graph = maps_dir / f"{target_name}_graph.json"
-        if src_graph.exists():
-            dest_graph = maps_dir / "warehouse_graph.json"
-            try:
-                shutil.copy2(src_graph, dest_graph)
-                self.get_logger().info(f"Synchronized active map '{target_name}' graph to warehouse_graph.json")
-            except Exception as e:
-                self.get_logger().warning(f"Could not sync graph to warehouse_graph.json: {e}")
+
+        # Synchronize active graph to warehouse_graph.json for ROS2 route_runner fallback
+        src_graph = _find_map_file(target_name, ('_graph.json', '.json'))
+        if src_graph and src_graph.exists():
+            for d in [_SIM_MAPS_DIR, _HW_MAPS_DIR]:
+                if d.exists():
+                    dest_graph = d / "warehouse_graph.json"
+                    try:
+                        shutil.copy2(src_graph, dest_graph)
+                    except Exception as e:
+                        self.get_logger().warning(f"Could not sync graph to {dest_graph}: {e}")
 
     def get_graph_data(self, map_name: Optional[str] = None) -> dict:
-        target_name = (map_name or self.active_map_name or 'hospital_map').strip()
+        target_name = (map_name or self.active_map_name or _default_map_for_mode(AMR_MODE)).strip()
         if target_name in self._cached_graphs:
             return self._cached_graphs[target_name]
 
-        maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-        graph_path = maps_dir / f"{target_name}_graph.json"
-        if not graph_path.exists() and target_name == 'warehouse':
-            graph_path = maps_dir / "warehouse_graph.json"
+        graph_path = _find_map_file(target_name, ('_graph.json', '.json'))
+        if (graph_path is None or not graph_path.exists()) and target_name == 'warehouse':
+            graph_path = _find_map_file('warehouse', ('_graph.json', '.json'))
 
-        if graph_path.exists():
+        if graph_path and graph_path.exists():
             try:
                 with open(graph_path, 'r', encoding='utf-8') as f:
                     raw = json.load(f)
@@ -1614,18 +1824,13 @@ class AmrBridgeNode(Node):
                 edges = raw.get('edges', [])
                 places = raw.get('places', [])
                 vis_b64 = None
-                vis_candidates = [
-                    maps_dir / f"{target_name}_graph_vis.png",
-                    maps_dir / f"{target_name}_vis.png",
-                ]
-                for vc in vis_candidates:
-                    if vc.exists():
-                        try:
-                            with open(vc, 'rb') as img_f:
-                                vis_b64 = base64.b64encode(img_f.read()).decode('utf-8')
-                            break
-                        except Exception:
-                            pass
+                vis_path = _find_map_file(target_name, ('_graph_vis.png', '_vis.png'))
+                if vis_path and vis_path.exists():
+                    try:
+                        with open(vis_path, 'rb') as img_f:
+                            vis_b64 = base64.b64encode(img_f.read()).decode('utf-8')
+                    except Exception:
+                        pass
                 graph_data = {
                     'nodes': nodes,
                     'edges': edges,
@@ -1736,7 +1941,30 @@ class AmrBridgeNode(Node):
             else:
                 dyn_obs['avoidance_status'] = 'CLEAR'
 
+        now = time.time()
+        scan_alive = (now - getattr(self, '_last_scan_rx_time', 0.0)) < 2.5
+        odom_alive = (now - getattr(self, '_last_odom_rx_time', 0.0)) < 2.5
+        map_tf_locked = bool(self._using_map_tf and (now - getattr(self, '_last_map_tf_time', 0.0)) < 2.5)
+        amcl_alive = bool(self._amcl_pose_received and (now - getattr(self, '_last_amcl_rx_time', 0.0)) < 5.0)
+        state_alive = (now - getattr(self, '_last_state_rx_time', 0.0)) < 3.0
+        teleop_limits = HW_TELEOP_LIMITS if AMR_MODE == 'hardware' else SIM_TELEOP_LIMITS
+
         return {
+            'mode':            AMR_MODE,
+            'pi_ip':           AMR_PI_IP,
+            'use_sim_time':    self.use_sim_time,
+            'estop_active':    bool(self._estop_latched or self.nav_state == 'ESTOP'),
+            'limits':          teleop_limits,
+            'nav_limits':      HW_NAV_LIMITS if AMR_MODE == 'hardware' else None,
+            'hardware_link': {
+                'pi_ip':               AMR_PI_IP,
+                'scan_alive':          scan_alive,
+                'odom_alive':          odom_alive,
+                'sensors_ready':       scan_alive and odom_alive,
+                'map_tf_locked':       map_tf_locked,
+                'amcl_localized':      amcl_alive or map_tf_locked,
+                'external_nav_active': state_alive and (scan_alive or map_tf_locked),
+            },
             'pose':            self.pose,
             'velocity':        self.velocity,
             'min_obstacle_dist': round(obs_dist, 3) if obs_dist is not None else None,
@@ -1745,15 +1973,15 @@ class AmrBridgeNode(Node):
             'obstacle_alert':  self.obstacle_alert,
             'imu':             self.imu,
             'mission':         self.mission,
-            'active_map':      getattr(self, 'active_map_name', 'hospital_map'),
+            'active_map':      getattr(self, 'active_map_name', _default_map_for_mode(AMR_MODE)),
             'active_place_nav': getattr(self, 'active_place_nav', None),
-            'dynamic_obstacle': dyn_obs,
+            'dynamic_obstacle': dyn_obs if AMR_MODE == 'sim' else None,
             'scan':            scan_ds,
             'scan_angle_min':  round(self.scan_angle_min, 4),
             'scan_angle_inc':  round(self.scan_angle_inc, 4),
             'mapping':         mapping_mgr.get_status(self._has_live_map, self.get_live_map_info(), ros_node=self),
             'system_status':   system_mgr.get_status() if 'system_mgr' in globals() else {},
-            'ts':              round(time.time(), 3),
+            'ts':              round(now, 3),
         }
 
     # -------- Map PNG with robot overlay --------
@@ -1928,7 +2156,72 @@ class SetActiveMapRequest(BaseModel):
     map_name: str
 
 
+class ModeSwitchRequest(BaseModel):
+    mode: str  # 'sim' | 'hardware'
+    pi_ip: Optional[str] = None
+
+
 # -------- REST endpoints --------
+
+@app.get('/api/mode')
+async def get_mode():
+    return {
+        'ok': True,
+        'mode': AMR_MODE,
+        'pi_ip': AMR_PI_IP,
+        'use_sim_time': (AMR_MODE == 'sim'),
+        'teleop_limits': HW_TELEOP_LIMITS if AMR_MODE == 'hardware' else SIM_TELEOP_LIMITS,
+        'nav_limits': HW_NAV_LIMITS if AMR_MODE == 'hardware' else None,
+    }
+
+
+@app.post('/api/mode')
+async def post_mode(req: ModeSwitchRequest):
+    """Switch between 'sim' and 'hardware' cleanly by re-execing the bridge process with fresh DDS env."""
+    global _PENDING_REEXEC
+    target_mode = (req.mode or '').strip().lower()
+    if target_mode in ('hw', 'hardware'):
+        target_mode = 'hardware'
+    elif target_mode in ('sim', 'simulation'):
+        target_mode = 'sim'
+    else:
+        return JSONResponse({'ok': False, 'error': f"Invalid mode '{req.mode}'. Expected 'sim' or 'hardware'."}, status_code=400)
+
+    target_pi_ip = (req.pi_ip or AMR_PI_IP or '10.244.248.208').strip()
+    if target_mode == 'hardware' and not re.match(r'^\d{1,3}(\.\d{1,3}){3}$', target_pi_ip):
+        return JSONResponse({'ok': False, 'error': f"Invalid Pi IP address '{target_pi_ip}'."}, status_code=400)
+
+    if target_mode == AMR_MODE and target_pi_ip == AMR_PI_IP:
+        return {'ok': True, 'mode': AMR_MODE, 'pi_ip': AMR_PI_IP, 'restarting': False}
+
+    _PENDING_REEXEC = (target_mode, target_pi_ip)
+
+    def _trigger_reexec():
+        time.sleep(0.25)
+        try:
+            system_mgr.stop()
+        except Exception:
+            pass
+        try:
+            mapping_mgr.stop()
+        except Exception:
+            pass
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
+        if _UVICORN_SERVER is not None:
+            _UVICORN_SERVER.should_exit = True
+
+    threading.Thread(target=_trigger_reexec, daemon=True).start()
+    return {
+        'ok': True,
+        'mode': target_mode,
+        'pi_ip': target_pi_ip,
+        'restarting': True,
+        'message': f"Switching bridge to {target_mode.upper()} mode..."
+    }
 
 @app.get('/api/status')
 async def get_status():
@@ -2154,18 +2447,34 @@ async def post_mapping_save(req: SaveMapRequest = SaveMapRequest()):
 
 @app.get('/api/mapping/saved_maps')
 async def get_saved_maps():
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
     maps = []
-    curr_active = node.active_map_name if node else 'hospital_map'
-    if maps_dir.exists():
+    seen_names = set()
+    curr_active = node.active_map_name if node else _default_map_for_mode(AMR_MODE)
+    search_dirs = [
+        (_HW_MAPS_DIR, 'hardware'),
+        (_SIM_MAPS_DIR, 'simulation'),
+    ]
+    if AMR_MODE == 'sim':
+        search_dirs = [
+            (_SIM_MAPS_DIR, 'simulation'),
+            (_HW_MAPS_DIR, 'hardware'),
+        ]
+
+    for maps_dir, category in search_dirs:
+        if not maps_dir.exists():
+            continue
         for yaml_file in sorted(maps_dir.glob("*.yaml")):
             name = yaml_file.stem
-            pgm_file = maps_dir / f"{name}.pgm"
-            png_file = maps_dir / f"{name}.png"
-            graph_file = maps_dir / f"{name}_graph.json"
-            places_file = maps_dir / f"{name}_places.json"
+            if name in seen_names:
+                continue
+            seen_names.add(name)
+
+            pgm_file = _find_map_file(name, ('.pgm',)) or (maps_dir / f"{name}.pgm")
+            png_file = _find_map_file(name, ('.png',)) or (maps_dir / f"{name}.png")
+            graph_file = _find_map_file(name, ('_graph.json',)) or (maps_dir / f"{name}_graph.json")
+            places_file = _find_map_file(name, ('_places.json',)) or (maps_dir / f"{name}_places.json")
             meta = get_map_metadata_by_name(name)
-            
+
             node_count = 0
             if graph_file.exists():
                 try:
@@ -2174,7 +2483,7 @@ async def get_saved_maps():
                         node_count = len(gd.get('nodes', []))
                 except Exception:
                     pass
-            
+
             place_count = 0
             if places_file.exists():
                 try:
@@ -2184,12 +2493,12 @@ async def get_saved_maps():
                 except Exception:
                     pass
 
-            has_png = png_file.exists()
             maps.append({
                 'name': name,
+                'category': category,
                 'yaml': str(yaml_file.relative_to(_WORKSPACE_ROOT)),
                 'has_pgm': pgm_file.exists(),
-                'has_png': has_png,
+                'has_png': png_file.exists() or pgm_file.exists(),
                 'has_graph': graph_file.exists(),
                 'node_count': node_count,
                 'place_count': place_count,
@@ -2198,7 +2507,7 @@ async def get_saved_maps():
                 'size_kb': round(yaml_file.stat().st_size / 1024, 2),
                 'is_active': (name == curr_active)
             })
-    return {'maps': maps, 'active_map': curr_active}
+    return {'maps': maps, 'active_map': curr_active, 'mode': AMR_MODE}
 
 @app.post('/api/mapping/graph/extract')
 async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
@@ -2206,18 +2515,16 @@ async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
     if graph_extractor is None:
         return JSONResponse({'error': 'Graph extractor module not available'}, status_code=500)
 
-    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-
-    yaml_path = maps_dir / f"{target_name}.yaml"
-    if not yaml_path.exists():
+    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or _default_map_for_mode(AMR_MODE)).strip()
+    yaml_path = _find_map_file(target_name, ('.yaml',))
+    if yaml_path is None:
         if target_name in ('warehouse_map', 'warehouse'):
-            yaml_path = maps_dir / "warehouse_map.yaml"
+            yaml_path = _find_map_file('warehouse_map', ('.yaml',))
         elif target_name == 'hospital_map':
-            yaml_path = maps_dir / "hospital_map.yaml"
+            yaml_path = _find_map_file('hospital_map', ('.yaml',))
 
-    if not yaml_path.exists():
-        return JSONResponse({'error': f'Map YAML file not found for "{target_name}" in {maps_dir}'}, status_code=404)
+    if not yaml_path or not yaml_path.exists():
+        return JSONResponse({'error': f'Map YAML file not found for "{target_name}"'}, status_code=404)
 
     try:
         report = graph_extractor.extract_graph(
@@ -2230,17 +2537,16 @@ async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
             step_open=req.step_open,
         )
 
-        # Update install directory if present so downstream ROS nodes immediately see the graph
+        # Update install & map directories so downstream ROS nodes immediately see the graph
+        json_p = Path(report['json_path'])
         install_maps_dir = _WORKSPACE_ROOT / "install" / "agv_description" / "share" / "agv_description" / "maps"
-        if install_maps_dir.exists():
-            try:
-                import shutil
-                json_p = Path(report['json_path'])
-                if json_p.exists():
-                    shutil.copy2(json_p, install_maps_dir / json_p.name)
-                    shutil.copy2(json_p, install_maps_dir / "warehouse_graph.json")
-            except Exception as e:
-                print(f"[bridge] Note: Could not copy graph to install dir: {e}")
+        for sync_dir in [install_maps_dir, _SIM_MAPS_DIR, _HW_MAPS_DIR]:
+            if sync_dir.exists() and json_p.exists():
+                try:
+                    shutil.copy2(json_p, sync_dir / json_p.name)
+                    shutil.copy2(json_p, sync_dir / "warehouse_graph.json")
+                except Exception as e:
+                    print(f"[bridge] Note: Could not copy graph to {sync_dir}: {e}")
 
         # Update in-memory graph cache in node
         if node:
@@ -2260,18 +2566,15 @@ async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
 
 @app.get('/api/mapping/graph/latest')
 async def get_latest_graph(map_name: Optional[str] = None):
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
     if map_name:
-        cand_json = maps_dir / f"{map_name}_graph.json"
-        if not cand_json.exists():
-            cand_json = maps_dir / f"{map_name}.json"
-        if cand_json.exists():
+        cand_json = _find_map_file(map_name, ('_graph.json', '.json'))
+        if cand_json and cand_json.exists():
             try:
                 with open(cand_json, 'r', encoding='utf-8') as f:
                     raw = json.load(f)
                 vis_b64 = None
-                cand_vis = maps_dir / f"{map_name}_graph_vis.png"
-                if cand_vis.exists():
+                cand_vis = _find_map_file(map_name, ('_graph_vis.png', '_vis.png'))
+                if cand_vis and cand_vis.exists():
                     try:
                         with open(cand_vis, 'rb') as vf:
                             vis_b64 = base64.b64encode(vf.read()).decode('utf-8')
@@ -2300,32 +2603,26 @@ async def get_latest_graph(map_name: Optional[str] = None):
         if active and active.get('nodes'):
             return {'ok': True, 'graph': active}
 
-    # Fallback to reading active map graph or warehouse_map graph
-    fallback_graph = maps_dir / f"{getattr(node, 'active_map_name', 'hospital_map')}_graph.json"
-    if not fallback_graph.exists():
-        fallback_graph = _GRAPH_JSON_PATH
-    if fallback_graph.exists():
+    # Fallback to reading active map graph or default graph
+    active_name = getattr(node, 'active_map_name', _default_map_for_mode(AMR_MODE))
+    fallback_graph = _find_map_file(active_name, ('_graph.json', '.json')) or _GRAPH_JSON_PATH
+    if fallback_graph and fallback_graph.exists():
         try:
             with open(fallback_graph, 'r', encoding='utf-8') as f:
                 raw = json.load(f)
             vis_b64 = None
-            vis_candidates = [
-                maps_dir / f"{fallback_graph.stem.replace('_graph', '')}_graph_vis.png",
-                maps_dir / "hospital_map_graph_vis.png",
-                maps_dir / "warehouse_map_graph_vis.png",
-            ]
-            for vc in vis_candidates:
-                if vc.exists():
-                    try:
-                        with open(vc, 'rb') as img_f:
-                            vis_b64 = base64.b64encode(img_f.read()).decode('utf-8')
-                        break
-                    except Exception:
-                        pass
+            stem = fallback_graph.stem.replace('_graph', '')
+            vc = _find_map_file(stem, ('_graph_vis.png', '_vis.png'))
+            if vc and vc.exists():
+                try:
+                    with open(vc, 'rb') as img_f:
+                        vis_b64 = base64.b64encode(img_f.read()).decode('utf-8')
+                except Exception:
+                    pass
             return {
                 'ok': True,
                 'graph': {
-                    'map_name': 'warehouse',
+                    'map_name': stem,
                     'nodes': raw.get('nodes', []),
                     'edges': raw.get('edges', []),
                     'total_nodes': len(raw.get('nodes', [])),
@@ -2345,12 +2642,9 @@ async def get_latest_graph(map_name: Optional[str] = None):
 @app.get('/api/mapping/graph/verify')
 async def get_graph_verification(map_name: Optional[str] = None):
     """Phase 4: Performs topological, clearance, and routing audits on the graph roadmap."""
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
-    cand = maps_dir / f"{target_name}_graph.json"
-    if not cand.exists():
-        cand = maps_dir / f"{target_name}.json"
-    if not cand.exists():
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or _default_map_for_mode(AMR_MODE)).strip()
+    cand = _find_map_file(target_name, ('_graph.json', '.json'))
+    if not cand or not cand.exists():
         return JSONResponse({'error': f'Graph roadmap "{target_name}_graph.json" not found to verify'}, status_code=404)
     target_json = cand
 
@@ -2522,12 +2816,9 @@ async def get_graph_verification(map_name: Optional[str] = None):
 @app.post('/api/mapping/graph/plan_route')
 async def post_plan_route(req: PlanRouteRequest):
     """Phase 4: Computes shortest path and waypoint metrics between two roadmap nodes."""
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
-    cand = maps_dir / f"{target_name}_graph.json"
-    if not cand.exists():
-        cand = maps_dir / f"{target_name}.json"
-    if not cand.exists():
+    target_name = (req.map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or _default_map_for_mode(AMR_MODE)).strip()
+    cand = _find_map_file(target_name, ('_graph.json', '.json'))
+    if not cand or not cand.exists():
         return JSONResponse({'error': f'Graph roadmap "{target_name}_graph.json" not found for route planning'}, status_code=404)
     target_json = cand
 
@@ -2620,15 +2911,14 @@ async def post_plan_route(req: PlanRouteRequest):
 @app.get('/api/mapping/places')
 async def get_named_places(map_name: Optional[str] = None):
     """Phase 5: Retrieve all named places and stations for a roadmap."""
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
-    
-    # Strictly isolated search candidates for target_name only:
-    candidates = [
-        maps_dir / f"{target_name}_places.json",
-        maps_dir / f"{target_name}_graph.json",
-    ]
-    
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or _default_map_for_mode(AMR_MODE)).strip()
+
+    candidates = []
+    for d in _get_map_search_dirs():
+        candidates.append(d / f"{target_name}_places.json")
+    for d in _get_map_search_dirs():
+        candidates.append(d / f"{target_name}_graph.json")
+
     for cand in candidates:
         if cand.exists():
             try:
@@ -2636,7 +2926,7 @@ async def get_named_places(map_name: Optional[str] = None):
                     data = json.load(f)
                 if isinstance(data, list):
                     return {'ok': True, 'map_name': target_name, 'places': data, 'source_file': cand.name}
-                elif isinstance(data, dict) and 'places' in data and isinstance(data['places'], list):
+                elif isinstance(data, dict) and 'places' in data and isinstance(data['places'], list) and len(data['places']) > 0:
                     return {'ok': True, 'map_name': target_name, 'places': data['places'], 'source_file': cand.name}
             except Exception as e:
                 logger.warning(f"Failed to read places from {cand}: {e}")
@@ -2647,37 +2937,40 @@ async def get_named_places(map_name: Optional[str] = None):
 @app.post('/api/mapping/places/save')
 async def post_save_named_places(req: SavePlacesRequest):
     """Phase 5: Persist named places into active graph and dedicated places files."""
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    active_now = node.active_map_name if node else 'hospital_map'
+    active_now = node.active_map_name if node else _default_map_for_mode(AMR_MODE)
     target_name = (req.map_name or active_now).strip()
+    maps_dir = _get_primary_map_dir(target_name)
+    maps_dir.mkdir(parents=True, exist_ok=True)
     places_data = [p.dict() for p in req.places]
-    
+
     saved_files = []
-    
-    # 1. Save dedicated <target_name>_places.json
+
+    # 1. Save dedicated <target_name>_places.json in primary map dir
     places_file = maps_dir / f"{target_name}_places.json"
     with open(places_file, 'w', encoding='utf-8') as f:
         json.dump(places_data, f, indent=2)
     saved_files.append(str(places_file.relative_to(_WORKSPACE_ROOT)))
-    
-    # 2. Inject places into corresponding <target_name>_graph.json ONLY
-    target_graph = maps_dir / f"{target_name}_graph.json"
-    if target_graph.exists():
-        try:
-            with open(target_graph, 'r', encoding='utf-8') as f:
-                raw_graph = json.load(f)
-            if isinstance(raw_graph, dict):
-                raw_graph['places'] = places_data
-                with open(target_graph, 'w', encoding='utf-8') as f:
-                    json.dump(raw_graph, f, indent=2)
-                saved_files.append(str(target_graph.relative_to(_WORKSPACE_ROOT)))
-                if node and hasattr(node, '_cached_graphs') and target_name in node._cached_graphs:
-                    node._cached_graphs[target_name]['places'] = places_data
-                if node and hasattr(node, '_cached_graph') and node.active_map_name == target_name:
-                    if isinstance(node._cached_graph, dict):
-                        node._cached_graph['places'] = places_data
-        except Exception as e:
-            logger.error(f"Error injecting places into {target_graph}: {e}")
+
+    # 2. Inject places into corresponding <target_name>_graph.json (wherever it exists)
+    for d in _get_map_search_dirs():
+        target_graph = d / f"{target_name}_graph.json"
+        if target_graph.exists():
+            try:
+                with open(target_graph, 'r', encoding='utf-8') as f:
+                    raw_graph = json.load(f)
+                if isinstance(raw_graph, dict):
+                    raw_graph['places'] = places_data
+                    with open(target_graph, 'w', encoding='utf-8') as f:
+                        json.dump(raw_graph, f, indent=2)
+                    saved_files.append(str(target_graph.relative_to(_WORKSPACE_ROOT)))
+            except Exception as e:
+                logger.error(f"Error injecting places into {target_graph}: {e}")
+
+    if node and hasattr(node, '_cached_graphs') and target_name in node._cached_graphs:
+        node._cached_graphs[target_name]['places'] = places_data
+    if node and hasattr(node, '_cached_graph') and node.active_map_name == target_name:
+        if isinstance(node._cached_graph, dict):
+            node._cached_graph['places'] = places_data
 
     return {
         'ok': True,
@@ -2691,12 +2984,11 @@ async def post_save_named_places(req: SavePlacesRequest):
 @app.post('/api/mapping/places/default_templates')
 async def post_generate_default_templates(map_name: Optional[str] = None):
     """Phase 5: Auto-generate intelligent default warehouse stations based on roadmap topology."""
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
-    
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or _default_map_for_mode(AMR_MODE)).strip()
+
     # Load roadmap nodes strictly from target map
-    target_graph = maps_dir / f"{target_name}_graph.json"
-    if not target_graph.exists():
+    target_graph = _find_map_file(target_name, ('_graph.json',))
+    if not target_graph or not target_graph.exists():
         return JSONResponse({'error': f'Graph roadmap "{target_name}_graph.json" not found to generate place templates'}, status_code=404)
 
     try:
@@ -2799,11 +3091,10 @@ async def post_generate_default_templates(map_name: Optional[str] = None):
 @app.delete('/api/mapping/places/{place_id}')
 async def delete_named_place(place_id: str, map_name: Optional[str] = None):
     """Phase 5: Remove a named place from the saved places list."""
-    maps_dir = _WORKSPACE_ROOT / "src" / "agv_description" / "maps"
-    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or 'hospital_map').strip()
-    
-    places_file = maps_dir / f"{target_name}_places.json"
-    if not places_file.exists():
+    target_name = (map_name or (node.active_map_name if node else None) or mapping_mgr.saved_map_name or mapping_mgr.map_name or _default_map_for_mode(AMR_MODE)).strip()
+
+    places_file = _find_map_file(target_name, ('_places.json',))
+    if not places_file or not places_file.exists():
         return JSONResponse({'error': f'No places file found for map "{target_name}"'}, status_code=404)
         
     try:
@@ -3098,4 +3389,12 @@ if __name__ == '__main__':
     t = threading.Thread(target=_ros_thread, daemon=True)
     t.start()
     time.sleep(1.0)  # Give ROS a moment to initialise
-    uvicorn.run(app, host='0.0.0.0', port=8000, log_level='info')
+    config = uvicorn.Config(app, host='0.0.0.0', port=8000, log_level='info')
+    _UVICORN_SERVER = uvicorn.Server(config)
+    _UVICORN_SERVER.run()
+    if _PENDING_REEXEC is not None:
+        next_mode, next_pi_ip = _PENDING_REEXEC
+        _configure_dds_environment(next_mode, next_pi_ip)
+        script_path = str(Path(__file__).resolve())
+        logger.info(f"[bridge] Re-execing bridge server in '{next_mode}' mode (pi_ip={next_pi_ip})...")
+        os.execv(sys.executable, [sys.executable, script_path, '--mode', next_mode, '--pi-ip', next_pi_ip])
