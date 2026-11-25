@@ -25,6 +25,7 @@ class AmrBridgeService {
     this._reconnectTimer = null;
     this._latestTelemetry = null;
     this._lastNavState = null;
+    this._lastLocStatus = null;
     this._lastAlert = null;
     this._lastWaypoint = null;
   }
@@ -88,11 +89,22 @@ class AmrBridgeService {
       const prev = this._lastNavState;
       this._lastNavState = data.nav_state;
       if (prev !== null) {
-        const level = data.nav_state === 'ESTOP' ? 'critical'
+        const level = (data.nav_state === 'ESTOP' || data.nav_state === 'MAP_MISMATCH' || data.nav_state === 'WHEEL_SLIP') ? 'critical'
                     : data.nav_state === 'YIELDING' ? 'warn'
                     : data.nav_state === 'ARRIVED' ? 'success'
                     : 'info';
         this.emitEvent(level, `Navigation State: ${data.nav_state} (from ${prev})`);
+      }
+    }
+
+    // Localization mismatch transitions
+    const locStatus = data.localization_status;
+    if (locStatus?.status && locStatus.status !== this._lastLocStatus) {
+      this._lastLocStatus = locStatus.status;
+      if (locStatus.status === 'MAP_MISMATCH') {
+        this.emitEvent('critical', locStatus.message || 'MAP_MISMATCH: LiDAR scan does not match active map.');
+      } else if (locStatus.status === 'VERIFIED') {
+        this.emitEvent('success', 'Auto-Localizer verified scan match against active map.');
       }
     }
 
@@ -190,9 +202,13 @@ class AmrBridgeService {
   // ---- Commands ----
 
   sendCmdVel(linear, angular)       { return this._post('/api/cmd_vel', { linear, angular }); }
-  sendGoal(x, y, yaw = 0) {
+  async sendGoal(x, y, yaw = 0) {
     this.emitEvent('info', `Dispatched Single Goal → (${x.toFixed(2)}, ${y.toFixed(2)}) m`);
-    return this._post('/api/goal', { x, y, yaw });
+    const res = await this._postJson('/api/goal', { x, y, yaw });
+    if (!res.ok) {
+      this.emitEvent('critical', res.error || 'Goal dispatch rejected');
+    }
+    return Boolean(res.ok);
   }
   async sendStop() {
     const ok = await this._post('/api/stop');
@@ -216,9 +232,13 @@ class AmrBridgeService {
     this.emitEvent('info', `Set AMCL Initial Pose → (${x.toFixed(2)}, ${y.toFixed(2)}) θ=${theta.toFixed(2)}rad`);
     return this._post('/api/initial_pose', { x, y, theta });
   }
-  sendGoalSequence(nodes) {
+  async sendGoalSequence(nodes) {
     this.emitEvent('info', `Dispatched Mission Queue [${nodes.join(' → ')}]`);
-    return this._post('/api/goal_sequence', { nodes });
+    const res = await this._postJson('/api/goal_sequence', { nodes });
+    if (!res.ok) {
+      this.emitEvent('critical', res.error || 'Mission queue rejected');
+    }
+    return Boolean(res.ok);
   }
   sendObstacleCmdVel(linear, angular) {
     return this._post('/api/obstacle/cmd_vel', { linear, angular });

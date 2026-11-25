@@ -687,11 +687,13 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       // Determine status colour from nav_state
       const navState  = curTelemetry?.nav_state || 'IDLE';
       const statusClr =
-        navState === 'NAVIGATING' ? '#00ff9d' :
-        navState === 'YIELDING'   ? '#ff8c00' :
-        navState === 'ESTOP'      ? '#ff3355' :
-        navState === 'ARRIVED'    ? '#ffd700' :
-        navState === 'PLANNING'   ? '#3b82f6' :
+        navState === 'NAVIGATING'   ? '#00ff9d' :
+        navState === 'YIELDING'     ? '#ff8c00' :
+        navState === 'ESTOP'        ? '#ff3355' :
+        navState === 'MAP_MISMATCH' ? '#ff3355' :
+        navState === 'WHEEL_SLIP'   ? '#f59e0b' :
+        navState === 'ARRIVED'      ? '#ffd700' :
+        navState === 'PLANNING'     ? '#3b82f6' :
         '#4a5580'; // IDLE
 
       ctx.save();

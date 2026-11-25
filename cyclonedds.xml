@@ -3,7 +3,7 @@
   <Domain Id="7">
     <General>
       <Interfaces>
-        <NetworkInterface address="10.12.99.190"/>
+        <NetworkInterface address="10.244.248.140"/>
       </Interfaces>
     </General>
     <Discovery>

@@ -1506,6 +1506,8 @@ class AmrBridgeNode(Node):
         )
         # Live /map subscription from SLAM Toolbox
         self.create_subscription(OccupancyGrid, '/map', self._map_cb, latched_map_qos)
+        # Latched map-match & localization verification status from auto_localizer
+        self.create_subscription(String, '/localization_status', self._loc_status_cb, latched_map_qos)
 
         # Exploration status & frontiers subscriptions
         if _EXPLORE_MSGS_AVAILABLE:
@@ -1528,6 +1530,8 @@ class AmrBridgeNode(Node):
         self._last_state_rx_time = 0.0
         self._has_received_nav_state = False
         self._estop_latched = False
+        self.localization_status: Optional[dict] = None
+        self._loc_status_rx_time = 0.0
         self._tf_buffer   = None
         self._tf_listener = None
         if _TF2_AVAILABLE:
@@ -1611,6 +1615,8 @@ class AmrBridgeNode(Node):
         self._last_state_rx_time = 0.0
         self._has_received_nav_state = False
         self._estop_latched = False
+        self.localization_status: Optional[dict] = None
+        self._loc_status_rx_time = 0.0
         if self._tf_buffer is not None:
             try:
                 self._tf_buffer.clear()
@@ -1743,6 +1749,24 @@ class AmrBridgeNode(Node):
             self._estop_latched = True
         elif self._estop_latched and msg.data in ('IDLE', 'PLANNING', 'NAVIGATING'):
             self._estop_latched = False
+
+    def _loc_status_cb(self, msg):
+        try:
+            data = json.loads(msg.data)
+            self.localization_status = data
+            self._loc_status_rx_time = time.time()
+        except Exception:
+            pass
+
+    def get_dispatch_block_error(self) -> Optional[str]:
+        if self._estop_latched or self.nav_state == 'ESTOP':
+            return 'E-STOP active. Clear E-STOP before dispatching navigation.'
+        loc = self.localization_status
+        if loc and not loc.get('verified', True):
+            st = loc.get('status', '')
+            if st in ('MAP_MISMATCH', 'MAP_MISSING', 'SCAN_MISSING'):
+                return loc.get('message') or f'Navigation blocked: localization status is {st}.'
+        return None
         if msg.data == 'IDLE' and not self.active_place_nav:
             self.path_waypoints = []
         if self.active_place_nav:
@@ -2270,7 +2294,9 @@ class AmrBridgeNode(Node):
                 'map_tf_locked':       map_tf_locked,
                 'amcl_localized':      amcl_alive or map_tf_locked,
                 'external_nav_active': external_nav_active,
+                'loc_verified':        bool(self.localization_status.get('verified', True)) if self.localization_status else (amcl_alive or map_tf_locked),
             },
+            'localization_status': self.localization_status,
             'pose':            self.pose,
             'velocity':        self.velocity,
             'min_obstacle_dist': round(obs_dist, 3) if obs_dist is not None else None,
@@ -2578,8 +2604,9 @@ async def post_auto_localize():
 @app.post('/api/goal')
 async def post_goal(req: GoalRequest):
     if node:
-        if node._estop_latched or node.nav_state == 'ESTOP':
-            return JSONResponse({'ok': False, 'error': 'E-STOP active. Clear E-STOP before dispatching navigation.'}, status_code=409)
+        block_err = node.get_dispatch_block_error()
+        if block_err:
+            return JSONResponse({'ok': False, 'error': block_err}, status_code=409)
         node.publish_goal(req.x, req.y, req.yaw)
     return {'ok': True}
 
@@ -2605,8 +2632,9 @@ async def post_initial_pose(req: InitialPoseRequest):
 @app.post('/api/goal_sequence')
 async def post_goal_sequence(req: GoalSequenceRequest):
     if node:
-        if node._estop_latched or node.nav_state == 'ESTOP':
-            return JSONResponse({'ok': False, 'error': 'E-STOP active. Clear E-STOP before dispatching navigation.'}, status_code=409)
+        block_err = node.get_dispatch_block_error()
+        if block_err:
+            return JSONResponse({'ok': False, 'error': block_err}, status_code=409)
         node.publish_goal_sequence(req.nodes)
     return {'ok': True}
 
@@ -3477,8 +3505,9 @@ async def post_dispatch_place(req: DispatchPlaceRequest):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
 
-    if node._estop_latched or node.nav_state == 'ESTOP':
-        return JSONResponse({'ok': False, 'error': 'E-STOP active. Clear E-STOP before dispatching navigation.'}, status_code=409)
+    block_err = node.get_dispatch_block_error()
+    if block_err:
+        return JSONResponse({'ok': False, 'error': block_err}, status_code=409)
 
     if req.map_name and req.map_name != node.active_map_name:
         try:
@@ -3521,8 +3550,9 @@ async def post_dispatch_sequence(req: DispatchSequenceRequest):
     if node is None:
         return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
 
-    if node._estop_latched or node.nav_state == 'ESTOP':
-        return JSONResponse({'ok': False, 'error': 'E-STOP active. Clear E-STOP before dispatching navigation.'}, status_code=409)
+    block_err = node.get_dispatch_block_error()
+    if block_err:
+        return JSONResponse({'ok': False, 'error': block_err}, status_code=409)
 
     if not req.places:
         return JSONResponse({'error': 'Places sequence cannot be empty'}, status_code=400)

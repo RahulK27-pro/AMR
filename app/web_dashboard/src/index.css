@@ -268,8 +268,10 @@ html, body, #root {
 .nav-state--PLANNING   { color: var(--status-planning);   border-color: var(--status-planning);   background: rgba(59,130,246,0.15); box-shadow: 0 0 12px rgba(59,130,246,0.2); }
 .nav-state--NAVIGATING { color: var(--status-navigating); border-color: var(--status-navigating); background: rgba(0,255,157,0.1);  box-shadow: var(--shadow-glow-green); }
 .nav-state--ARRIVED    { color: var(--status-arrived);    border-color: var(--status-arrived);    background: rgba(255,215,0,0.1);  }
-.nav-state--YIELDING   { color: var(--status-yielding);   border-color: var(--status-yielding);   background: rgba(255,140,0,0.1);  }
-.nav-state--ESTOP      { color: var(--status-estop);      border-color: var(--status-estop);      background: rgba(255,51,85,0.2);  box-shadow: var(--shadow-glow-red); animation: estop-flash 1s infinite; }
+.nav-state--YIELDING     { color: var(--status-yielding);   border-color: var(--status-yielding);   background: rgba(255,140,0,0.1);  }
+.nav-state--WHEEL_SLIP   { color: #f59e0b;                 border-color: #f59e0b;                 background: rgba(245,158,11,0.18); }
+.nav-state--MAP_MISMATCH { color: var(--status-estop);      border-color: var(--status-estop);      background: rgba(255,51,85,0.2); }
+.nav-state--ESTOP        { color: var(--status-estop);      border-color: var(--status-estop);      background: rgba(255,51,85,0.2);  box-shadow: var(--shadow-glow-red); animation: estop-flash 1s infinite; }
 
 @keyframes estop-flash {
   0%,100% { box-shadow: var(--shadow-glow-red); }
@@ -2796,6 +2798,13 @@ html, body, #root {
   background: #fffbeb;
 }
 
+[data-theme="light"] .nav-state--WHEEL_SLIP {
+  color: #b45309;
+  border-color: #f59e0b;
+  background: #fef3c7;
+}
+
+[data-theme="light"] .nav-state--MAP_MISMATCH,
 [data-theme="light"] .nav-state--ESTOP {
   color: #dc2626;
   border-color: #fca5a5;

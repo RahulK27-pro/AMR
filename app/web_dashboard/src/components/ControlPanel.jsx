@@ -414,6 +414,39 @@ export default function ControlPanel({
                 {systemStatus.error}
               </div>
             )}
+            {(telemetry?.localization_status?.status === 'MAP_MISMATCH' || navState === 'MAP_MISMATCH') && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: '6px 8px',
+                  borderRadius: 5,
+                  background: 'rgba(239, 68, 68, 0.14)',
+                  border: '1px solid rgba(239, 68, 68, 0.45)',
+                  color: '#f87171',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                {telemetry?.localization_status?.message ||
+                  'MAP_MISMATCH: Live LiDAR scan does not match this floorplan. Switch to the matching map before navigating.'}
+              </div>
+            )}
+            {navState === 'WHEEL_SLIP' && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: '6px 8px',
+                  borderRadius: 5,
+                  background: 'rgba(245, 158, 11, 0.14)',
+                  border: '1px solid rgba(245, 158, 11, 0.45)',
+                  color: '#fbbf24',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                WHEEL_SLIP HALT: Encoders moved while LiDAR scan stayed stationary. Place wheels firmly on the floor before dispatching.
+              </div>
+            )}
             {!externalRunning && systemState === 'STOPPED' && (
               <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
                 {mode === 'hardware'

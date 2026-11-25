@@ -68,6 +68,7 @@ class RouteRunner(Node):
             reliability=QoSReliabilityPolicy.RELIABLE
         )
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, latched_map_qos)
+        self.loc_status_sub = self.create_subscription(String, '/localization_status', self._localization_status_callback, latched_map_qos)
 
         candidates = []
         if map_name_param and os.path.isabs(map_name_param) and os.path.exists(map_name_param):
@@ -315,6 +316,17 @@ class RouteRunner(Node):
         self._visited_plan_nodes = set()
         self._last_dev_alert_time = 0.0
 
+        # Localization Verification & LiDAR-vs-Odom Wheel-Slip Safety Guards
+        self._loc_status = None
+        self._odom_pose = None
+        self._latest_scan_local = None
+        self._slip_anchor_odom = None
+        self._slip_anchor_scan = None
+        self._slip_anchor_time = None
+        self._slip_strikes = 0
+        self._map_mismatch_strikes = 0
+        self._last_map_check_time = 0.0
+
         # Control timer
         self.control_timer = self.create_timer(self.dt, self.control_loop)
         self.get_logger().info(f"Route Runner Active with KD-Tree ({len(self.node_ids)} nodes), Proactive Detour & Active Reverse Escape.")
@@ -419,6 +431,55 @@ class RouteRunner(Node):
         if 0 <= gx < self.static_map_width and 0 <= gy < self.static_map_height:
             return bool(self.static_wall_mask[gy, gx])
         return True  # Outside map bounds is treated as non-traversable
+
+    def _is_on_mapped_wall(self, x, y):
+        """Strict check: True only if (x, y) is inside map bounds AND near a mapped wall cell."""
+        if self.static_wall_mask is None:
+            return False
+        gx = int((x - self.static_map_origin_x) / self.static_map_resolution)
+        gy = int((y - self.static_map_origin_y) / self.static_map_resolution)
+        if 0 <= gx < self.static_map_width and 0 <= gy < self.static_map_height:
+            return bool(self.static_wall_mask[gy, gx])
+        return False
+
+    def _localization_status_callback(self, msg: String):
+        """Receives latched verification status from auto_localizer (/localization_status)."""
+        try:
+            data = json.loads(msg.data)
+            self._loc_status = data
+            st = data.get('status')
+            if st == 'VERIFIED':
+                self._map_mismatch_strikes = 0
+            elif st == 'MAP_MISMATCH' and self.state in ('PLANNING', 'NAVIGATING', 'YIELDING'):
+                self._halt_with_fault('MAP_MISMATCH', data.get('message', 'Map mismatch detected by auto_localizer.'))
+        except Exception:
+            pass
+
+    def _is_localization_blocked(self):
+        """Returns (blocked: bool, reason: str) if hardware localization is explicitly rejected."""
+        if not self._loc_status:
+            return False, ''
+        st = self._loc_status.get('status', '')
+        if not self._loc_status.get('verified', True) and st in ('MAP_MISMATCH', 'MAP_MISSING', 'SCAN_MISSING'):
+            return True, self._loc_status.get('message', f'Localization status is {st}')
+        return False, ''
+
+    def _halt_with_fault(self, fault_state: str, reason: str):
+        """Immediately halts robot, clears active mission/path, and broadcasts fault state."""
+        self.goal_queue = []
+        self.path_plan = []
+        self.node_path = []
+        self.active_detour = None
+        self._recovery_phase = None
+        self._slip_anchor_odom = None
+        self._slip_anchor_scan = None
+        self._slip_strikes = 0
+        self.state = "IDLE"
+        self._stop_robot()
+        self.publish_active_path()
+        self._publish_agv_state(fault_state)
+        self._publish_mission_progress(fault_state)
+        self.get_logger().error(f"[SAFETY: {fault_state}] {reason}")
 
     def _publish_agv_state(self, state_str: str):
         """Publish the current nav state string to /agv_state for the app bridge."""
@@ -529,6 +590,11 @@ class RouteRunner(Node):
     def odom_callback(self, msg):
         # Always capture physical angular velocity for rotation-gated scan filtering
         self.actual_w = float(msg.twist.twist.angular.z)
+        self._odom_pose = (
+            float(msg.pose.pose.position.x),
+            float(msg.pose.pose.position.y),
+            self.get_yaw_from_quaternion(msg.pose.pose.orientation),
+        )
         # On physical hardware with a static map, robot pose MUST strictly come from map -> base_link TF.
         # Raw /odometry/filtered is in the 'odom' frame and must NEVER overwrite map coordinates!
         if not self.using_map_tf and self.use_sim_time:
@@ -552,6 +618,7 @@ class RouteRunner(Node):
         if len(ranges) == 0:
             self.obstacles = np.array([])
             self.dynamic_obstacles = []
+            self._latest_scan_local = None
             return
 
         # Downsample LiDAR to every 3rd point
@@ -578,7 +645,15 @@ class RouteRunner(Node):
         if len(ranges) == 0:
             self.obstacles = np.array([])
             self.dynamic_obstacles = []
+            self._latest_scan_local = None
             return
+
+        # Keep bounded local scan points (0.18m..6.0m) for wheel-slip / stationary-chassis cross-checks
+        valid_local = (r_local[external_mask] > 0.18) & (r_local[external_mask] < 6.0)
+        if np.any(valid_local):
+            self._latest_scan_local = np.column_stack((ox_local[valid_local], oy_local[valid_local]))
+        else:
+            self._latest_scan_local = None
 
         # Use laser scan timestamp for map transformation to prevent rotational skew artifacts
         try:
@@ -785,6 +860,11 @@ class RouteRunner(Node):
                 self.get_logger().info("[APP_BRIDGE] Mission cancelled — robot halted and queue cleared.")
                 return
 
+            loc_blocked, loc_reason = self._is_localization_blocked()
+            if loc_blocked:
+                self._halt_with_fault('MAP_MISMATCH', f"Refusing goal_sequence: {loc_reason}")
+                return
+
             # Validate every node exists in the graph
             unknown = [n for n in node_ids if n not in self.map_data]
             if unknown:
@@ -906,6 +986,11 @@ class RouteRunner(Node):
             self.get_logger().warn("[APP_BRIDGE] Ignoring goal — E-STOP is latched.")
             return
 
+        loc_blocked, loc_reason = self._is_localization_blocked()
+        if loc_blocked:
+            self._halt_with_fault('MAP_MISMATCH', f"Refusing goal: {loc_reason}")
+            return
+
         self.update_robot_pose()
         if not self.odom_ready:
             self.get_logger().warn("Waiting for localization/odometry before accepting goals.")
@@ -920,11 +1005,15 @@ class RouteRunner(Node):
         self._publish_agv_state("PLANNING")
         self.get_logger().info(f"Received Goal: ({goal_x:.2f}, {goal_y:.2f})")
 
-        # Reset active recovery and dynamic blockage penalties on new user goal
+        # Reset active recovery, safety monitors, and dynamic blockage penalties on new user goal
         self._recovery_phase = None
         self._stuck_counter = 0
         self._prev_heading_err = None
         self._is_pivoting = False
+        self._slip_anchor_odom = None
+        self._slip_anchor_scan = None
+        self._slip_strikes = 0
+        self._map_mismatch_strikes = 0
         self.blocked_edges.clear()
         self.hazard_zones.clear()
 
@@ -1649,15 +1738,132 @@ class RouteRunner(Node):
             self.active_detour = None
             self.trigger_reroute()
 
+    def _check_wheel_slip(self) -> bool:
+        """Cross-check wheel/EKF odometry motion against physical LiDAR scan motion.
+
+        Detects wheel spin on an elevated stand or severe floor slip where /odometry/filtered
+        advances while consecutive LiDAR scans remain physically stationary.
+        """
+        is_actively_driving = (
+            self.state == "NAVIGATING"
+            and self._recovery_phase is None
+            and (abs(self.last_cmd_v) >= 0.02 or abs(self.last_pub_w) >= 0.12)
+        )
+        if not is_actively_driving or self._odom_pose is None or self._latest_scan_local is None or len(self._latest_scan_local) < 25:
+            if self.state != "NAVIGATING" or self._recovery_phase is not None:
+                self._slip_anchor_odom = None
+                self._slip_anchor_scan = None
+                self._slip_strikes = 0
+            return False
+
+        if self._slip_anchor_odom is None or self._slip_anchor_scan is None:
+            self._slip_anchor_odom = self._odom_pose
+            self._slip_anchor_scan = self._latest_scan_local.copy()
+            return False
+
+        anc_ox, anc_oy, anc_oyaw = self._slip_anchor_odom
+        cur_ox, cur_oy, cur_oyaw = self._odom_pose
+        dx_w = cur_ox - anc_ox
+        dy_w = cur_oy - anc_oy
+        ds_odom = math.hypot(dx_w, dy_w)
+        dyaw_odom = math.atan2(math.sin(cur_oyaw - anc_oyaw), math.cos(cur_oyaw - anc_oyaw))
+
+        if ds_odom < 0.25 and abs(dyaw_odom) < 0.50:
+            return False
+
+        anc_pts = self._slip_anchor_scan
+        cur_pts = self._latest_scan_local
+        kd = KDTree(anc_pts)
+
+        # 1. Static hypothesis: physical robot did NOT move
+        static_dists, _ = kd.query(cur_pts)
+        err_static = float(np.median(static_dists))
+
+        # 2. Odom hypothesis: transform cur_pts into anchor frame using claimed EKF delta
+        cos_a = math.cos(anc_oyaw)
+        sin_a = math.sin(anc_oyaw)
+        dx_loc = dx_w * cos_a + dy_w * sin_a
+        dy_loc = -dx_w * sin_a + dy_w * cos_a
+        c_d = math.cos(dyaw_odom)
+        s_d = math.sin(dyaw_odom)
+        pred_pts = np.column_stack((
+            dx_loc + cur_pts[:, 0] * c_d - cur_pts[:, 1] * s_d,
+            dy_loc + cur_pts[:, 0] * s_d + cur_pts[:, 1] * c_d,
+        ))
+        pred_dists, _ = kd.query(pred_pts)
+        err_pred = float(np.median(pred_dists))
+
+        if err_static < 0.045 and err_pred > max(0.11, err_static * 2.2):
+            self._slip_strikes += 1
+            self.get_logger().warn(
+                f"[SAFETY: WHEEL_SLIP] Window strike {self._slip_strikes}/2: "
+                f"odom delta=(ds={ds_odom:.2f}m, dyaw={math.degrees(dyaw_odom):.1f}°), "
+                f"scan err_static={err_static:.3f}m vs err_pred={err_pred:.3f}m."
+            )
+            if self._slip_strikes >= 2 or (ds_odom >= 0.45 and err_static < 0.040):
+                self._halt_with_fault(
+                    'WHEEL_SLIP',
+                    f"Wheels spun (odom ds={ds_odom:.2f}m, dyaw={math.degrees(dyaw_odom):.1f}°) "
+                    f"with stationary LiDAR scan (err_static={err_static:.3f}m vs err_pred={err_pred:.3f}m). "
+                    f"Check floor contact / wheel traction."
+                )
+                return True
+        else:
+            self._slip_strikes = 0
+
+        # Re-anchor window for the next displacement interval
+        self._slip_anchor_odom = self._odom_pose
+        self._slip_anchor_scan = cur_pts.copy()
+        return False
+
+    def _check_runtime_map_consistency(self, now: float) -> bool:
+        """Continuously checks whether live scan points in map frame agree with static map walls."""
+        if (now - self._last_map_check_time) < 0.5:
+            return False
+        self._last_map_check_time = now
+
+        if (
+            self.state != "NAVIGATING"
+            or not self.using_map_tf
+            or self.static_wall_mask is None
+            or len(self.obstacles) < 30
+        ):
+            self._map_mismatch_strikes = 0
+            return False
+
+        d_sq = (self.obstacles[:, 0] - self.current_x) ** 2 + (self.obstacles[:, 1] - self.current_y) ** 2
+        bounded = self.obstacles[d_sq <= 36.0]
+        if len(bounded) < 25:
+            return False
+
+        hits = sum(1 for p in bounded if self._is_on_mapped_wall(p[0], p[1]))
+        hit_frac = hits / float(len(bounded))
+        if hit_frac < 0.22:
+            self._map_mismatch_strikes += 1
+            if self._map_mismatch_strikes >= 8:
+                self._halt_with_fault(
+                    'MAP_MISMATCH',
+                    f"Runtime scan-to-map agreement dropped to {hit_frac:.2f} (<0.22 for 4.0s). Wrong map or localization lost."
+                )
+                return True
+        else:
+            self._map_mismatch_strikes = 0
+        return False
+
     def control_loop(self):
         if self._estop_active:
             self._stop_robot()
             return
         self.update_robot_pose()
         if self.state not in ["NAVIGATING", "YIELDING"]:
+            self._slip_anchor_odom = None
+            self._slip_anchor_scan = None
+            self._slip_strikes = 0
             return
 
         now = self._now_sec()
+        if self._check_wheel_slip() or self._check_runtime_map_consistency(now):
+            return
         self.restore_unblocked_edges()
 
         snapped_node = self.find_closest_node(self.current_x, self.current_y)

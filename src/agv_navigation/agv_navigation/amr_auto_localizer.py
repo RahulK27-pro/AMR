@@ -32,6 +32,7 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoS
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid
+from std_msgs.msg import String
 from std_srvs.srv import Trigger, Empty
 from nav2_msgs.srv import SetInitialPose
 from tf2_ros import Buffer, TransformListener
@@ -52,11 +53,23 @@ class AMRAutoLocalizer(Node):
         self.declare_parameter('auto_on_startup', True)
         self.declare_parameter('sigma_hit', 0.15)
         self.declare_parameter('min_clearance', 0.25)
+        self.declare_parameter('min_match_score', 0.74)
+        self.declare_parameter('min_net_score', 0.70)
+        self.declare_parameter('min_hit_ratio', 0.55)
+        self.declare_parameter('max_pass_through_ratio', 0.14)
+        self.declare_parameter('max_oob_ratio', 0.15)
+        self.declare_parameter('hit_tolerance_m', 0.16)
 
         self.map_name = self.get_parameter('map_name').value.strip()
         self.auto_on_startup = self.get_parameter('auto_on_startup').value
         self.sigma = float(self.get_parameter('sigma_hit').value)
         self.min_clearance = float(self.get_parameter('min_clearance').value)
+        self.min_match_score = float(self.get_parameter('min_match_score').value)
+        self.min_net_score = float(self.get_parameter('min_net_score').value)
+        self.min_hit_ratio = float(self.get_parameter('min_hit_ratio').value)
+        self.max_pass_through_ratio = float(self.get_parameter('max_pass_through_ratio').value)
+        self.max_oob_ratio = float(self.get_parameter('max_oob_ratio').value)
+        self.hit_tolerance_m = float(self.get_parameter('hit_tolerance_m').value)
 
         # Map representation
         self.map_loaded = False
@@ -66,6 +79,7 @@ class AMRAutoLocalizer(Node):
         self.map_w = 0
         self.map_h = 0
         self.dist_map = None
+        self.occ_grid = None
         self.likelihood_map = None
         self.cand_x = None
         self.cand_y = None
@@ -85,6 +99,9 @@ class AMRAutoLocalizer(Node):
         )
         self.initial_pose_pub = self.create_publisher(
             PoseWithCovarianceStamped, '/initialpose', pose_qos
+        )
+        self.loc_status_pub = self.create_publisher(
+            String, '/localization_status', pose_qos
         )
         self.reloc_srv = self.create_service(
             Trigger, '/trigger_auto_relocalization', self.relocalize_service_cb
@@ -126,9 +143,16 @@ class AMRAutoLocalizer(Node):
         self.verification_timer = None
         self.verification_attempts = 0
         self._startup_scan_waits = 0
+        self._startup_mismatch_count = 0
+        self._last_loc_status = None
 
         # Attempt to load static map file directly from disk for instant readiness
         self._load_static_map_file()
+        self._publish_loc_status(
+            verified=False,
+            status='PENDING',
+            message='Waiting for map and LiDAR scan verification...'
+        )
 
         self.get_logger().info(
             "AMR Zero-Prior Global Auto-Localizer Active! "
@@ -224,6 +248,7 @@ class AMRAutoLocalizer(Node):
         is_free = (arr >= 240).astype(np.uint8)
         # Wall obstacles (black pixels < 50)
         occ = (arr < 50).astype(np.uint8)
+        self.occ_grid = (occ == 1)
 
         # Distance transform: distance in meters to nearest wall
         self.dist_map = distance_transform_edt(occ == 0) * self.map_res
@@ -237,6 +262,41 @@ class AMRAutoLocalizer(Node):
         self.cand_x = valid_x[::2] * self.map_res + self.map_origin_x
         self.cand_y = valid_y[::2] * self.map_res + self.map_origin_y
         self.map_loaded = True
+
+    def _publish_loc_status(
+        self,
+        verified: bool,
+        status: str,
+        message: str,
+        score: float = 0.0,
+        net_score: float = 0.0,
+        hit_ratio: float = 0.0,
+        pass_through_ratio: float = 0.0,
+        oob_ratio: float = 0.0,
+        pose: tuple = None,
+    ):
+        payload = {
+            'verified': bool(verified),
+            'status': status,
+            'map_name': self.map_name or '',
+            'score': round(float(score), 3),
+            'net_score': round(float(net_score), 3),
+            'hit_ratio': round(float(hit_ratio), 3),
+            'pass_through_ratio': round(float(pass_through_ratio), 3),
+            'oob_ratio': round(float(oob_ratio), 3),
+            'message': str(message),
+            'ts': round(time.time(), 3),
+        }
+        if pose is not None:
+            payload['pose'] = {
+                'x': round(float(pose[0]), 3),
+                'y': round(float(pose[1]), 3),
+                'yaw_deg': round(math.degrees(float(pose[2])) % 360.0, 1),
+            }
+        self._last_loc_status = payload
+        msg = String()
+        msg.data = json.dumps(payload)
+        self.loc_status_pub.publish(msg)
 
     def scan_callback(self, msg: LaserScan):
         self.latest_scan = msg
@@ -277,12 +337,16 @@ class AMRAutoLocalizer(Node):
         success, log_msg = self.find_and_publish_global_pose()
         if success:
             self.has_localized = True
+            self._startup_mismatch_count = 0
             # Start verification handshake to ensure AMCL locked on
             self.verification_attempts = 0
             self.verification_timer = self.create_timer(0.8, self._verify_amcl_lock)
         else:
-            self.get_logger().warn(f"[AUTO_LOCALIZE] Initial attempt not ready ({log_msg}), retrying...")
-            self.startup_timer = self.create_timer(0.5, self._run_startup_localizer)
+            self._startup_mismatch_count += 1
+            if self._startup_mismatch_count <= 2 or (self._startup_mismatch_count % 5 == 0):
+                self.get_logger().warn(f"[AUTO_LOCALIZE] Localization blocked ({log_msg}); retrying in 2.0s...")
+            retry_sec = 2.0 if (self._last_loc_status and self._last_loc_status.get('status') == 'MAP_MISMATCH') else 0.5
+            self.startup_timer = self.create_timer(retry_sec, self._run_startup_localizer)
 
     def _verify_amcl_lock(self):
         """Verification handshake: confirms AMCL accepted pose and published TF."""
@@ -350,15 +414,64 @@ class AMRAutoLocalizer(Node):
         response.message = msg
         return response
 
+    def _evaluate_scan_fit(self, px: float, py: float, yaw: float, local_x: np.ndarray, local_y: np.ndarray, ranges: np.ndarray, beam_weights: np.ndarray):
+        """Evaluates endpoint wall likelihood, wall hit ratio, raycast pass-through violations, and out-of-bounds ratio."""
+        cy = math.cos(yaw)
+        sy = math.sin(yaw)
+        rx = cy * local_x - sy * local_y
+        ry = sy * local_x + cy * local_y
+
+        gx = ((px + rx - self.map_origin_x) / self.map_res).astype(int)
+        gy = ((py + ry - self.map_origin_y) / self.map_res).astype(int)
+        in_b = (gx >= 0) & (gx < self.map_w) & (gy >= 0) & (gy < self.map_h)
+        gx_c = np.clip(gx, 0, self.map_w - 1)
+        gy_c = np.clip(gy, 0, self.map_h - 1)
+
+        lk = self.likelihood_map[gy_c, gx_c].copy()
+        lk[~in_b] = 0.0
+        score = float(np.average(lk, weights=beam_weights))
+
+        ep_dist = np.full(len(ranges), 99.0)
+        ep_dist[in_b] = self.dist_map[gy[in_b], gx[in_b]]
+        hit_ratio = float(np.mean(ep_dist <= self.hit_tolerance_m))
+        oob_ratio = float(np.mean(~in_b))
+
+        # Vectorized raycast pass-through check: verify beams >0.36m do not pierce through mapped walls
+        long_mask = ranges > 0.36
+        if self.occ_grid is not None and np.any(long_mask):
+            ts = np.linspace(0.0, 1.0, 16)[None, :]
+            r_stop = np.maximum(0.20, ranges - 0.18)[:, None]
+            r_samples = 0.18 + ts * np.maximum(0.0, r_stop - 0.18)
+            ux = (rx / np.maximum(ranges, 1e-6))[:, None]
+            uy = (ry / np.maximum(ranges, 1e-6))[:, None]
+            sx = ((px + r_samples * ux - self.map_origin_x) / self.map_res).astype(int)
+            sy_idx = ((py + r_samples * uy - self.map_origin_y) / self.map_res).astype(int)
+            sin_b = (sx >= 0) & (sx < self.map_w) & (sy_idx >= 0) & (sy_idx < self.map_h)
+            hit_wall_along = self.occ_grid[np.clip(sy_idx, 0, self.map_h - 1), np.clip(sx, 0, self.map_w - 1)] & sin_b
+            beam_viol = np.any(hit_wall_along, axis=1) & long_mask
+            pass_through_ratio = float(np.sum(beam_viol) / max(1, int(np.sum(long_mask))))
+        else:
+            pass_through_ratio = 0.0
+
+        net_score = score * max(0.0, 1.0 - pass_through_ratio)
+        return score, hit_ratio, pass_through_ratio, oob_ratio, net_score
+
     def find_and_publish_global_pose(self):
-        """Executes vectorized correlative scan matching and publishes /initialpose."""
+        """Executes vectorized correlative scan matching, verifies map consistency, and publishes /initialpose."""
         if not self.map_loaded or self.dist_map is None:
             self.get_logger().warn("[AUTO_LOCALIZE] Cannot localize: Map not loaded yet.")
+            self._publish_loc_status(verified=False, status='MAP_MISSING', message='Map not loaded yet.')
             return False, "Map not loaded yet."
 
         if self.latest_scan is None:
             self.get_logger().warn("[AUTO_LOCALIZE] Cannot localize: No LiDAR scan received yet.")
+            self._publish_loc_status(verified=False, status='SCAN_MISSING', message='No LiDAR scan received yet.')
             return False, "No LiDAR scan received yet."
+
+        if self.cand_x is None or len(self.cand_x) == 0:
+            self.get_logger().error("[AUTO_LOCALIZE] Loaded map has zero valid free-space candidate poses.")
+            self._publish_loc_status(verified=False, status='MAP_MISMATCH', message='Map has no navigable free space.')
+            return False, "Map has no valid free space."
 
         scan = self.latest_scan
         ranges = np.array(scan.ranges)
@@ -371,6 +484,7 @@ class AMRAutoLocalizer(Node):
 
         if len(ranges) < 30:
             self.get_logger().warn("[AUTO_LOCALIZE] Scan has too few valid beams (<30) to localize.")
+            self._publish_loc_status(verified=False, status='SCAN_MISSING', message='Scan has too few valid beams (<30).')
             return False, "Scan has too few valid beams."
 
         # Subsample to 120 points for high speed (<100ms) with dense coverage
@@ -390,9 +504,7 @@ class AMRAutoLocalizer(Node):
         rot_x = c_y * local_x[None, :] - s_y * local_y[None, :]
         rot_y = s_y * local_x[None, :] + c_y * local_y[None, :]
 
-        best_score = -1.0
-        best_pose = None
-
+        coarse_peaks = []
         for yi in range(len(self.cand_yaws)):
             rx = rot_x[yi]
             ry = rot_y[yi]
@@ -406,14 +518,25 @@ class AMRAutoLocalizer(Node):
             lk = self.likelihood_map[gy_c, gx_c]
             lk[~in_b] = 0.0
             scores = np.average(lk, axis=1, weights=beam_weights)
-            max_i = np.argmax(scores)
-            if scores[max_i] > best_score:
-                best_score = scores[max_i]
-                best_pose = (self.cand_x[max_i], self.cand_y[max_i], self.cand_yaws[yi])
+            max_i = int(np.argmax(scores))
+            coarse_peaks.append((float(scores[max_i]), float(self.cand_x[max_i]), float(self.cand_y[max_i]), float(self.cand_yaws[yi])))
 
-        if best_pose is None:
+        if not coarse_peaks:
             self.get_logger().error("[AUTO_LOCALIZE] Global localization failed to converge.")
+            self._publish_loc_status(verified=False, status='MAP_MISMATCH', message='Global search failed.')
             return False, "Global search failed."
+
+        # Rank top coarse hypotheses using raycast-consistent net score so symmetric openings don't fool selection
+        coarse_peaks.sort(key=lambda item: item[0], reverse=True)
+        best_coarse_net = -1.0
+        best_pose = None
+        best_score = -1.0
+        for raw_sc, cx, cy, cyaw in coarse_peaks[:8]:
+            sc, _, _, _, nsc = self._evaluate_scan_fit(cx, cy, cyaw, local_x, local_y, ranges, beam_weights)
+            if nsc > best_coarse_net:
+                best_coarse_net = nsc
+                best_score = sc
+                best_pose = (cx, cy, cyaw)
 
         # Fine Grid Refinement (0.02m spatial step, 1.5 deg angular step)
         bx, by, byaw = best_pose
@@ -448,12 +571,53 @@ class AMRAutoLocalizer(Node):
                     lk[~in_b] = 0.0
                     score = np.average(lk, weights=beam_weights)
                     if score > refined_best_score:
-                        refined_best_score = score
-                        refined_pose = (px, py, yaw)
+                        refined_best_score = float(score)
+                        refined_pose = (float(px), float(py), float(yaw))
 
         elapsed_ms = (time.time() - t0) * 1000.0
         final_x, final_y, final_yaw = refined_pose
         yaw_deg = math.degrees(final_yaw) % 360.0
+
+        # Authoritative map-consistency verification gate
+        final_score, hit_ratio, pass_through_ratio, oob_ratio, net_score = self._evaluate_scan_fit(
+            final_x, final_y, final_yaw, local_x, local_y, ranges, beam_weights
+        )
+
+        reject_reasons = []
+        if final_score < self.min_match_score:
+            reject_reasons.append(f"score {final_score:.3f} < {self.min_match_score:.2f}")
+        if net_score < self.min_net_score:
+            reject_reasons.append(f"net_score {net_score:.3f} < {self.min_net_score:.2f}")
+        if hit_ratio < self.min_hit_ratio:
+            reject_reasons.append(f"hit_ratio {hit_ratio:.2f} < {self.min_hit_ratio:.2f}")
+        if pass_through_ratio > self.max_pass_through_ratio:
+            reject_reasons.append(f"wall_pass_through {pass_through_ratio:.2f} > {self.max_pass_through_ratio:.2f}")
+        if oob_ratio > self.max_oob_ratio:
+            reject_reasons.append(f"out_of_bounds {oob_ratio:.2f} > {self.max_oob_ratio:.2f}")
+
+        if reject_reasons:
+            reason_summary = ", ".join(reject_reasons)
+            err_msg = (
+                f"MAP_MISMATCH: Live LiDAR scan does not match active map '{self.map_name or 'unknown'}' "
+                f"({reason_summary}). Load the correct map before navigating."
+            )
+            self._publish_loc_status(
+                verified=False,
+                status='MAP_MISMATCH',
+                message=err_msg,
+                score=final_score,
+                net_score=net_score,
+                hit_ratio=hit_ratio,
+                pass_through_ratio=pass_through_ratio,
+                oob_ratio=oob_ratio,
+                pose=refined_pose,
+            )
+            if self._startup_mismatch_count <= 2 or (self._startup_mismatch_count % 5 == 0):
+                self.get_logger().error("=" * 72)
+                self.get_logger().error(f"[AUTO_LOCALIZE] ❌ {err_msg}")
+                self.get_logger().error(f"  Best rejected candidate: X={final_x:.3f}m, Y={final_y:.3f}m, Yaw={yaw_deg:.1f}° ({elapsed_ms:.1f}ms)")
+                self.get_logger().error("=" * 72)
+            return False, err_msg
 
         # Construct PoseWithCovarianceStamped
         msg = PoseWithCovarianceStamped()
@@ -489,7 +653,19 @@ class AMRAutoLocalizer(Node):
         log_str = (
             f"[AUTO_LOCALIZE] ✅ GLOBAL LOCALIZATION SOLVED! "
             f"Physical Pose: X={final_x:.3f}m, Y={final_y:.3f}m, Yaw={yaw_deg:.1f}° | "
-            f"Confidence Score={refined_best_score:.3f} | Solved in {elapsed_ms:.1f}ms"
+            f"Score={final_score:.3f} Net={net_score:.3f} Hit={hit_ratio:.2f} PassViol={pass_through_ratio:.2f} | "
+            f"Solved in {elapsed_ms:.1f}ms"
+        )
+        self._publish_loc_status(
+            verified=True,
+            status='VERIFIED',
+            message=log_str,
+            score=final_score,
+            net_score=net_score,
+            hit_ratio=hit_ratio,
+            pass_through_ratio=pass_through_ratio,
+            oob_ratio=oob_ratio,
+            pose=refined_pose,
         )
         self.get_logger().info("=" * 72)
         self.get_logger().info(log_str)
