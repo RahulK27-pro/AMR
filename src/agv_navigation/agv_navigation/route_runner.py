@@ -756,11 +756,33 @@ class RouteRunner(Node):
 
         Example message payload: '["N5", "N12", "N40"]'
         Each node ID is snapped to that graph node's (x, y) world coordinates.
+        An empty array '[]' cancels the active mission and halts the robot.
         """
+        if self._estop_active:
+            self._stop_robot()
+            self._publish_agv_state("ESTOP")
+            self.get_logger().warn("[APP_BRIDGE] Ignoring goal_sequence — E-STOP is latched.")
+            return
+
         try:
             node_ids = json.loads(msg.data)
-            if not isinstance(node_ids, list) or len(node_ids) == 0:
-                self.get_logger().error("goal_sequence: expected a non-empty JSON array of node IDs.")
+            if not isinstance(node_ids, list):
+                self.get_logger().error("goal_sequence: expected a JSON array of node IDs.")
+                return
+
+            if len(node_ids) == 0:
+                self.goal_queue = []
+                self.path_plan = []
+                self.node_path = []
+                self.active_detour = None
+                self.state = "IDLE"
+                self._stop_robot()
+                self._publish_agv_state("IDLE")
+                self._publish_mission_progress("CANCELLED")
+                self.mission_total = 0
+                self.mission_current = 0
+                self.publish_active_path()
+                self.get_logger().info("[APP_BRIDGE] Mission cancelled — robot halted and queue cleared.")
                 return
 
             # Validate every node exists in the graph
@@ -878,6 +900,12 @@ class RouteRunner(Node):
         self._is_pivoting = False
 
     def goal_callback(self, msg):
+        if self._estop_active:
+            self._stop_robot()
+            self._publish_agv_state("ESTOP")
+            self.get_logger().warn("[APP_BRIDGE] Ignoring goal — E-STOP is latched.")
+            return
+
         self.update_robot_pose()
         if not self.odom_ready:
             self.get_logger().warn("Waiting for localization/odometry before accepting goals.")
@@ -1622,6 +1650,9 @@ class RouteRunner(Node):
             self.trigger_reroute()
 
     def control_loop(self):
+        if self._estop_active:
+            self._stop_robot()
+            return
         self.update_robot_pose()
         if self.state not in ["NAVIGATING", "YIELDING"]:
             return

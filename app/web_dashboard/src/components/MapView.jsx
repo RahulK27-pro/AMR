@@ -21,7 +21,7 @@ const LERP_FACTOR = 0.18;
  * perimeter padding to architectural ice-blue slate,
  * and cyan walls/furniture to crisp deep obsidian navy (#0f172a).
  */
-function createLightMapCanvas(image, mapName = '') {
+function createLightMapCanvas(image, mapName = '', mode = 'sim') {
   if (!image) return null;
   const w = image.naturalWidth || image.width;
   const h = image.naturalHeight || image.height;
@@ -45,16 +45,28 @@ function createLightMapCanvas(image, mapName = '') {
     const len = d.length;
 
     // Detect if image is already formatted as a light map (e.g. clean white floor [255, 255, 255])
-    // Uniformly sample across the entire image body rather than just the top border margin
+    // or a grayscale ROS PGM export ([254,254,254] free, [205,205,205] unknown, [0,0,0] wall).
     let whiteCount = 0;
+    let grayCount = 0;
+    let lightGrayCount = 0;
     let totalSamples = 0;
     const step = Math.max(4, Math.floor(len / 1000) * 4);
     for (let i = 0; i < len; i += step) {
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
       totalSamples++;
-      if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) whiteCount++;
+      if (r > 240 && g > 240 && b > 240) whiteCount++;
+      if (Math.abs(r - g) <= 2 && Math.abs(g - b) <= 2) {
+        grayCount++;
+        if (r >= 180) lightGrayCount++;
+      }
     }
-    // If already pre-rendered light map (over 15% white floor), return untouched canvas directly
-    if (totalSamples > 0 && (whiteCount / totalSamples) > 0.15) {
+    const isGrayscalePgm = totalSamples > 0 && (grayCount / totalSamples) > 0.9 && (
+      mode === 'hardware' || (lightGrayCount / totalSamples) > 0.25
+    );
+    // Preserve light maps & hardware/grayscale PGM exports cleanly without inverting even if white <= 15%
+    if (totalSamples > 0 && ((whiteCount / totalSamples) > 0.15 || isGrayscalePgm)) {
       return canvas;
     }
 
@@ -148,6 +160,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   const [isSetPoseMode, setIsSetPoseMode] = useState(false);
   const [isRelocalizing, setIsRelocalizing] = useState(false);
   const setPoseDragRef = useRef(null);
+  const suppressNextClickRef = useRef(false);
+  const telemetryRef = useRef(telemetry);
+  telemetryRef.current = telemetry;
+  const cursorWorldRef = useRef(null);
 
   useEffect(() => {
     if (mode === 'hardware') {
@@ -169,6 +185,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   const [namedPlaces,  setNamedPlaces]  = useState([]);
   const [hoveredPlace, setHoveredPlace] = useState(null);
   const [hoveredNode,  setHoveredNode]  = useState(null);
+  const hoveredPlaceRef = useRef(null);
+  hoveredPlaceRef.current = hoveredPlace;
+  const hoveredNodeRef = useRef(null);
+  hoveredNodeRef.current = hoveredNode;
   const [cursorWorld,  setCursorWorld]  = useState(null);
   const [goalFeedback, setGoalFeedback] = useState(null);
   const [lastGoal,     setLastGoal]     = useState(null);
@@ -209,7 +229,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   const autoFollowPanRef = useRef(null);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 1. Load map image, metadata & graph on mount or when activeMap changes
+  // 1. Load metadata, graph & places when activeMap changes (preserve on theme switch)
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
@@ -244,6 +264,12 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       }
     });
 
+    return () => { mounted = false; };
+  }, [activeMap, computeFitZoom]);
+
+  // Reload only the base map image when activeMap or theme changes
+  useEffect(() => {
+    let mounted = true;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload  = () => { if (mounted) setMapImage(img); };
@@ -267,9 +293,9 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       setLightMapCanvas(null);
       return;
     }
-    const canvas = createLightMapCanvas(mapImage, activeMap);
+    const canvas = createLightMapCanvas(mapImage, activeMap, mode);
     setLightMapCanvas(canvas);
-  }, [mapImage, activeMap]);
+  }, [mapImage, activeMap, mode]);
 
   // Synchronize namedPlaces live whenever a place is created, renamed, or deleted
   useEffect(() => {
@@ -454,11 +480,16 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         }
       }
 
+      const curTelemetry = telemetryRef.current;
+      const curCursorWorld = cursorWorldRef.current;
+      const curHoveredNode = hoveredNodeRef.current;
+      const curHoveredPlace = hoveredPlaceRef.current;
+
       // ── Layer 2: Topological Graph Nodes ───────────────────────────────
       if (showGraph && graphNodes.length > 0) {
         for (const n of graphNodes) {
           const isSel   = selectedNodes.includes(n.id);
-          const isHover = hoveredNode?.id === n.id;
+          const isHover = curHoveredNode?.id === n.id;
           ctx.beginPath();
           ctx.arc(n.px, n.py, isSel ? 4 : isHover ? 3.5 : 1.5, 0, Math.PI * 2);
           ctx.fillStyle = isSel ? (isWhiteFloor ? '#2563eb' : '#00f0ff') : isHover ? '#ffaa00' : (isWhiteFloor ? 'rgba(2, 132, 199, 0.75)' : 'rgba(0,240,255,0.45)');
@@ -475,11 +506,11 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       if (showPlaces && namedPlaces.length > 0) {
         for (const p of namedPlaces) {
           const { px, py } = worldToPixel(p.x, p.y);
-          const isHover = hoveredPlace?.id === p.id;
+          const isHover = curHoveredPlace?.id === p.id;
           const isNavTarget = Boolean(
-            telemetry?.active_place_nav &&
-            (telemetry.active_place_nav.target_place === p.name ||
-             telemetry.active_place_nav.target_node === p.node_id)
+            curTelemetry?.active_place_nav &&
+            (curTelemetry.active_place_nav.target_place === p.name ||
+             curTelemetry.active_place_nav.target_node === p.node_id)
           );
           const markerClr = isNavTarget ? '#06b6d4' : (isHover ? '#38bdf8' : '#10b981');
 
@@ -531,7 +562,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       }
 
       // ── Layer 3: MPPI Dense Path ────────────────────────────────────────
-      const pathWpts = telemetry?.path || [];
+      const pathWpts = curTelemetry?.path || [];
       if (showPath && pathWpts.length >= 2) {
         ctx.save();
         ctx.strokeStyle = 'rgba(244,63,94,0.9)';
@@ -571,10 +602,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       }
 
       // ── Layer 5: Live LiDAR Scan Overlay ────────────────────────────────
-      const scanPts = telemetry?.scan || [];
+      const scanPts = curTelemetry?.scan || [];
       if (showScan && scanPts.length > 0) {
-        const angMin = telemetry?.scan_angle_min ?? -Math.PI;
-        const angInc = telemetry?.scan_angle_inc ?? ((Math.PI * 2) / scanPts.length);
+        const angMin = curTelemetry?.scan_angle_min ?? -Math.PI;
+        const angInc = curTelemetry?.scan_angle_inc ?? ((Math.PI * 2) / scanPts.length);
         ctx.save();
         ctx.fillStyle = isWhiteFloor ? 'rgba(6, 182, 212, 0.9)' : 'rgba(34, 211, 238, 0.9)';
         const ptR = Math.max(0.7, 1.8 / zoom);
@@ -654,7 +685,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       const robotRadiusPx = 0.18 / meta.resolution;
 
       // Determine status colour from nav_state
-      const navState  = telemetry?.nav_state || 'IDLE';
+      const navState  = curTelemetry?.nav_state || 'IDLE';
       const statusClr =
         navState === 'NAVIGATING' ? '#00ff9d' :
         navState === 'YIELDING'   ? '#ff8c00' :
@@ -737,7 +768,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       ctx.restore();
 
       // ── Layer 9: Dynamic Obstacle & Tactical Avoidance Vector ───────────────────
-      const dynObs = telemetry?.dynamic_obstacle;
+      const dynObs = curTelemetry?.dynamic_obstacle;
       if (showObstacle && dynObs && dynObs.active && dynObs.x != null && dynObs.y != null) {
         const { px: ox, py: oy } = worldToPixel(dynObs.x, dynObs.y);
         const obsRadiusPx = 0.25 / meta.resolution;      // 0.25m physical radius
@@ -805,9 +836,9 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       }
 
       // ── Layer 10: Drop Obstacle / Set Initial Pose Reticle Preview ────────
-      if (isSetPoseMode && cursorWorld) {
+      if (isSetPoseMode && curCursorWorld) {
         const drag = setPoseDragRef.current;
-        const anchor = drag || { wx: cursorWorld.x, wy: cursorWorld.y };
+        const anchor = drag || { wx: curCursorWorld.x, wy: curCursorWorld.y };
         const { px: apx, py: apy } = worldToPixel(anchor.wx, anchor.wy);
         ctx.save();
         ctx.beginPath();
@@ -818,7 +849,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         ctx.lineWidth = 1.6 / zoom;
         ctx.stroke();
         if (drag) {
-          const { px: cpx, py: cpy } = worldToPixel(cursorWorld.x, cursorWorld.y);
+          const { px: cpx, py: cpy } = worldToPixel(curCursorWorld.x, curCursorWorld.y);
           ctx.beginPath();
           ctx.moveTo(apx, apy);
           ctx.lineTo(cpx, cpy);
@@ -827,8 +858,8 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
           ctx.stroke();
         }
         ctx.restore();
-      } else if (isDropObstacleMode && cursorWorld) {
-        const { px: cpx, py: cpy } = worldToPixel(cursorWorld.x, cursorWorld.y);
+      } else if (isDropObstacleMode && curCursorWorld) {
+        const { px: cpx, py: cpy } = worldToPixel(curCursorWorld.x, curCursorWorld.y);
         const previewRadius = 0.25 / meta.resolution;
         const evadePreview = 0.85 / meta.resolution;
         ctx.save();
@@ -857,11 +888,10 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
   }, [
-    mapImage, lightMapCanvas, theme, mode, meta, zoom, pan, telemetry,
+    mapImage, lightMapCanvas, theme, mode, meta, zoom, pan,
     showPlaces, showGraph, showPath, showTrail, showScan,
-    showObstacle, isDropObstacleMode, isSetPoseMode, cursorWorld,
-    graphNodes, selectedNodes, hoveredNode,
-    namedPlaces, hoveredPlace,
+    showObstacle, isDropObstacleMode, isSetPoseMode,
+    graphNodes, selectedNodes, namedPlaces,
     lastGoal, autoFollow, worldToPixel,
   ]);
 
@@ -901,6 +931,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     }
     const world = screenToWorld(e.clientX, e.clientY, canvas);
     if (world) {
+      cursorWorldRef.current = { x: world.wx, y: world.wy };
       setCursorWorld({ x: world.wx, y: world.wy });
 
       // Check hovered station / place
@@ -934,10 +965,12 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     if (isSetPoseMode && setPoseDragRef.current && e.button === 0) {
       const start = setPoseDragRef.current;
       setPoseDragRef.current = null;
+      suppressNextClickRef.current = true;
+      setTimeout(() => { suppressNextClickRef.current = false; }, 100);
       const end = screenToWorld(e.clientX, e.clientY, canvasRef.current);
       const dx = end ? (end.wx - start.wx) : 0;
       const dy = end ? (end.wy - start.wy) : 0;
-      const theta = Math.hypot(dx, dy) > 0.12 ? Math.atan2(dy, dx) : (telemetry?.pose?.yaw ?? 0.0);
+      const theta = Math.hypot(dx, dy) > 0.12 ? Math.atan2(dy, dx) : (telemetryRef.current?.pose?.yaw ?? 0.0);
       setIsSetPoseMode(false);
       setGoalFeedback(`Setting AMCL Pose (${start.wx.toFixed(2)}, ${start.wy.toFixed(2)})...`);
       const ok = await bridge.sendInitialPose(start.wx, start.wy, theta);
@@ -945,10 +978,27 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       setTimeout(() => setGoalFeedback(null), 3000);
       return;
     }
+    if (isDraggingRef.current && e.button === 0) {
+      suppressNextClickRef.current = true;
+      setTimeout(() => { suppressNextClickRef.current = false; }, 100);
+    }
     isDraggingRef.current = false;
   };
 
+  const handleMouseLeave = () => {
+    isDraggingRef.current = false;
+    setPoseDragRef.current = null;
+    cursorWorldRef.current = null;
+    setCursorWorld(null);
+    setHoveredPlace(null);
+    setHoveredNode(null);
+  };
+
   const handleClick = async (e) => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
     if (isDraggingRef.current || isSetPoseMode || e.button !== 0) return;
     const canvas = canvasRef.current;
     const world  = screenToWorld(e.clientX, e.clientY, canvas);
@@ -963,7 +1013,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
           setGoalFeedback(`Dynamic Obstacle placed at (${world.wx.toFixed(2)}, ${world.wy.toFixed(2)})`);
           window.dispatchEvent(new CustomEvent('amr-obstacle-placed', { detail: { x: world.wx, y: world.wy } }));
         } else {
-          setGoalFeedback(`Obstacle placement: ${res?.msg || 'placed'}`);
+          setGoalFeedback(`Obstacle placement failed: ${res?.error || res?.msg || 'rejected'}`);
         }
       } catch (err) {
         setGoalFeedback(`Error placing obstacle: ${err.message}`);
@@ -989,6 +1039,13 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       setTimeout(() => setGoalFeedback(null), 2500);
       return;
     }
+
+    if (telemetryRef.current?.estop_active || telemetryRef.current?.nav_state === 'ESTOP') {
+      setGoalFeedback('🛑 E-STOP active — clear E-STOP before dispatching goals');
+      setTimeout(() => setGoalFeedback(null), 3000);
+      return;
+    }
+
     setLastGoal({ x: world.wx, y: world.wy });
     setGoalFeedback(`Dispatching goal (${world.wx.toFixed(2)}, ${world.wy.toFixed(2)})…`);
     const ok = await bridge.sendGoal(world.wx, world.wy);
@@ -1022,6 +1079,7 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
       onWheel={handleWheel}
       onClick={handleClick}
       style={{
@@ -1142,6 +1200,9 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       {/* ── Set Initial Pose Active Banner ── */}
       {isSetPoseMode && (
         <div
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
             top: 48,
@@ -1188,6 +1249,9 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       {/* ── Drop Obstacle Active Banner ── */}
       {isDropObstacleMode && (
         <div
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
             top: 48,

@@ -35,14 +35,30 @@ export default function ControlInterlock({
   controlMode = 'auto',
   setControlMode,
   mode = 'sim',
+  theme = 'dark',
 }) {
   const joystickRef = useRef(null);
   const managerRef = useRef(null);
   const cmdTimerRef = useRef(null);
   const cmdRef = useRef({ linear: 0, angular: 0 });
+  const hasUserChangedSpeedRef = useRef(false);
 
   // Control target: 'robot' (AMR) | 'obstacle' (Dynamic Obstacle, sim only)
   const [teleopTarget, setTeleopTarget] = useState('robot');
+
+  const isHardware = mode === 'hardware';
+  const limits = telemetry?.limits;
+  const hwMinLinear = isHardware && limits?.min_linear != null ? Number(limits.min_linear) : HW_MIN_LINEAR;
+  const hwMaxLinear = isHardware && limits?.max_linear != null ? Number(limits.max_linear) : HW_MAX_LINEAR;
+  const hwStepLinear = isHardware && limits?.linear_step != null ? Number(limits.linear_step) : HW_STEP_LINEAR;
+  const hwMinAngular = isHardware && limits?.min_angular != null ? Number(limits.min_angular) : HW_MIN_ANGULAR;
+  const hwMaxAngular = isHardware && limits?.max_angular != null ? Number(limits.max_angular) : HW_MAX_ANGULAR;
+  const hwStepAngular = isHardware && limits?.angular_step != null ? Number(limits.angular_step) : HW_STEP_ANGULAR;
+  const simMaxLinear = !isHardware && limits?.max_linear != null ? Number(limits.max_linear) : SIM_MAX_LINEAR;
+  const simMaxAngular = !isHardware && limits?.max_angular != null ? Number(limits.max_angular) : SIM_MAX_ANGULAR;
+  const hwPresets = isHardware && Array.isArray(limits?.presets) && limits.presets.length > 0
+    ? limits.presets.map((p, idx) => ({ key: String(idx + 1), label: p.label, linear: Number(p.linear), angular: Number(p.angular) }))
+    : HW_PRESETS;
 
   // Simulation drive speed throttle (0.1 - 1.0)
   const [robotSpeed, setRobotSpeed] = useState(0.8);
@@ -52,13 +68,71 @@ export default function ControlInterlock({
   // Obstacle steering speed throttle (0.1 - 1.0)
   const [obsSpeed, setObsSpeed] = useState(0.5);
 
+  const hwLinearRef = useRef(hwLinear);
+  hwLinearRef.current = hwLinear;
+  const hwAngularRef = useRef(hwAngular);
+  hwAngularRef.current = hwAngular;
+  const robotSpeedRef = useRef(robotSpeed);
+  robotSpeedRef.current = robotSpeed;
+  const obsSpeedRef = useRef(obsSpeed);
+  obsSpeedRef.current = obsSpeed;
+  const simMaxLinearRef = useRef(simMaxLinear);
+  simMaxLinearRef.current = simMaxLinear;
+  const simMaxAngularRef = useRef(simMaxAngular);
+  simMaxAngularRef.current = simMaxAngular;
+
   const navState = telemetry?.nav_state;
   const isEstopActive = navState === 'ESTOP' || Boolean(telemetry?.estop_active);
   const dynObs = telemetry?.dynamic_obstacle;
-  const isHardware = mode === 'hardware';
 
-  const activeMaxLinear = isHardware ? hwLinear : SIM_MAX_LINEAR * robotSpeed;
-  const activeMaxAngular = isHardware ? hwAngular : SIM_MAX_ANGULAR * robotSpeed;
+  // Reset speed sync guard on mode switch
+  useEffect(() => {
+    hasUserChangedSpeedRef.current = false;
+  }, [mode]);
+
+  // Sync defaults from backend telemetry?.limits if user hasn't adjusted speeds
+  useEffect(() => {
+    if (!limits || hasUserChangedSpeedRef.current) return;
+    if (isHardware) {
+      if (limits.default_linear != null) {
+        const v = Number(limits.default_linear);
+        setHwLinear(v);
+        hwLinearRef.current = v;
+      }
+      if (limits.default_angular != null) {
+        const w = Number(limits.default_angular);
+        setHwAngular(w);
+        hwAngularRef.current = w;
+      }
+    } else if (limits.default_linear != null && limits.max_linear) {
+      const ratio = Math.min(1.0, Math.max(0.1, Number((Number(limits.default_linear) / Number(limits.max_linear)).toFixed(2))));
+      setRobotSpeed(ratio);
+      robotSpeedRef.current = ratio;
+    }
+  }, [isHardware, limits?.default_linear, limits?.default_angular, limits?.max_linear]);
+
+  const applyHwSpeed = (nextLin, nextAng) => {
+    hasUserChangedSpeedRef.current = true;
+    const clampedLin = Math.min(hwMaxLinear, Math.max(hwMinLinear, Number(nextLin.toFixed(2))));
+    const clampedAng = Math.min(hwMaxAngular, Math.max(hwMinAngular, Number(nextAng.toFixed(2))));
+    const prevLin = hwLinearRef.current;
+    const prevAng = hwAngularRef.current;
+    hwLinearRef.current = clampedLin;
+    hwAngularRef.current = clampedAng;
+    setHwLinear(clampedLin);
+    setHwAngular(clampedAng);
+
+    if (cmdRef.current.linear !== 0 || cmdRef.current.angular !== 0) {
+      const linRatio = prevLin > 0 ? cmdRef.current.linear / prevLin : 0;
+      const angRatio = prevAng > 0 ? cmdRef.current.angular / prevAng : 0;
+      const scaledLin = Math.abs(linRatio) > 1e-4 ? Math.sign(linRatio) * Math.min(clampedLin, Math.abs(linRatio) * clampedLin) : 0;
+      const scaledAng = Math.abs(angRatio) > 1e-4 ? Math.sign(angRatio) * Math.min(clampedAng, Math.abs(angRatio) * clampedAng) : 0;
+      cmdRef.current = { linear: scaledLin, angular: scaledAng };
+      if (controlMode === 'manual' && !isEstopActive && teleopTarget === 'robot') {
+        bridge.sendCmdVel(scaledLin, scaledAng);
+      }
+    }
+  };
 
   useEffect(() => {
     if (isHardware && teleopTarget === 'obstacle') {
@@ -86,11 +160,12 @@ export default function ControlInterlock({
   // If robot starts actively navigating or planning, switch robot mode to auto
   useEffect(() => {
     if (navState === 'NAVIGATING' || navState === 'PLANNING') {
+      cmdRef.current = { linear: 0, angular: 0 };
       if (setControlMode) setControlMode('auto');
     }
   }, [navState, setControlMode]);
 
-  // NippleJS Virtual Joystick Setup (Dynamic target & color)
+  // NippleJS Virtual Joystick Setup (kept stable across speed slider changes via refs)
   useEffect(() => {
     if (!joystickRef.current) return;
 
@@ -98,7 +173,7 @@ export default function ControlInterlock({
     const isRobotManual = teleopTarget === 'robot' && controlMode === 'manual' && !isEstopActive;
     const isInteractive = isObstacle || isRobotManual;
 
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    const isLight = theme === 'light';
     const joyColor = isEstopActive
       ? '#ef4444'
       : isObstacle
@@ -124,14 +199,17 @@ export default function ControlInterlock({
       const f = data.force ? Math.min(data.force, 1) : 1;
 
       if (isObstacle) {
+        const obsSpd = obsSpeedRef.current;
         cmdRef.current = {
-          linear: linearRaw * f * MAX_OBS_LINEAR * obsSpeed,
-          angular: angularRaw * f * MAX_OBS_ANGULAR * obsSpeed,
+          linear: linearRaw * f * MAX_OBS_LINEAR * obsSpd,
+          angular: angularRaw * f * MAX_OBS_ANGULAR * obsSpd,
         };
       } else {
+        const maxLin = isHardware ? hwLinearRef.current : simMaxLinearRef.current * robotSpeedRef.current;
+        const maxAng = isHardware ? hwAngularRef.current : simMaxAngularRef.current * robotSpeedRef.current;
         cmdRef.current = {
-          linear: linearRaw * f * activeMaxLinear,
-          angular: angularRaw * f * activeMaxAngular,
+          linear: linearRaw * f * maxLin,
+          angular: angularRaw * f * maxAng,
         };
       }
     });
@@ -161,9 +239,9 @@ export default function ControlInterlock({
       manager.destroy();
       clearInterval(cmdTimerRef.current);
     };
-  }, [teleopTarget, controlMode, robotSpeed, hwLinear, hwAngular, obsSpeed, isHardware, isEstopActive, activeMaxLinear, activeMaxAngular]);
+  }, [teleopTarget, controlMode, isHardware, isEstopActive, theme]);
 
-  // Keyboard navigation listener (W/A/S/D, Arrow keys, Q/E curve, +/- speed, 1/2/3 presets)
+  // Keyboard & window blur safety listener (W/A/S/D, Arrow keys, Q/E curve, +/- speed, 1/2/3 presets)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
@@ -171,27 +249,28 @@ export default function ControlInterlock({
       const isRobotManual = teleopTarget === 'robot' && controlMode === 'manual' && !isEstopActive;
       if (!isObstacle && !isRobotManual) return;
 
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+        e.preventDefault();
+      }
+
       if (isHardware && !isObstacle) {
         if (e.key === '+' || e.key === '=') {
-          setHwLinear((v) => Math.min(HW_MAX_LINEAR, Number((v + HW_STEP_LINEAR).toFixed(2))));
-          setHwAngular((w) => Math.min(HW_MAX_ANGULAR, Number((w + HW_STEP_ANGULAR).toFixed(2))));
+          applyHwSpeed(hwLinearRef.current + hwStepLinear, hwAngularRef.current + hwStepAngular);
           return;
         }
         if (e.key === '-' || e.key === '_') {
-          setHwLinear((v) => Math.max(HW_MIN_LINEAR, Number((v - HW_STEP_LINEAR).toFixed(2))));
-          setHwAngular((w) => Math.max(HW_MIN_ANGULAR, Number((w - HW_STEP_ANGULAR).toFixed(2))));
+          applyHwSpeed(hwLinearRef.current - hwStepLinear, hwAngularRef.current - hwStepAngular);
           return;
         }
-        const preset = HW_PRESETS.find((p) => p.key === e.key);
+        const preset = hwPresets.find((p) => p.key === e.key);
         if (preset) {
-          setHwLinear(preset.linear);
-          setHwAngular(preset.angular);
+          applyHwSpeed(preset.linear, preset.angular);
           return;
         }
       }
 
-      const spd = isObstacle ? obsSpeed * MAX_OBS_LINEAR : activeMaxLinear;
-      const ang = isObstacle ? obsSpeed * MAX_OBS_ANGULAR : activeMaxAngular;
+      const spd = isObstacle ? obsSpeedRef.current * MAX_OBS_LINEAR : (isHardware ? hwLinearRef.current : simMaxLinear * robotSpeedRef.current);
+      const ang = isObstacle ? obsSpeedRef.current * MAX_OBS_ANGULAR : (isHardware ? hwAngularRef.current : simMaxAngular * robotSpeedRef.current);
 
       if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
         cmdRef.current = { linear: spd, angular: 0 };
@@ -224,33 +303,59 @@ export default function ControlInterlock({
       }
     };
 
+    const handleWindowBlur = () => {
+      cmdRef.current = { linear: 0, angular: 0 };
+      if (!isHardware && teleopTarget === 'obstacle') {
+        bridge.sendObstacleCmdVel(0, 0);
+      } else if (controlMode === 'manual') {
+        bridge.sendCmdVel(0, 0);
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
     };
-  }, [teleopTarget, controlMode, robotSpeed, obsSpeed, isHardware, isEstopActive, activeMaxLinear, activeMaxAngular]);
+  }, [teleopTarget, controlMode, isHardware, isEstopActive, hwMinLinear, hwMaxLinear, hwStepLinear, hwMinAngular, hwMaxAngular, hwStepAngular, simMaxLinear, simMaxAngular, hwPresets]);
 
   const handleSwitchRobotMode = (nextMode) => {
     if (setControlMode) setControlMode(nextMode);
     if (nextMode === 'auto') {
+      cmdRef.current = { linear: 0, angular: 0 };
       bridge.sendCmdVel(0, 0);
     }
   };
 
-  const handleManualAction = (linScale, angScale) => {
+  const startHoldMove = (linScale, angScale) => {
     if (!isHardware && teleopTarget === 'obstacle') {
-      bridge.sendObstacleCmdVel(linScale * obsSpeed, angScale * obsSpeed);
-    } else {
-      if (controlMode !== 'manual' || isEstopActive) return;
-      if (isHardware) {
-        const linCmd = linScale > 0 ? hwLinear : linScale < 0 ? -hwLinear : 0;
-        const angCmd = angScale > 0 ? hwAngular : angScale < 0 ? -hwAngular : 0;
-        bridge.sendCmdVel(linCmd, angCmd);
-      } else {
-        bridge.sendCmdVel(linScale * robotSpeed, angScale * robotSpeed);
-      }
+      const linear = linScale * obsSpeedRef.current;
+      const angular = angScale * obsSpeedRef.current;
+      cmdRef.current = { linear, angular };
+      bridge.sendObstacleCmdVel(linear, angular);
+      return;
+    }
+    if (controlMode !== 'manual' || isEstopActive) return;
+    const linear = isHardware
+      ? (linScale > 0 ? hwLinearRef.current : linScale < 0 ? -hwLinearRef.current : 0)
+      : linScale * robotSpeedRef.current;
+    const angular = isHardware
+      ? (angScale > 0 ? hwAngularRef.current : angScale < 0 ? -hwAngularRef.current : 0)
+      : angScale * robotSpeedRef.current;
+    cmdRef.current = { linear, angular };
+    bridge.sendCmdVel(linear, angular);
+  };
+
+  const stopHoldMove = () => {
+    if (cmdRef.current.linear === 0 && cmdRef.current.angular === 0) return;
+    cmdRef.current = { linear: 0, angular: 0 };
+    if (!isHardware && teleopTarget === 'obstacle') {
+      bridge.sendObstacleCmdVel(0, 0);
+    } else if (controlMode === 'manual') {
+      bridge.sendCmdVel(0, 0);
     }
   };
 
@@ -388,27 +493,23 @@ export default function ControlInterlock({
                       type="button"
                       className="btn btn--xs btn--ghost"
                       disabled={controlMode !== 'manual' || isEstopActive}
-                      onClick={() => {
-                        setHwLinear((v) => Math.max(HW_MIN_LINEAR, Number((v - HW_STEP_LINEAR).toFixed(2))));
-                        setHwAngular((w) => Math.max(HW_MIN_ANGULAR, Number((w - HW_STEP_ANGULAR).toFixed(2))));
-                      }}
+                      onClick={() => applyHwSpeed(hwLinear - hwStepLinear, hwAngular - hwStepAngular)}
                       style={{ padding: '2px 7px', fontWeight: 700 }}
-                      title="Decrease speed (-0.02 m/s)"
+                      title={`Decrease speed (-${hwStepLinear.toFixed(2)} m/s)`}
                     >
                       −
                     </button>
                     <input
                       type="range"
-                      min={HW_MIN_LINEAR}
-                      max={HW_MAX_LINEAR}
-                      step={HW_STEP_LINEAR}
+                      min={hwMinLinear}
+                      max={hwMaxLinear}
+                      step={0.01}
                       value={hwLinear}
                       disabled={controlMode !== 'manual' || isEstopActive}
                       onChange={(e) => {
                         const v = Number(e.target.value);
-                        setHwLinear(v);
-                        const ratio = (v - HW_MIN_LINEAR) / (HW_MAX_LINEAR - HW_MIN_LINEAR);
-                        setHwAngular(Number((HW_MIN_ANGULAR + ratio * (HW_MAX_ANGULAR - HW_MIN_ANGULAR)).toFixed(2)));
+                        const ratio = hwMaxLinear > hwMinLinear ? (v - hwMinLinear) / (hwMaxLinear - hwMinLinear) : 0;
+                        applyHwSpeed(v, hwMinAngular + ratio * (hwMaxAngular - hwMinAngular));
                       }}
                       style={{ flex: 1, height: 4, accentColor: 'var(--accent-cyan)', cursor: controlMode === 'manual' ? 'pointer' : 'not-allowed' }}
                     />
@@ -416,27 +517,21 @@ export default function ControlInterlock({
                       type="button"
                       className="btn btn--xs btn--ghost"
                       disabled={controlMode !== 'manual' || isEstopActive}
-                      onClick={() => {
-                        setHwLinear((v) => Math.min(HW_MAX_LINEAR, Number((v + HW_STEP_LINEAR).toFixed(2))));
-                        setHwAngular((w) => Math.min(HW_MAX_ANGULAR, Number((w + HW_STEP_ANGULAR).toFixed(2))));
-                      }}
+                      onClick={() => applyHwSpeed(hwLinear + hwStepLinear, hwAngular + hwStepAngular)}
                       style={{ padding: '2px 7px', fontWeight: 700 }}
-                      title="Increase speed (+0.02 m/s)"
+                      title={`Increase speed (+${hwStepLinear.toFixed(2)} m/s)`}
                     >
                       +
                     </button>
                   </div>
                   <div className="flex-row" style={{ gap: 4 }}>
-                    {HW_PRESETS.map((p) => (
+                    {hwPresets.map((p) => (
                       <button
                         key={p.key}
                         type="button"
                         disabled={controlMode !== 'manual' || isEstopActive}
                         className={`btn-preset ${Math.abs(hwLinear - p.linear) < 0.005 ? 'btn-preset--active' : ''}`}
-                        onClick={() => {
-                          setHwLinear(p.linear);
-                          setHwAngular(p.angular);
-                        }}
+                        onClick={() => applyHwSpeed(p.linear, p.angular)}
                         style={{ flex: 1, fontSize: 10, padding: '2px 4px' }}
                         title={`Preset [${p.key}]: ${p.linear} m/s, ${p.angular} rad/s`}
                       >
@@ -453,7 +548,7 @@ export default function ControlInterlock({
                       Speed Throttle
                     </span>
                     <span className="text-mono text-xs" style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>
-                      {Math.round(robotSpeed * 100)}% ({(SIM_MAX_LINEAR * robotSpeed).toFixed(2)} m/s)
+                      {Math.round(robotSpeed * 100)}% ({(simMaxLinear * robotSpeed).toFixed(2)} m/s)
                     </span>
                   </div>
                   <input
@@ -463,7 +558,12 @@ export default function ControlInterlock({
                     step="0.05"
                     value={robotSpeed}
                     disabled={controlMode !== 'manual' || isEstopActive}
-                    onChange={(e) => setRobotSpeed(Number(e.target.value))}
+                    onChange={(e) => {
+                      hasUserChangedSpeedRef.current = true;
+                      const nextSpd = Number(e.target.value);
+                      robotSpeedRef.current = nextSpd;
+                      setRobotSpeed(nextSpd);
+                    }}
                     style={{ width: '100%', height: 4, accentColor: 'var(--accent-cyan)', cursor: controlMode === 'manual' ? 'pointer' : 'not-allowed' }}
                   />
                 </div>
@@ -535,44 +635,31 @@ export default function ControlInterlock({
             </>
           )}
 
-          {/* Quick Directional Actions */}
+          {/* Quick Directional Hold-to-Move Actions */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
-            <button
-              className="btn btn--ghost btn--sm"
-              disabled={!isObstacleMode && (controlMode !== 'manual' || isEstopActive)}
-              onClick={() => handleManualAction(0.35, 0)}
-              style={{ fontSize: 10, padding: '4px 2px', borderColor: isObstacleMode ? 'rgba(234, 88, 12, 0.4)' : undefined }}
-              title="Steer Forward (W / Up)"
-            >
-              FWD
-            </button>
-            <button
-              className="btn btn--ghost btn--sm"
-              disabled={!isObstacleMode && (controlMode !== 'manual' || isEstopActive)}
-              onClick={() => handleManualAction(-0.35, 0)}
-              style={{ fontSize: 10, padding: '4px 2px', borderColor: isObstacleMode ? 'rgba(234, 88, 12, 0.4)' : undefined }}
-              title="Steer Reverse (S / Down)"
-            >
-              REV
-            </button>
-            <button
-              className="btn btn--ghost btn--sm"
-              disabled={!isObstacleMode && (controlMode !== 'manual' || isEstopActive)}
-              onClick={() => handleManualAction(0, 0.9)}
-              style={{ fontSize: 10, padding: '4px 2px', borderColor: isObstacleMode ? 'rgba(234, 88, 12, 0.4)' : undefined }}
-              title="Turn Left (A / Left)"
-            >
-              TURN L
-            </button>
-            <button
-              className="btn btn--ghost btn--sm"
-              disabled={!isObstacleMode && (controlMode !== 'manual' || isEstopActive)}
-              onClick={() => handleManualAction(0, -0.9)}
-              style={{ fontSize: 10, padding: '4px 2px', borderColor: isObstacleMode ? 'rgba(234, 88, 12, 0.4)' : undefined }}
-              title="Turn Right (D / Right)"
-            >
-              TURN R
-            </button>
+            {[
+              { label: 'FWD', lin: 0.35, ang: 0, title: 'Hold to Move Forward (W / Up)' },
+              { label: 'REV', lin: -0.35, ang: 0, title: 'Hold to Move Reverse (S / Down)' },
+              { label: 'TURN L', lin: 0, ang: 0.9, title: 'Hold to Turn Left (A / Left)' },
+              { label: 'TURN R', lin: 0, ang: -0.9, title: 'Hold to Turn Right (D / Right)' },
+            ].map((btn) => (
+              <button
+                key={btn.label}
+                type="button"
+                className="btn btn--ghost btn--sm"
+                disabled={!isObstacleMode && (controlMode !== 'manual' || isEstopActive)}
+                onMouseDown={() => startHoldMove(btn.lin, btn.ang)}
+                onMouseUp={stopHoldMove}
+                onMouseLeave={stopHoldMove}
+                onTouchStart={(e) => { e.preventDefault(); startHoldMove(btn.lin, btn.ang); }}
+                onTouchEnd={stopHoldMove}
+                onTouchCancel={stopHoldMove}
+                style={{ fontSize: 10, padding: '4px 2px', borderColor: isObstacleMode ? 'rgba(234, 88, 12, 0.4)' : undefined }}
+                title={btn.title}
+              >
+                {btn.label}
+              </button>
+            ))}
           </div>
 
           {/* Stop Button */}

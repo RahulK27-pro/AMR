@@ -67,6 +67,7 @@ if [ "$MODE" = "hw_nav" ] || [ "$MODE" = "hardware" ] || [ "$MODE" = "hw_explore
     fi
     rviz2 -d "$RVIZ_CFG" --ros-args -p use_sim_time:=false
 else
+    unset CYCLONEDDS_URI
     export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
     export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
     export ROS_LOCALHOST_ONLY=1

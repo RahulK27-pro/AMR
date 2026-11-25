@@ -54,7 +54,7 @@ export default function ControlPanel({
     setNewPlaceNodeId('');
     setNewPlaceFeedback(null);
     return () => { mounted = false; };
-  }, [activeMap]);
+  }, [activeMap, mode]);
 
   // Synchronize places when saved, added, or deleted anywhere
   useEffect(() => {
@@ -203,7 +203,11 @@ export default function ControlPanel({
     }
   };
 
+  const navState = telemetry?.nav_state;
+  const isEstopActive = navState === 'ESTOP' || Boolean(telemetry?.estop_active);
+
   const handleDispatchSelectedPlace = async () => {
+    if (isEstopActive) return;
     const target = namedPlaces.find((p) => p.id === selectedPlaceId);
     if (!target) return;
     setIsDispatchingPlace(true);
@@ -225,8 +229,6 @@ export default function ControlPanel({
     await bridge.cancelPlaceNavigation();
   };
 
-  const navState = telemetry?.nav_state;
-
   useEffect(() => {
     // If robot starts actively navigating or planning, default to auto mode
     if (navState === 'NAVIGATING' || navState === 'PLANNING') {
@@ -246,7 +248,7 @@ export default function ControlPanel({
   };
 
   const handleDispatchMission = async () => {
-    if (selectedNodes.length === 0) return;
+    if (isEstopActive || selectedNodes.length === 0) return;
     if (setControlMode) setControlMode('auto');
     await bridge.sendGoalSequence(selectedNodes);
   };
@@ -265,8 +267,12 @@ export default function ControlPanel({
     const targetY = rPose.y + 1.5 * Math.sin(rPose.yaw);
     setIsDroppingObs(true);
     try {
-      await bridge.spawnObstacle(targetX, targetY, rPose.yaw);
-      setObsFeedback(`Dropped 1.5m ahead at (${targetX.toFixed(2)}, ${targetY.toFixed(2)})`);
+      const res = await bridge.spawnObstacle(targetX, targetY, rPose.yaw);
+      if (res?.ok) {
+        setObsFeedback(`Dropped 1.5m ahead at (${targetX.toFixed(2)}, ${targetY.toFixed(2)})`);
+      } else {
+        setObsFeedback(`Failed to spawn: ${res?.error || 'Request rejected'}`);
+      }
     } catch (err) {
       setObsFeedback(`Failed to spawn: ${err.message}`);
     }
@@ -275,8 +281,12 @@ export default function ControlPanel({
   };
 
   const handleRemoveObstacle = async () => {
-    await bridge.removeObstacle();
-    setObsFeedback('Obstacle removed from simulation');
+    const res = await bridge.removeObstacle();
+    if (res?.ok) {
+      setObsFeedback('Obstacle removed from simulation');
+    } else {
+      setObsFeedback(`Failed to remove: ${res?.error || 'Request rejected'}`);
+    }
     setTimeout(() => setObsFeedback(null), 2500);
   };
 
@@ -368,7 +378,11 @@ export default function ControlPanel({
                     Nav Speeds / BT:
                   </span>
                   <span className="text-mono" style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
-                    0.13 m/s · BT Off
+                    {telemetry?.nav_limits?.max_linear_speed != null
+                      ? `${Number(telemetry.nav_limits.max_linear_speed).toFixed(2)} m/s`
+                      : '0.13 m/s'}
+                    {' · '}
+                    {telemetry?.nav_limits?.use_bt ? 'BT On' : 'BT Off'}
                   </span>
                 </div>
               </>
@@ -401,7 +415,7 @@ export default function ControlPanel({
               </div>
             )}
             {!externalRunning && systemState === 'STOPPED' && (
-              <div style={{ color: '#94a3b8', fontSize: 11 }}>
+              <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
                 {mode === 'hardware'
                   ? 'Launches AMCL, Auto-Localizer & MPPI (assumes ./start_hardware.sh is running on Pi).'
                   : 'Launches Gazebo simulation, Route Runner & BT Manager.'}
@@ -463,12 +477,12 @@ export default function ControlPanel({
           )}
 
           {/* Desktop Visualizers */}
-          <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
             <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
                 Desktop Visualizers:
               </span>
-              <span className="text-mono" style={{ fontSize: 10, color: '#94a3b8' }}>
+              <span className="text-mono" style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
                 {mode === 'hardware' ? 'Domain 7' : 'WSL2 GUI'}
               </span>
             </div>
@@ -539,7 +553,7 @@ export default function ControlPanel({
             {/* Step 1: Pick Node */}
             <div style={{ marginBottom: 8 }}>
               <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
-                <label className="text-xs" style={{ color: '#cbd5e1', fontWeight: 600 }}>
+                <label className="text-xs" style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
                   1. Pick Roadmap Node:
                 </label>
                 {selectedNodeObj && (
@@ -580,7 +594,7 @@ export default function ControlPanel({
 
             {/* Step 2: Name the Place */}
             <div style={{ marginBottom: 8 }}>
-              <label className="text-xs" style={{ color: '#cbd5e1', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+              <label className="text-xs" style={{ color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: 4 }}>
                 2. Station / Place Name:
               </label>
               <input
@@ -655,7 +669,7 @@ export default function ControlPanel({
                 {activePlaceNav.distance_to_target_m != null ? `${activePlaceNav.distance_to_target_m} m away` : ''}
               </span>
             </div>
-            <div style={{ marginTop: 4, fontWeight: 700, fontSize: 13, color: '#f8fafc' }}>
+            <div style={{ marginTop: 4, fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
               Target: {activePlaceNav.target_place || 'Active Station'} <span className="text-dim text-xs">({activePlaceNav.target_node})</span>
             </div>
             {activePlaceNav.is_sequence && (
@@ -710,9 +724,9 @@ export default function ControlPanel({
                 marginTop: 8,
                 padding: '8px 10px',
                 textAlign: 'center',
-                backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                backgroundColor: 'var(--bg-elevated)',
                 borderRadius: 6,
-                border: '1px dashed rgba(255, 255, 255, 0.1)',
+                border: '1px dashed var(--border)',
               }}
             >
               <div className="text-dim text-xs" style={{ marginBottom: 6 }}>
@@ -753,11 +767,12 @@ export default function ControlPanel({
           <div className="flex-row mt-sm" style={{ gap: 8 }}>
             <button
               className="btn btn--primary btn--full btn--sm"
-              disabled={!selectedPlaceId || isDispatchingPlace}
+              disabled={!selectedPlaceId || isDispatchingPlace || isEstopActive}
               onClick={handleDispatchSelectedPlace}
+              title={isEstopActive ? 'E-STOP active — clear E-STOP before dispatching' : undefined}
               style={{ fontWeight: 700, padding: '7px 12px' }}
             >
-              {isDispatchingPlace ? 'Dispatching...' : 'Dispatch to Station'}
+              {isEstopActive ? 'E-STOP LOCKED' : isDispatchingPlace ? 'Dispatching...' : 'Dispatch to Station'}
             </button>
             <button
               className="btn btn--ghost btn--sm"
@@ -809,11 +824,12 @@ export default function ControlPanel({
 
         <button
           className="btn btn--success btn--full mt-sm"
-          disabled={selectedNodes.length === 0}
+          disabled={selectedNodes.length === 0 || isEstopActive}
           onClick={handleDispatchMission}
+          title={isEstopActive ? 'E-STOP active — clear E-STOP before dispatching' : undefined}
           style={{ letterSpacing: '0.04em', fontWeight: 700 }}
         >
-          Dispatch Mission Sequence ({selectedNodes.length})
+          {isEstopActive ? 'E-STOP LOCKED' : `Dispatch Mission Sequence (${selectedNodes.length})`}
         </button>
       </div>
 
@@ -935,8 +951,8 @@ export default function ControlPanel({
                         {isEvading ? 'EVADING' : isProximity ? 'PROXIMITY' : dynObs?.active ? 'NOMINAL' : 'IDLE'}
                       </span>
                     </div>
-                    <div className="text-mono" style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                      Speed: <strong style={{ color: '#f1f5f9' }}>{(dynObs?.speed || 0).toFixed(1)} m/s</strong>
+                    <div className="text-mono" style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      Speed: <strong style={{ color: 'var(--text-primary)' }}>{(dynObs?.speed || 0).toFixed(1)} m/s</strong>
                     </div>
                   </div>
 
@@ -990,7 +1006,7 @@ export default function ControlPanel({
                     </span>
                     <span>3m+</span>
                   </div>
-                  <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
                     <div
                       style={{
                         height: '100%',

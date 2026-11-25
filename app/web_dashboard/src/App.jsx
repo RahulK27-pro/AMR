@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import bridge from './services/amrBridge';
 import StatusBar from './components/StatusBar';
 import TelemetryPanel from './components/TelemetryPanel';
@@ -63,6 +63,8 @@ export default function App() {
   const [runtimeMode, setRuntimeMode] = useState(() => localStorage.getItem('amr_runtime_mode') || 'sim');
   const [piIp, setPiIp] = useState(() => localStorage.getItem('amr_pi_ip') || '10.244.248.208');
   const [isSwitchingMode, setIsSwitchingMode] = useState(false);
+  const pendingModeRef = useRef(null);
+  const switchIdRef = useRef(0);
   const [activeMap, setActiveMap] = useState(() => {
     return localStorage.getItem('amr_active_map') || 'hospital_map';
   });
@@ -110,6 +112,17 @@ export default function App() {
 
   // Keep activeMap & mode in sync if telemetry updates them from backend
   useEffect(() => {
+    const pending = pendingModeRef.current;
+    if (pending) {
+      const modeReady = telemetry?.mode === pending.mode;
+      const piReady = !pending.piIp || telemetry?.pi_ip === pending.piIp;
+      if (!modeReady || !piReady) {
+        // Ignore pre-restart stale WS frames carrying the old mode/Pi IP during mode switch
+        return;
+      }
+      pendingModeRef.current = null;
+      setIsSwitchingMode(false);
+    }
     if (telemetry?.mode && telemetry.mode !== runtimeMode) {
       setRuntimeMode(telemetry.mode);
       localStorage.setItem('amr_runtime_mode', telemetry.mode);
@@ -127,28 +140,74 @@ export default function App() {
 
   const handleSwitchMode = async (nextMode, nextPiIp = piIp) => {
     const cleanMode = nextMode === 'hardware' ? 'hardware' : 'sim';
-    if (cleanMode === effectiveMode && nextPiIp === piIp) return;
+    if (cleanMode === effectiveMode && (cleanMode !== 'hardware' || nextPiIp === piIp)) return;
+
+    const mySwitchId = ++switchIdRef.current;
+    pendingModeRef.current = {
+      mode: cleanMode,
+      piIp: cleanMode === 'hardware' ? nextPiIp : null,
+    };
     setIsSwitchingMode(true);
     setSelectedNodes([]);
+
     const res = await bridge.switchMode(cleanMode, nextPiIp);
-    if (res?.ok) {
-      setRuntimeMode(cleanMode);
-      localStorage.setItem('amr_runtime_mode', cleanMode);
-      if (nextPiIp) {
-        setPiIp(nextPiIp);
-        localStorage.setItem('amr_pi_ip', nextPiIp);
+    if (!res?.ok) {
+      if (switchIdRef.current === mySwitchId) {
+        pendingModeRef.current = null;
+        setIsSwitchingMode(false);
       }
-      // Poll mode endpoint cleanly after bridge restarts to sync active_map immediately
-      setTimeout(() => {
-        bridge.getActiveMap().then((mres) => {
-          if (mres?.ok && mres.active_map) {
-            setActiveMap(mres.active_map);
-            localStorage.setItem('amr_active_map', mres.active_map);
-          }
-          setIsSwitchingMode(false);
-        });
-      }, 2200);
-    } else {
+      return;
+    }
+
+    setRuntimeMode(cleanMode);
+    localStorage.setItem('amr_runtime_mode', cleanMode);
+    if (nextPiIp) {
+      setPiIp(nextPiIp);
+      localStorage.setItem('amr_pi_ip', nextPiIp);
+    }
+
+    if (res.data?.restarting === false) {
+      const mres = await bridge.getActiveMap();
+      if (switchIdRef.current === mySwitchId) {
+        if (mres?.ok && mres.active_map) {
+          setActiveMap(mres.active_map);
+          localStorage.setItem('amr_active_map', mres.active_map);
+        }
+        pendingModeRef.current = null;
+        setIsSwitchingMode(false);
+      }
+      return;
+    }
+
+    setTelemetry(null);
+
+    // Poll bridge every 400ms up to 12s until restarted process confirms cleanMode
+    const maxAttempts = 30;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      if (switchIdRef.current !== mySwitchId) return;
+
+      const modeRes = await bridge.getMode();
+      const piMatches = cleanMode !== 'hardware' || !nextPiIp || modeRes?.pi_ip === nextPiIp;
+      if (modeRes?.ok && modeRes.mode === cleanMode && piMatches) {
+        const mres = await bridge.getActiveMap();
+        if (switchIdRef.current !== mySwitchId) return;
+        if (mres?.ok && mres.active_map) {
+          setActiveMap(mres.active_map);
+          localStorage.setItem('amr_active_map', mres.active_map);
+        }
+        if (modeRes.pi_ip) {
+          setPiIp(modeRes.pi_ip);
+          localStorage.setItem('amr_pi_ip', modeRes.pi_ip);
+        }
+        pendingModeRef.current = null;
+        setIsSwitchingMode(false);
+        return;
+      }
+    }
+
+    if (switchIdRef.current === mySwitchId) {
+      pendingModeRef.current = null;
       setIsSwitchingMode(false);
     }
   };
@@ -226,6 +285,7 @@ export default function App() {
                 controlMode={controlMode}
                 setControlMode={setControlMode}
                 mode={effectiveMode}
+                theme={theme}
               />
               <EventLog />
             </div>

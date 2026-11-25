@@ -155,6 +155,30 @@ class AmrBridgeService {
     } catch (_) { return false; }
   }
 
+  async _postJson(path, body = {}) {
+    try {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          ...data,
+          ok: false,
+          error: data?.error || `Request failed (HTTP ${res.status})`,
+        };
+      }
+      return {
+        ...data,
+        ok: Boolean(data?.ok ?? true),
+      };
+    } catch (err) {
+      return { ok: false, error: err?.message || 'Network error' };
+    }
+  }
+
   async _get(path) {
     try {
       const res = await fetch(`${this.baseUrl}${path}`);
@@ -170,13 +194,23 @@ class AmrBridgeService {
     this.emitEvent('info', `Dispatched Single Goal → (${x.toFixed(2)}, ${y.toFixed(2)}) m`);
     return this._post('/api/goal', { x, y, yaw });
   }
-  sendStop() {
-    this.emitEvent('critical', 'EMERGENCY STOP Triggered');
-    return this._post('/api/stop');
+  async sendStop() {
+    const ok = await this._post('/api/stop');
+    if (ok) {
+      this.emitEvent('critical', 'EMERGENCY STOP Triggered');
+    } else {
+      this.emitEvent('critical', 'Failed to send EMERGENCY STOP command');
+    }
+    return ok;
   }
-  clearEstop() {
-    this.emitEvent('info', 'E-STOP Cleared — Resuming Operation');
-    return this._post('/api/estop/clear');
+  async clearEstop() {
+    const ok = await this._post('/api/estop/clear');
+    if (ok) {
+      this.emitEvent('info', 'E-STOP Cleared — Resuming Operation');
+    } else {
+      this.emitEvent('warn', 'Failed to clear E-STOP on bridge');
+    }
+    return ok;
   }
   sendInitialPose(x, y, theta = 0) {
     this.emitEvent('info', `Set AMCL Initial Pose → (${x.toFixed(2)}, ${y.toFixed(2)}) θ=${theta.toFixed(2)}rad`);
@@ -189,13 +223,23 @@ class AmrBridgeService {
   sendObstacleCmdVel(linear, angular) {
     return this._post('/api/obstacle/cmd_vel', { linear, angular });
   }
-  spawnObstacle(x, y, yaw = 0.0) {
-    this.emitEvent('info', `Placed Dynamic Obstacle at (${Number(x).toFixed(2)}, ${Number(y).toFixed(2)})`);
-    return this._post('/api/obstacle/spawn', { x, y, yaw });
+  async spawnObstacle(x, y, yaw = 0.0) {
+    const res = await this._postJson('/api/obstacle/spawn', { x, y, yaw });
+    if (res.ok) {
+      this.emitEvent('info', res.msg || `Placed Dynamic Obstacle at (${Number(x).toFixed(2)}, ${Number(y).toFixed(2)})`);
+    } else {
+      this.emitEvent('warn', `Failed to place Dynamic Obstacle: ${res.error || 'Rejected'}`);
+    }
+    return res;
   }
-  removeObstacle() {
-    this.emitEvent('info', 'Removed Dynamic Obstacle from simulation');
-    return this._post('/api/obstacle/remove', {});
+  async removeObstacle() {
+    const res = await this._postJson('/api/obstacle/remove', {});
+    if (res.ok) {
+      this.emitEvent('info', res.msg || 'Removed Dynamic Obstacle from simulation');
+    } else {
+      this.emitEvent('warn', `Failed to remove Dynamic Obstacle: ${res.error || 'Rejected'}`);
+    }
+    return res;
   }
   getObstacleStatus() {
     return this._get('/api/obstacle/status');

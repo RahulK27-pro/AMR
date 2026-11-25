@@ -32,6 +32,11 @@ import sys
 import time
 import rclpy
 from rclpy.node import Node
+try:
+    from rclpy.executors import ExternalShutdownException
+except ImportError:
+    class ExternalShutdownException(Exception):
+        pass
 from geometry_msgs.msg import Twist, TransformStamped, Quaternion
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import JointState
@@ -546,8 +551,11 @@ def main(args=None):
     node = AMRHardwareDriveNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
-        node.get_logger().info("Shutting down AMR Hardware Drive Node...")
+    except (KeyboardInterrupt, ExternalShutdownException):
+        try:
+            node.get_logger().info("Shutting down AMR Hardware Drive Node...")
+        except Exception:
+            pass
     finally:
         node.destroy_node()
         if rclpy.ok():

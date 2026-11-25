@@ -30,14 +30,15 @@ export default function StatusBar({
   }, [piIp]);
 
   useEffect(() => {
-    if (telemetry?.nav_state === 'ESTOP') {
+    const backendEstop = Boolean(telemetry?.estop_active) || telemetry?.nav_state === 'ESTOP';
+    if (backendEstop) {
       setLocalEstop(true);
-    } else if (telemetry?.nav_state && telemetry.nav_state !== 'ESTOP') {
+    } else if (telemetry && telemetry.estop_active === false && telemetry.nav_state !== 'ESTOP') {
       setLocalEstop(false);
     }
-  }, [telemetry?.nav_state]);
+  }, [telemetry?.estop_active, telemetry?.nav_state]);
 
-  const isEstopActive = telemetry?.nav_state === 'ESTOP' || localEstop;
+  const isEstopActive = Boolean(telemetry?.estop_active) || telemetry?.nav_state === 'ESTOP' || localEstop;
   const hwLink = telemetry?.hardware_link;
 
   const handleEstop = async () => {
@@ -48,9 +49,11 @@ export default function StatusBar({
   };
 
   const handleEstopClear = async () => {
-    setLocalEstop(false);
     try {
-      await bridge.clearEstop();
+      const ok = await bridge.clearEstop();
+      if (ok) {
+        setLocalEstop(false);
+      }
     } catch (_) {}
   };
 
@@ -89,14 +92,24 @@ export default function StatusBar({
 
   const handleConnect = () => {
     bridge.connect(host, Number(port));
-    if (onSwitchMode && mode === 'hardware' && editPiIp && editPiIp !== piIp) {
-      onSwitchMode('hardware', editPiIp);
+    const trimmedPi = (editPiIp || '').trim();
+    if (onSwitchMode && trimmedPi && trimmedPi !== piIp) {
+      onSwitchMode(mode, trimmedPi);
     }
     setEditing(false);
   };
 
   const hardwareMaps = availableMaps.filter((m) => m.category === 'hardware');
   const simMaps = availableMaps.filter((m) => m.category !== 'hardware');
+  const orderedMapGroups = mode === 'hardware'
+    ? [
+        { label: 'Hardware Maps', list: hardwareMaps },
+        { label: 'Simulation Maps', list: simMaps },
+      ]
+    : [
+        { label: 'Simulation Maps', list: simMaps },
+        { label: 'Hardware Maps', list: hardwareMaps },
+      ];
 
   const dotClass =
     status === 'connected'    ? 'dot dot--connected'  :
@@ -214,23 +227,16 @@ export default function StatusBar({
         >
           {availableMaps.length > 0 ? (
             <>
-              {hardwareMaps.length > 0 && (
-                <optgroup label="Hardware Maps">
-                  {hardwareMaps.map((m) => (
-                    <option key={m.name} value={m.name}>
-                      {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {simMaps.length > 0 && (
-                <optgroup label="Simulation Maps">
-                  {simMaps.map((m) => (
-                    <option key={m.name} value={m.name}>
-                      {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
-                    </option>
-                  ))}
-                </optgroup>
+              {orderedMapGroups.map(({ label, list }) =>
+                list.length > 0 ? (
+                  <optgroup key={label} label={label}>
+                    {list.map((m) => (
+                      <option key={m.name} value={m.name}>
+                        {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null
               )}
               {activeMap && !availableMaps.some((m) => m.name === activeMap) && (
                 <option key={activeMap} value={activeMap}>
@@ -240,12 +246,17 @@ export default function StatusBar({
             </>
           ) : (
             <>
-              {activeMap && activeMap !== 'hospital_map' && activeMap !== 'warehouse_map' && (
+              {activeMap && !['hospital_map', 'warehouse_map', 'prakash_room'].includes(activeMap) && (
                 <option value={activeMap}>{activeMap}</option>
               )}
-              <option value="prakash_room">prakash_room (21 nodes)</option>
-              <option value="hospital_map">hospital_map (661 nodes)</option>
-              <option value="warehouse_map">warehouse_map (764 nodes)</option>
+              {(mode === 'hardware'
+                ? ['prakash_room', 'hospital_map', 'warehouse_map']
+                : ['hospital_map', 'warehouse_map', 'prakash_room']
+              ).map((fallbackName) => (
+                <option key={fallbackName} value={fallbackName}>
+                  {fallbackName}
+                </option>
+              ))}
             </>
           )}
         </select>
@@ -282,10 +293,16 @@ export default function StatusBar({
             <button
               id="btn-nav-map-new-place"
               className="btn btn--map-entry"
-              onClick={() => onViewChange('mapping')}
-              title="Open Dedicated Mapping Workflow"
+              disabled={mode === 'hardware'}
+              onClick={() => mode !== 'hardware' && onViewChange('mapping')}
+              title={
+                mode === 'hardware'
+                  ? 'Mapping UI is simulation-only for Phase 1 (use hardware mapping script on Pi)'
+                  : 'Open Dedicated Mapping Workflow'
+              }
+              style={mode === 'hardware' ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
             >
-              🗺️ Map New Place
+              {mode === 'hardware' ? '🗺️ Map (Sim Only)' : '🗺️ Map New Place'}
             </button>
           )}
         </div>
@@ -333,16 +350,14 @@ export default function StatusBar({
             placeholder="port"
             title="Bridge server port"
           />
-          {mode === 'hardware' && (
-            <input
-              className="input-field"
-              style={{ width: 115 }}
-              value={editPiIp}
-              onChange={e => setEditPiIp(e.target.value)}
-              placeholder="Pi IP"
-              title="Raspberry Pi 5 IP"
-            />
-          )}
+          <input
+            className="input-field"
+            style={{ width: 115 }}
+            value={editPiIp}
+            onChange={e => setEditPiIp(e.target.value)}
+            placeholder="Pi IP"
+            title="Raspberry Pi 5 IP"
+          />
           <button className="btn btn--primary" onClick={handleConnect}>Apply</button>
           <button className="btn btn--ghost" onClick={() => setEditing(false)}>✕</button>
         </div>
