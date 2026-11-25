@@ -207,6 +207,52 @@ class AmrBridgeService {
   async getMapMetadata(mapName = '') { return this._get(`/api/map/metadata${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
   async getGraphData(mapName = '')   { return this._get(`/api/graph${mapName ? `?map_name=${encodeURIComponent(mapName)}` : ''}`); }
   async getStatus()                  { return this._get('/api/status'); }
+  async getMode()                    { return this._get('/api/mode'); }
+  async switchMode(mode, piIp = '') {
+    this.emitEvent('info', `Switching bridge mode to ${mode.toUpperCase()}${piIp ? ` (Pi: ${piIp})` : ''}...`);
+    try {
+      const res = await fetch(`${this.baseUrl}/api/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, pi_ip: piIp || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        if (data.restarting) {
+          this.emitEvent('warn', `Bridge restarting in ${data.mode.toUpperCase()} mode — reconnecting automatically...`);
+        } else {
+          this.emitEvent('success', `Bridge already in ${data.mode.toUpperCase()} mode`);
+        }
+        return { ok: true, data };
+      }
+      const errMsg = data?.error || 'Mode switch failed';
+      this.emitEvent('critical', errMsg);
+      return { ok: false, error: errMsg };
+    } catch (err) {
+      this.emitEvent('critical', `Mode switch error: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  }
+  async triggerAutoRelocalization() {
+    this.emitEvent('info', 'Requesting zero-prior auto-relocalization...');
+    try {
+      const res = await fetch(`${this.baseUrl}/api/localization/auto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        this.emitEvent('success', data.message || 'Auto-relocalization succeeded!');
+        return { ok: true, data };
+      }
+      const errMsg = data?.error || data?.message || 'Auto-relocalization failed';
+      this.emitEvent('warn', errMsg);
+      return { ok: false, error: errMsg };
+    } catch (err) {
+      this.emitEvent('critical', `Auto-relocalization network error: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  }
   async getActiveMap()               { return this._get('/api/map/active'); }
   async setActiveMap(mapName)        { return this._post('/api/map/active', { map_name: mapName }); }
 

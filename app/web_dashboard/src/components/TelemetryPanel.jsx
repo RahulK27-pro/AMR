@@ -37,13 +37,14 @@ function DistBar({ value, max = 8 }) {
   );
 }
 
-export default function TelemetryPanel({ telemetry, activeMap = 'hospital_map' }) {
+export default function TelemetryPanel({ telemetry, activeMap = 'hospital_map', mode = 'sim' }) {
   const p  = telemetry?.pose     ?? { x: 0, y: 0, yaw: 0 };
   const v  = telemetry?.velocity ?? { linear: 0, angular: 0 };
   const im = telemetry?.imu      ?? { roll: 0, pitch: 0, yaw: 0 };
   const ms = telemetry?.mission  ?? {};
   const obs = telemetry?.obstacle_alert;
   const dist = telemetry?.min_obstacle_dist;
+  const hwLink = telemetry?.hardware_link;
 
   const rad2deg = r => ((r ?? 0) * 180 / Math.PI).toFixed(1);
   const fmt2    = n => (n ?? 0).toFixed(2);
@@ -52,19 +53,35 @@ export default function TelemetryPanel({ telemetry, activeMap = 'hospital_map' }
   return (
     <div className="flex-col" style={{ gap: 12 }}>
 
-      {/* Operating Map Card */}
-      <div className="card" style={{ borderLeft: '3px solid #0284c7' }}>
+      {/* Operating Map & Mode Card */}
+      <div className="card" style={{ borderLeft: `3px solid ${mode === 'hardware' ? '#10b981' : '#0284c7'}` }}>
         <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="text-dim text-xs" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
-            🗺️ Active Map
+            🗺️ Active Map ({mode === 'hardware' ? 'Hardware' : 'Simulation'})
           </span>
-          <span style={{ fontSize: 9, background: '#0284c7', color: '#fff', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
-            ONLINE
+          <span
+            style={{
+              fontSize: 9,
+              background: mode === 'hardware' ? (hwLink?.sensors_ready ? '#10b981' : '#d97706') : '#0284c7',
+              color: '#fff',
+              padding: '1px 6px',
+              borderRadius: 4,
+              fontWeight: 700,
+            }}
+          >
+            {mode === 'hardware' ? (hwLink?.sensors_ready ? 'PI ONLINE' : 'PI WAIT') : 'SIM'}
           </span>
         </div>
         <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, color: 'var(--accent-cyan)', fontFamily: 'var(--text-mono)' }}>
           {activeMap}
         </div>
+        {mode === 'hardware' && hwLink && (
+          <div className="flex-row" style={{ justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: 'var(--text-secondary)' }}>
+            <span>/scan: <strong style={{ color: hwLink.scan_alive ? '#34d399' : '#f87171' }}>{hwLink.scan_alive ? 'OK' : 'OFF'}</strong></span>
+            <span>/odom: <strong style={{ color: hwLink.odom_alive ? '#34d399' : '#f87171' }}>{hwLink.odom_alive ? 'OK' : 'OFF'}</strong></span>
+            <span>TF Lock: <strong style={{ color: hwLink.map_tf_locked ? '#34d399' : '#fbbf24' }}>{hwLink.map_tf_locked ? 'LOCKED' : 'WAIT'}</strong></span>
+          </div>
+        )}
       </div>
 
       {/* Obstacle Alert Banner */}

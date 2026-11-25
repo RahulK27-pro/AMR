@@ -12,13 +12,22 @@ export default function StatusBar({
   onMapChange,
   theme = 'dark',
   onToggleTheme,
+  mode = 'sim',
+  piIp = '10.244.248.208',
+  onSwitchMode,
+  isSwitchingMode = false,
 }) {
   const [status, setStatus] = useState('connecting');
   const [host, setHost]     = useState(window.location.hostname);
   const [port, setPort]     = useState('8000');
+  const [editPiIp, setEditPiIp] = useState(piIp);
   const [editing, setEditing] = useState(false);
   const [availableMaps, setAvailableMaps] = useState([]);
   const [localEstop, setLocalEstop] = useState(false);
+
+  useEffect(() => {
+    setEditPiIp(piIp);
+  }, [piIp]);
 
   useEffect(() => {
     if (telemetry?.nav_state === 'ESTOP') {
@@ -29,6 +38,7 @@ export default function StatusBar({
   }, [telemetry?.nav_state]);
 
   const isEstopActive = telemetry?.nav_state === 'ESTOP' || localEstop;
+  const hwLink = telemetry?.hardware_link;
 
   const handleEstop = async () => {
     setLocalEstop(true);
@@ -75,12 +85,18 @@ export default function StatusBar({
       window.removeEventListener('amr_maps_updated', handleCustomRefresh);
       window.removeEventListener('amr_map_saved', handleCustomRefresh);
     };
-  }, [activeMap, currentView]);
+  }, [activeMap, currentView, mode]);
 
   const handleConnect = () => {
     bridge.connect(host, Number(port));
+    if (onSwitchMode && mode === 'hardware' && editPiIp && editPiIp !== piIp) {
+      onSwitchMode('hardware', editPiIp);
+    }
     setEditing(false);
   };
+
+  const hardwareMaps = availableMaps.filter((m) => m.category === 'hardware');
+  const simMaps = availableMaps.filter((m) => m.category !== 'hardware');
 
   const dotClass =
     status === 'connected'    ? 'dot dot--connected'  :
@@ -88,6 +104,7 @@ export default function StatusBar({
                                 'dot dot--error';
 
   const statusLabel =
+    isSwitchingMode           ? 'Switching…' :
     status === 'connected'    ? 'Live' :
     status === 'connecting'   ? 'Connecting…' :
     status === 'error'        ? 'Error' : 'Offline';
@@ -95,19 +112,76 @@ export default function StatusBar({
   const navState = telemetry?.nav_state ?? '—';
 
   return (
-    <header className="status-bar">
+    <header className="status-bar" style={{ gap: 12, padding: '0 14px' }}>
       {/* Logo */}
-      <span className="status-bar__logo" onClick={() => onViewChange && onViewChange('dashboard')} style={{ cursor: 'pointer' }}>
+      <span className="status-bar__logo" onClick={() => onViewChange && onViewChange('dashboard')} style={{ cursor: 'pointer', fontSize: 15 }}>
         ⬡ AMR CONTROL
       </span>
+
+      {/* Runtime Mode Switcher: Simulation vs Physical Hardware */}
+      <div
+        className="status-bar__pill"
+        style={{ padding: '2px 4px', gap: 3, borderColor: mode === 'hardware' ? 'rgba(16, 185, 129, 0.5)' : 'var(--border)' }}
+        title="Switch between Gazebo Simulation and Real Hardware (Pi 5)"
+      >
+        <button
+          id="btn-mode-sim"
+          type="button"
+          disabled={isSwitchingMode}
+          onClick={() => onSwitchMode && onSwitchMode('sim')}
+          style={{
+            border: 'none',
+            borderRadius: 14,
+            padding: '3px 9px',
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: isSwitchingMode ? 'wait' : 'pointer',
+            background: mode === 'sim' ? 'var(--accent-cyan)' : 'transparent',
+            color: mode === 'sim' ? '#0a0d14' : 'var(--text-secondary)',
+          }}
+        >
+          SIM
+        </button>
+        <button
+          id="btn-mode-hardware"
+          type="button"
+          disabled={isSwitchingMode}
+          onClick={() => onSwitchMode && onSwitchMode('hardware', editPiIp)}
+          style={{
+            border: 'none',
+            borderRadius: 14,
+            padding: '3px 9px',
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: isSwitchingMode ? 'wait' : 'pointer',
+            background: mode === 'hardware' ? '#10b981' : 'transparent',
+            color: mode === 'hardware' ? '#ffffff' : 'var(--text-secondary)',
+          }}
+        >
+          HARDWARE
+        </button>
+      </div>
 
       {/* Connection status */}
       <div className="status-bar__pill" title={`ws://${host}:${port}/ws/telemetry`}>
         <span className={dotClass} />
         <span>{statusLabel}</span>
-        <span className="text-dim" style={{ fontSize: 11, marginLeft: 4 }}>
-          {host}:{port}
-        </span>
+        {mode === 'hardware' && hwLink && (
+          <span
+            style={{
+              fontSize: 10,
+              marginLeft: 4,
+              padding: '1px 6px',
+              borderRadius: 8,
+              background: hwLink.sensors_ready ? 'rgba(16, 185, 129, 0.16)' : 'rgba(245, 158, 11, 0.16)',
+              color: hwLink.sensors_ready ? '#34d399' : '#fbbf24',
+              fontWeight: 700,
+            }}
+            title={`Pi ${piIp} | /scan: ${hwLink.scan_alive ? 'OK' : 'NO'} | /odom: ${hwLink.odom_alive ? 'OK' : 'NO'} | TF: ${hwLink.map_tf_locked ? 'OK' : 'NO'}`}
+          >
+            {hwLink.sensors_ready ? 'PI OK' : 'WAIT PI'}
+          </span>
+        )}
       </div>
 
       {/* Nav state */}
@@ -140,11 +214,24 @@ export default function StatusBar({
         >
           {availableMaps.length > 0 ? (
             <>
-              {availableMaps.map((m) => (
-                <option key={m.name} value={m.name}>
-                  {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
-                </option>
-              ))}
+              {hardwareMaps.length > 0 && (
+                <optgroup label="Hardware Maps">
+                  {hardwareMaps.map((m) => (
+                    <option key={m.name} value={m.name}>
+                      {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {simMaps.length > 0 && (
+                <optgroup label="Simulation Maps">
+                  {simMaps.map((m) => (
+                    <option key={m.name} value={m.name}>
+                      {m.name} {m.node_count ? `(${m.node_count} nodes)` : ''} {m.place_count ? `• ${m.place_count} stns` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
               {activeMap && !availableMaps.some((m) => m.name === activeMap) && (
                 <option key={activeMap} value={activeMap}>
                   {activeMap} (newly saved)
@@ -156,6 +243,7 @@ export default function StatusBar({
               {activeMap && activeMap !== 'hospital_map' && activeMap !== 'warehouse_map' && (
                 <option value={activeMap}>{activeMap}</option>
               )}
+              <option value="prakash_room">prakash_room (21 nodes)</option>
               <option value="hospital_map">hospital_map (661 nodes)</option>
               <option value="warehouse_map">warehouse_map (764 nodes)</option>
             </>
@@ -226,29 +314,41 @@ export default function StatusBar({
         </button>
       )}
 
-      {/* Bridge host editor */}
+      {/* Bridge host & Pi IP editor */}
       {editing ? (
         <div className="flex-row" style={{ gap: 6 }}>
           <input
             className="input-field"
-            style={{ width: 130 }}
+            style={{ width: 115 }}
             value={host}
             onChange={e => setHost(e.target.value)}
-            placeholder="host / IP"
+            placeholder="bridge host"
+            title="Bridge server host/IP"
           />
           <input
             className="input-field"
-            style={{ width: 70 }}
+            style={{ width: 58 }}
             value={port}
             onChange={e => setPort(e.target.value)}
             placeholder="port"
+            title="Bridge server port"
           />
-          <button className="btn btn--primary" onClick={handleConnect}>Connect</button>
+          {mode === 'hardware' && (
+            <input
+              className="input-field"
+              style={{ width: 115 }}
+              value={editPiIp}
+              onChange={e => setEditPiIp(e.target.value)}
+              placeholder="Pi IP"
+              title="Raspberry Pi 5 IP"
+            />
+          )}
+          <button className="btn btn--primary" onClick={handleConnect}>Apply</button>
           <button className="btn btn--ghost" onClick={() => setEditing(false)}>✕</button>
         </div>
       ) : (
         <button className="btn btn--ghost" onClick={() => setEditing(true)} style={{ fontSize: 12 }}>
-          ⚙ Bridge
+          ⚙ {mode === 'hardware' ? `Pi ${piIp}` : 'Bridge'}
         </button>
       )}
 

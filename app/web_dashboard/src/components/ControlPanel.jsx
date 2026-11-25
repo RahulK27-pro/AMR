@@ -10,6 +10,8 @@ export default function ControlPanel({
   onMapChange,
   controlMode = 'auto',
   setControlMode,
+  mode = 'sim',
+  piIp = '10.244.248.208',
 }) {
 
   // Dynamic Obstacle Simulation & Avoidance state
@@ -281,6 +283,9 @@ export default function ControlPanel({
   // ── Navigation System Stack Lifecycle Controls ──
   const systemStatus = telemetry?.system_status;
   const systemState = systemStatus?.state || 'STOPPED';
+  const externalRunning = Boolean(systemStatus?.external_running);
+  const isStackOnline = systemState === 'RUNNING' || externalRunning;
+  const hwLink = telemetry?.hardware_link;
   const [isSystemLoading, setIsSystemLoading] = useState(false);
 
   const handleStartNavigationSystem = async () => {
@@ -308,17 +313,17 @@ export default function ControlPanel({
   return (
     <div className="flex-col" style={{ gap: 12 }}>
 
-      {/* ── 0. NAVIGATION SYSTEM LIFECYCLE CONTROLLER (PROFESSIONAL / NO EMOJIS) ── */}
+      {/* ── 0. NAVIGATION SYSTEM LIFECYCLE CONTROLLER (SIM + HARDWARE) ── */}
       <div
-        className={`card lifecycle-card lifecycle-card--${systemState.toLowerCase()}`}
+        className={`card lifecycle-card lifecycle-card--${isStackOnline ? 'running' : systemState.toLowerCase()}`}
       >
         <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontWeight: 700, letterSpacing: '0.07em', color: 'var(--text-primary)', textTransform: 'uppercase' }}>
-            System Lifecycle
+            System Lifecycle ({mode === 'hardware' ? 'HW' : 'SIM'})
           </span>
           <span
             className={`badge ${
-              systemState === 'RUNNING'
+              isStackOnline
                 ? 'badge--green'
                 : systemState === 'STARTING'
                 ? 'badge--yellow'
@@ -326,7 +331,7 @@ export default function ControlPanel({
             }`}
             style={{ letterSpacing: '0.05em', fontWeight: 700 }}
           >
-            {systemState === 'RUNNING' ? 'ONLINE' : systemState === 'STARTING' ? 'INITIALIZING' : 'STANDBY'}
+            {externalRunning ? 'ONLINE (EXT)' : systemState === 'RUNNING' ? 'ONLINE' : systemState === 'STARTING' ? 'INITIALIZING' : 'STANDBY'}
           </span>
         </div>
 
@@ -348,24 +353,58 @@ export default function ControlPanel({
                 {systemStatus?.active_map || activeMap}
               </strong>
             </div>
-            {systemState === 'RUNNING' && (
+            {mode === 'hardware' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
+                    Pi 5 ({piIp}):
+                  </span>
+                  <span style={{ color: hwLink?.sensors_ready ? '#10b981' : '#f59e0b', fontSize: 11, fontWeight: 700 }}>
+                    {hwLink?.sensors_ready ? 'Sensors Streaming' : 'Run ./start_hardware.sh on Pi'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
+                    Nav Speeds / BT:
+                  </span>
+                  <span className="text-mono" style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                    0.13 m/s · BT Off
+                  </span>
+                </div>
+              </>
+            )}
+            {externalRunning && (
+              <div style={{ color: '#10b981', fontSize: 11, fontWeight: 600 }}>
+                External navigation session detected (terminal launch active).
+              </div>
+            )}
+            {!externalRunning && systemState === 'RUNNING' && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
                   Stack Status:
                 </span>
                 <span style={{ color: '#10b981', fontSize: 11, fontWeight: 600 }}>
-                  Active (Gazebo, Route Runner, BT)
+                  {mode === 'hardware'
+                    ? 'Active (AMCL, Auto-Loc, MPPI)'
+                    : 'Active (Gazebo, Route Runner, BT)'}
                 </span>
               </div>
             )}
             {systemState === 'STARTING' && (
               <div style={{ color: '#f59e0b', fontSize: 11, fontWeight: 600 }}>
-                {systemStatus?.message || `Stage ${systemStatus?.stage || 1} of 3 in progress...`}
+                {systemStatus?.stage_text || `Stage ${systemStatus?.stage || 1} of 3 in progress...`}
               </div>
             )}
-            {systemState === 'STOPPED' && (
+            {systemState === 'ERROR' && systemStatus?.error && (
+              <div style={{ color: '#f87171', fontSize: 11, fontWeight: 600 }}>
+                {systemStatus.error}
+              </div>
+            )}
+            {!externalRunning && systemState === 'STOPPED' && (
               <div style={{ color: '#94a3b8', fontSize: 11 }}>
-                Launches Gazebo simulation, Route Runner &amp; BT Manager.
+                {mode === 'hardware'
+                  ? 'Launches AMCL, Auto-Localizer & MPPI (assumes ./start_hardware.sh is running on Pi).'
+                  : 'Launches Gazebo simulation, Route Runner & BT Manager.'}
               </div>
             )}
           </div>
@@ -394,10 +433,12 @@ export default function ControlPanel({
               id="btn-start-system-panel"
               className="btn btn--full"
               onClick={handleStartNavigationSystem}
-              disabled={isSystemLoading || systemState === 'STARTING'}
+              disabled={isSystemLoading || systemState === 'STARTING' || externalRunning}
               style={{
                 background:
-                  systemState === 'STARTING'
+                  externalRunning
+                    ? '#0284c7'
+                    : systemState === 'STARTING'
                     ? '#d97706'
                     : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
                 color: '#ffffff',
@@ -408,11 +449,15 @@ export default function ControlPanel({
                 letterSpacing: '0.06em',
                 textTransform: 'uppercase',
                 boxShadow: '0 2px 12px rgba(16, 185, 129, 0.3)',
-                cursor: isSystemLoading || systemState === 'STARTING' ? 'wait' : 'pointer',
+                cursor: (isSystemLoading || systemState === 'STARTING' || externalRunning) ? 'not-allowed' : 'pointer',
               }}
             >
-              {systemState === 'STARTING' || isSystemLoading
+              {externalRunning
+                ? `EXTERNAL NAV ACTIVE • ${activeMap}`
+                : systemState === 'STARTING' || isSystemLoading
                 ? 'INITIALIZING SYSTEM...'
+                : mode === 'hardware'
+                ? `START HARDWARE NAV • ${activeMap}`
                 : `START SYSTEM • ${activeMap}`}
             </button>
           )}
@@ -423,26 +468,30 @@ export default function ControlPanel({
               <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
                 Desktop Visualizers:
               </span>
-              <span className="text-mono" style={{ fontSize: 10, color: '#94a3b8' }}>WSL2 GUI</span>
+              <span className="text-mono" style={{ fontSize: 10, color: '#94a3b8' }}>
+                {mode === 'hardware' ? 'Domain 7' : 'WSL2 GUI'}
+              </span>
             </div>
             <div className="flex-row" style={{ gap: 6 }}>
-              <button
-                type="button"
-                className="btn btn--outline"
-                style={{ flex: 1, fontSize: 11, padding: '6px 8px', borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
-                onClick={() => bridge.launchGui('gazebo')}
-                title="Open Gazebo Harmonic 3D window (or run ./view_gazebo.sh in terminal)"
-              >
-                🖥️ Gazebo 3D
-              </button>
+              {mode !== 'hardware' && (
+                <button
+                  type="button"
+                  className="btn btn--outline"
+                  style={{ flex: 1, fontSize: 11, padding: '6px 8px', borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
+                  onClick={() => bridge.launchGui('gazebo')}
+                  title="Open Gazebo Harmonic 3D window (or run ./view_gazebo.sh in terminal)"
+                >
+                  🖥️ Gazebo 3D
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn--outline"
                 style={{ flex: 1, fontSize: 11, padding: '6px 8px', borderColor: 'rgba(168, 85, 247, 0.4)', color: '#c084fc' }}
-                onClick={() => bridge.launchGui('rviz', 'nav')}
+                onClick={() => bridge.launchGui('rviz', mode === 'hardware' ? 'hw_nav' : 'nav')}
                 title="Open RViz2 Navigation window (or run ./view_rviz.sh in terminal)"
               >
-                🗺️ RViz2 Nav
+                🗺️ RViz2 {mode === 'hardware' ? '(Hardware)' : 'Nav'}
               </button>
             </div>
           </div>
@@ -768,8 +817,37 @@ export default function ControlPanel({
         </button>
       </div>
 
-      {/* ── 4. DYNAMIC OBSTACLE AVOIDANCE & SIMULATION SUITE ── */}
-      {(() => {
+      {/* ── 4. DYNAMIC OBSTACLE AVOIDANCE (MODE-AWARE) ── */}
+      {mode === 'hardware' ? (
+        <div className="card">
+          <div className="card__title flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>🛡️</span>
+              <span>LIDAR OBSTACLE GUARD</span>
+            </span>
+            <span
+              className="badge"
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                background: telemetry?.nav_state === 'YIELDING' ? 'rgba(249, 115, 22, 0.2)' : 'rgba(16, 185, 129, 0.15)',
+                color: telemetry?.nav_state === 'YIELDING' ? '#fb923c' : '#34d399',
+              }}
+            >
+              {telemetry?.nav_state === 'YIELDING' ? 'YIELDING' : 'ACTIVE'}
+            </span>
+          </div>
+          <div className="mt-sm" style={{ fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="text-dim">Nearest LiDAR Return:</span>
+            <strong className="text-mono" style={{ color: (telemetry?.min_obstacle_dist ?? 9) < 0.4 ? '#f87171' : '#34d399' }}>
+              {telemetry?.min_obstacle_dist != null ? `${telemetry.min_obstacle_dist.toFixed(2)} m` : '—'}
+            </strong>
+          </div>
+          <div className="text-dim text-xs mt-xs">
+            Real-time obstacle detection &amp; MPPI dynamic evasion run directly on physical YDLIDAR X2 scans.
+          </div>
+        </div>
+      ) : (() => {
         const dynObs = telemetry?.dynamic_obstacle;
         const obsDist = dynObs?.dist_to_robot;
         const isEvading = dynObs?.avoidance_status === 'TACTICAL_EVASION' || (obsDist != null && obsDist < 0.85);
@@ -992,8 +1070,6 @@ export default function ControlPanel({
           </div>
         );
       })()}
-
-
     </div>
   );
 }

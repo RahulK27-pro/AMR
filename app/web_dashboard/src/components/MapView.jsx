@@ -113,7 +113,7 @@ function createLightMapCanvas(image, mapName = '') {
   }
 }
 
-export default function MapView({ telemetry, selectedNodes = [], onSelectNode, activeMap = 'hospital_map', theme = 'dark' }) {
+export default function MapView({ telemetry, selectedNodes = [], onSelectNode, activeMap = 'hospital_map', theme = 'dark', mode = 'sim' }) {
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
 
@@ -141,9 +141,29 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   const [showGraph,  setShowGraph]  = useState(false);
   const [showPath,   setShowPath]   = useState(true);
   const [showTrail,  setShowTrail]  = useState(true);
+  const [showScan,   setShowScan]   = useState(mode === 'hardware');
   const [autoFollow, setAutoFollow] = useState(false);
   const [showObstacle, setShowObstacle] = useState(true);
   const [isDropObstacleMode, setIsDropObstacleMode] = useState(false);
+  const [isSetPoseMode, setIsSetPoseMode] = useState(false);
+  const [isRelocalizing, setIsRelocalizing] = useState(false);
+  const setPoseDragRef = useRef(null);
+
+  useEffect(() => {
+    if (mode === 'hardware') {
+      setShowScan(true);
+      setIsDropObstacleMode(false);
+    }
+  }, [mode]);
+
+  const computeFitZoom = useCallback((wPx, hPx) => {
+    const el = containerRef.current;
+    const cw = el?.clientWidth || 720;
+    const ch = el?.clientHeight || 500;
+    if (!wPx || !hPx) return 1.8;
+    const fit = Math.min((cw * 0.78) / wPx, (ch * 0.78) / hPx);
+    return Math.min(8.5, Math.max(1.5, Number(fit.toFixed(2))));
+  }, []);
 
   // ── Interaction state ─────────────────────────────────────────────────────
   const [namedPlaces,  setNamedPlaces]  = useState([]);
@@ -160,7 +180,11 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
       setGoalFeedback('Click anywhere on map to drop dynamic obstacle (ESC to cancel)');
     };
     const handleEsc = (e) => {
-      if (e.key === 'Escape') setIsDropObstacleMode(false);
+      if (e.key === 'Escape') {
+        setIsDropObstacleMode(false);
+        setIsSetPoseMode(false);
+        setPoseDragRef.current = null;
+      }
     };
     window.addEventListener('amr-trigger-drop-obstacle', handleTriggerDrop);
     window.addEventListener('keydown', handleEsc);
@@ -195,13 +219,16 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
 
     bridge.getMapMetadata(activeMap).then((data) => {
       if (data && mounted) {
-        setMeta({
+        const nextMeta = {
           resolution: data.resolution || DEFAULT_MAP_RES,
           origin_x:   data.origin_x   ?? (activeMap === 'hospital_map' ? -8.50 : DEFAULT_ORIGIN_X),
           origin_y:   data.origin_y   ?? (activeMap === 'hospital_map' ? -6.50 : DEFAULT_ORIGIN_Y),
           width:      data.width       || (activeMap === 'hospital_map' ? 340 : MAP_WIDTH_PX),
           height:     data.height      || (activeMap === 'hospital_map' ? 260 : MAP_HEIGHT_PX),
-        });
+        };
+        setMeta(nextMeta);
+        setZoom(computeFitZoom(nextMeta.width, nextMeta.height));
+        setPan({ x: 0, y: 0 });
       }
     });
 
@@ -543,6 +570,28 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         ctx.restore();
       }
 
+      // ── Layer 5: Live LiDAR Scan Overlay ────────────────────────────────
+      const scanPts = telemetry?.scan || [];
+      if (showScan && scanPts.length > 0) {
+        const angMin = telemetry?.scan_angle_min ?? -Math.PI;
+        const angInc = telemetry?.scan_angle_inc ?? ((Math.PI * 2) / scanPts.length);
+        ctx.save();
+        ctx.fillStyle = isWhiteFloor ? 'rgba(6, 182, 212, 0.9)' : 'rgba(34, 211, 238, 0.9)';
+        const ptR = Math.max(0.7, 1.8 / zoom);
+        for (let i = 0; i < scanPts.length; i++) {
+          const r = scanPts[i];
+          if (!r || r <= 0.05 || r > 12.0) continue;
+          const worldAng = sp.yaw + angMin + i * angInc;
+          const sx = sp.x + r * Math.cos(worldAng);
+          const sy = sp.y + r * Math.sin(worldAng);
+          const { px: spx, py: spy } = worldToPixel(sx, sy);
+          ctx.beginPath();
+          ctx.arc(spx, spy, ptR, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
       // ── Layer 6: Pulsing Goal Destination Ring ──────────────────────────
       if (lastGoal) {
         const { px: gx, py: gy } = worldToPixel(lastGoal.x, lastGoal.y);
@@ -755,9 +804,31 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
         ctx.restore();
       }
 
-      // ── Layer 10: Drop Obstacle Target Reticle Preview ─────────────────────────
-      if (isDropObstacleMode && cursorWorld) {
-        const { px: cpx, py: cpy } = worldToPixel(cursorWorld.wx, cursorWorld.wy);
+      // ── Layer 10: Drop Obstacle / Set Initial Pose Reticle Preview ────────
+      if (isSetPoseMode && cursorWorld) {
+        const drag = setPoseDragRef.current;
+        const anchor = drag || { wx: cursorWorld.x, wy: cursorWorld.y };
+        const { px: apx, py: apy } = worldToPixel(anchor.wx, anchor.wy);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(apx, apy, 6 / zoom, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.45)';
+        ctx.fill();
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 1.6 / zoom;
+        ctx.stroke();
+        if (drag) {
+          const { px: cpx, py: cpy } = worldToPixel(cursorWorld.x, cursorWorld.y);
+          ctx.beginPath();
+          ctx.moveTo(apx, apy);
+          ctx.lineTo(cpx, cpy);
+          ctx.strokeStyle = '#34d399';
+          ctx.lineWidth = 2.2 / zoom;
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (isDropObstacleMode && cursorWorld) {
+        const { px: cpx, py: cpy } = worldToPixel(cursorWorld.x, cursorWorld.y);
         const previewRadius = 0.25 / meta.resolution;
         const evadePreview = 0.85 / meta.resolution;
         ctx.save();
@@ -786,9 +857,9 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
   }, [
-    mapImage, lightMapCanvas, theme, meta, zoom, pan, telemetry,
-    showPlaces, showGraph, showPath, showTrail,
-    showObstacle, isDropObstacleMode, cursorWorld,
+    mapImage, lightMapCanvas, theme, mode, meta, zoom, pan, telemetry,
+    showPlaces, showGraph, showPath, showTrail, showScan,
+    showObstacle, isDropObstacleMode, isSetPoseMode, cursorWorld,
     graphNodes, selectedNodes, hoveredNode,
     namedPlaces, hoveredPlace,
     lastGoal, autoFollow, worldToPixel,
@@ -803,6 +874,13 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
   };
 
   const handleMouseDown = (e) => {
+    if (isSetPoseMode && e.button === 0 && !e.shiftKey && !e.altKey) {
+      const world = screenToWorld(e.clientX, e.clientY, canvasRef.current);
+      if (world) {
+        setPoseDragRef.current = { wx: world.wx, wy: world.wy };
+      }
+      return;
+    }
     if (e.button === 1 || e.button === 2 || e.shiftKey || e.altKey) {
       e.preventDefault();
       isDraggingRef.current = true;
@@ -852,10 +930,26 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     }
   };
 
-  const handleMouseUp  = () => { isDraggingRef.current = false; };
+  const handleMouseUp = async (e) => {
+    if (isSetPoseMode && setPoseDragRef.current && e.button === 0) {
+      const start = setPoseDragRef.current;
+      setPoseDragRef.current = null;
+      const end = screenToWorld(e.clientX, e.clientY, canvasRef.current);
+      const dx = end ? (end.wx - start.wx) : 0;
+      const dy = end ? (end.wy - start.wy) : 0;
+      const theta = Math.hypot(dx, dy) > 0.12 ? Math.atan2(dy, dx) : (telemetry?.pose?.yaw ?? 0.0);
+      setIsSetPoseMode(false);
+      setGoalFeedback(`Setting AMCL Pose (${start.wx.toFixed(2)}, ${start.wy.toFixed(2)})...`);
+      const ok = await bridge.sendInitialPose(start.wx, start.wy, theta);
+      setGoalFeedback(ok ? `Initial pose sent → (${start.wx.toFixed(2)}, ${start.wy.toFixed(2)}, ${(theta * 180 / Math.PI).toFixed(0)}°)` : 'Initial pose failed');
+      setTimeout(() => setGoalFeedback(null), 3000);
+      return;
+    }
+    isDraggingRef.current = false;
+  };
 
   const handleClick = async (e) => {
-    if (isDraggingRef.current || e.button !== 0) return;
+    if (isDraggingRef.current || isSetPoseMode || e.button !== 0) return;
     const canvas = canvasRef.current;
     const world  = screenToWorld(e.clientX, e.clientY, canvas);
     if (!world) return;
@@ -902,7 +996,20 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
     setTimeout(() => setGoalFeedback(null), 3000);
   };
 
-  const handleResetView = () => { setZoom(1.8); setPan({ x: 0, y: 0 }); };
+  const handleResetView = () => {
+    setZoom(computeFitZoom(meta.width, meta.height));
+    setPan({ x: 0, y: 0 });
+  };
+
+  const handleAutoRelocalize = async (e) => {
+    e.stopPropagation();
+    setIsRelocalizing(true);
+    setGoalFeedback('Running zero-prior scan-matching auto-localization...');
+    const res = await bridge.triggerAutoRelocalization();
+    setIsRelocalizing(false);
+    setGoalFeedback(res?.ok ? '✅ Auto-relocalized onto map!' : `⚠️ ${res?.error || 'Auto-relocalize unavailable'}`);
+    setTimeout(() => setGoalFeedback(null), 3500);
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render
@@ -986,15 +1093,97 @@ export default function MapView({ telemetry, selectedNodes = [], onSelectNode, a
             〰️ Path
           </button>
           <button
-            className={`btn-toggle ${isDropObstacleMode ? 'active' : ''}`}
-            onClick={(e) => { e.stopPropagation(); setIsDropObstacleMode(m => !m); }}
-            style={isDropObstacleMode ? { background: '#ea580c', borderColor: '#f97316', color: '#fff', fontWeight: 700 } : {}}
-            title="Drop Dynamic Obstacle: click button, then click anywhere on map"
+            className={`btn-toggle ${showScan ? 'active' : ''}`}
+            onClick={(e) => { e.stopPropagation(); setShowScan(s => !s); }}
+            title="Toggle live LiDAR /scan overlay"
           >
-            🚧 Drop Obstacle
+            📡 Scan
           </button>
+          <button
+            className={`btn-toggle ${isSetPoseMode ? 'active' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsDropObstacleMode(false);
+              setIsSetPoseMode(m => !m);
+            }}
+            style={isSetPoseMode ? { background: '#059669', borderColor: '#10b981', color: '#fff', fontWeight: 700 } : {}}
+            title="Set AMCL Pose: click and drag on map to set robot position & heading"
+          >
+            📍 Set Pose
+          </button>
+          {mode === 'hardware' && (
+            <button
+              className="btn-toggle"
+              disabled={isRelocalizing}
+              onClick={handleAutoRelocalize}
+              style={{ borderColor: 'rgba(16, 185, 129, 0.5)', color: '#34d399', fontWeight: 700 }}
+              title="Trigger zero-prior global scan-matching auto-relocalization"
+            >
+              {isRelocalizing ? '⏳ Loc...' : '🎯 Auto-Loc'}
+            </button>
+          )}
+          {mode !== 'hardware' && (
+            <button
+              className={`btn-toggle ${isDropObstacleMode ? 'active' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsSetPoseMode(false);
+                setIsDropObstacleMode(m => !m);
+              }}
+              style={isDropObstacleMode ? { background: '#ea580c', borderColor: '#f97316', color: '#fff', fontWeight: 700 } : {}}
+              title="Drop Dynamic Obstacle: click button, then click anywhere on map"
+            >
+              🚧 Drop Obstacle
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ── Set Initial Pose Active Banner ── */}
+      {isSetPoseMode && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 48,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 35,
+            background: 'rgba(5, 150, 105, 0.95)',
+            color: '#ffffff',
+            padding: '7px 16px',
+            borderRadius: 24,
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            boxShadow: '0 4px 20px rgba(16, 185, 129, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            pointerEvents: 'auto',
+          }}
+        >
+          <span>📍 CLICK &amp; DRAG ON MAP TO SET AMCL INITIAL POSE</span>
+          <span style={{ fontSize: 10, opacity: 0.85 }}>(ESC to cancel)</span>
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsSetPoseMode(false); setPoseDragRef.current = null; }}
+            style={{
+              background: 'rgba(0,0,0,0.3)',
+              border: 'none',
+              color: '#fff',
+              borderRadius: '50%',
+              width: 18,
+              height: 18,
+              cursor: 'pointer',
+              fontSize: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── Drop Obstacle Active Banner ── */}
       {isDropObstacleMode && (

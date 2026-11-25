@@ -2132,11 +2132,12 @@ class AmrBridgeNode(Node):
 
     def telemetry_snapshot(self) -> dict:
         obs_dist = self.min_obstacle_dist if not math.isinf(self.min_obstacle_dist) else None
-        # Downsample scan to 72 points (every 5°) for the app
+        # Downsample scan to ~72 points (every ~5°) for the app & scale angle_inc by step
         scan_ds: List[float] = []
+        scan_step = 1
         if self.scan_ranges:
-            step = max(1, len(self.scan_ranges) // 72)
-            for i in range(0, len(self.scan_ranges), step):
+            scan_step = max(1, len(self.scan_ranges) // 72)
+            for i in range(0, len(self.scan_ranges), scan_step):
                 r = self.scan_ranges[i]
                 scan_ds.append(round(r, 3) if not (math.isnan(r) or math.isinf(r)) else 0.0)
         dyn_obs = None
@@ -2192,7 +2193,7 @@ class AmrBridgeNode(Node):
             'dynamic_obstacle': dyn_obs if AMR_MODE == 'sim' else None,
             'scan':            scan_ds,
             'scan_angle_min':  round(self.scan_angle_min, 4),
-            'scan_angle_inc':  round(self.scan_angle_inc, 4),
+            'scan_angle_inc':  round(self.scan_angle_inc * scan_step, 5),
             'mapping':         mapping_mgr.get_status(self._has_live_map, self.get_live_map_info(), ros_node=self),
             'system_status':   system_mgr.get_status() if 'system_mgr' in globals() else {},
             'ts':              round(now, 3),
