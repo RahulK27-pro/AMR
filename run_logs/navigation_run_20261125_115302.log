@@ -1,6 +1,0 @@
-[11:53:02.890] [SESSION_START     ] AMR Navigation Run Logging Started | Target CSV: /home/rahul/AMR/AMR-main/run_logs/navigation_run_20261125_115302.csv
-[11:53:06.307] [TF_LOCALIZATION_OK] Acquired map -> base_link transform at (-1.09, -0.53, 8.9°)
-[11:53:16.870] [STATE_CHANGE      ] IDLE -> PLANNING | Pose=(-1.11, -0.53, 9.3°)
-[11:53:16.882] [STATE_CHANGE      ] PLANNING -> NAVIGATING | Pose=(-1.11, -0.53, 9.3°)
-[11:53:55.222] [STATE_CHANGE      ] NAVIGATING -> ARRIVED | Pose=(-0.83, 0.81, 75.1°)
-[11:54:15.433] [SESSION_END       ] Navigation Run Ended. Closing log files.

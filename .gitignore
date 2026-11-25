@@ -30,3 +30,6 @@ htmlcov/
 
 # Runtime map synchronizer output
 warehouse_graph.json
+
+# Navigation run logs (auto-generated CSVs, .log files, symlinks)
+run_logs/

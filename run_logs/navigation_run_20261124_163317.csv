@@ -1,1 +1,0 @@
-ros_time_sec,state,map_x,map_y,map_yaw_deg,amcl_x,amcl_y,amcl_yaw_deg,amcl_cov_xx,amcl_cov_yy,amcl_cov_yaw,ekf_x,ekf_y,ekf_vx,ekf_wz,cmd_v,cmd_w,path_len,current_target_idx,dist_to_goal,min_scan_dist_m,num_valid_beams
