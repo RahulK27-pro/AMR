@@ -147,6 +147,11 @@ from geometry_msgs.msg import Twist, PoseStamped, PoseWithCovarianceStamped, Qua
 from nav_msgs.msg import Odometry, Path as NavPath, OccupancyGrid
 from sensor_msgs.msg import LaserScan, Imu
 from std_msgs.msg import String, Bool
+try:
+    from std_srvs.srv import Trigger
+    _STD_SRVS_AVAILABLE = True
+except ImportError:
+    _STD_SRVS_AVAILABLE = False
 
 # Ensure local install packages (like explore_lite_msgs) are on sys.path
 _WS_BOOTSTRAP = Path(os.environ.get("AMR_WS", Path.home() / "AMR" / "AMR-main"))
@@ -881,16 +886,15 @@ mapping_mgr = MappingManager(_WORKSPACE_ROOT)
 
 
 class SystemLaunchManager:
-    """Manages the full navigation stack lifecycle:
-       1. navigation_launch.py (Gazebo + RViz + AMCL + map_server)
-       2. route_runner (MPPI Controller)
-       3. bt_manager (Behavior Tree Orchestrator)
+    """Manages the full navigation stack lifecycle for both Simulation and Physical Hardware:
+       - sim mode: navigation_launch.py (Gazebo + AMCL) + route_runner + bt_manager + graph_visualizer
+       - hardware mode: hardware_navigation.launch.py (map_server + AMCL + auto_localizer + route_runner + run_logger)
     """
     def __init__(self, workspace_root: Path):
         self.ws_root = workspace_root
         self.state = 'STOPPED'  # 'STOPPED' | 'STARTING' | 'RUNNING' | 'STOPPING' | 'ERROR'
-        self.active_map = 'hospital_map'
-        self.stage = 0  # 0: Stopped, 1: Launching Nav & Gazebo, 2: Starting MPPI, 3: Starting BT Manager, 4: Running
+        self.active_map = _default_map_for_mode(AMR_MODE)
+        self.stage = 0  # 0: Stopped, 1..3: Starting, 4: Running
         self.stage_text = 'Stopped'
         self.start_time: Optional[float] = None
         self.nav_proc: Optional[subprocess.Popen] = None
@@ -901,6 +905,7 @@ class SystemLaunchManager:
         self.runner_log = None
         self.bt_log = None
         self.graph_log = None
+        self.active_log_path: Optional[str] = None
         self.error_msg: Optional[str] = None
         self.lock = threading.Lock()
         self._worker_thread: Optional[threading.Thread] = None
@@ -916,37 +921,210 @@ class SystemLaunchManager:
         except Exception as e:
             return f"(error reading log: {e})"
 
-    def start(self, map_name: str = 'hospital_map', world: Optional[str] = None, headless: bool = True, use_rviz: bool = False) -> dict:
+    @staticmethod
+    def _is_external_nav_running() -> bool:
+        try:
+            res = subprocess.run(['pgrep', '-f', 'route_runner'], capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout.strip():
+                return True
+        except Exception:
+            pass
+        if 'node' in globals() and globals()['node'] is not None:
+            n = globals()['node']
+            if (time.time() - getattr(n, '_last_state_rx_time', 0.0)) < 3.0:
+                return True
+        return False
+
+    def start(self, map_name: Optional[str] = None, world: Optional[str] = None, headless: bool = True, use_rviz: bool = False) -> dict:
         with self.lock:
             if self.state in ('STARTING', 'RUNNING'):
                 return {'ok': False, 'error': f'System is already {self.state.lower()}'}
 
-            target_map = (map_name or self.active_map or 'hospital_map').strip()
+            if self._is_external_nav_running():
+                return {
+                    'ok': False,
+                    'error': 'An external navigation session is already running. Stop it before launching from the Web UI.'
+                }
+
+            target_map = (map_name or self.active_map or _default_map_for_mode(AMR_MODE)).strip()
             self.active_map = target_map
             self.state = 'STARTING'
             self.stage = 1
-            self.stage_text = f'1/3 Initializing simulation and map ({target_map})...'
+            if AMR_MODE == 'hardware':
+                self.stage_text = f'1/3 Verifying Raspberry Pi sensors & launching hardware nav ({target_map})...'
+            else:
+                self.stage_text = f'1/3 Initializing simulation and map ({target_map})...'
             self.start_time = time.time()
             self.error_msg = None
+            self.active_log_path = None
 
             # Clean any old stray processes first
             self._cleanup_processes()
 
-            # Reset bridge node telemetry state & TF buffer for fresh simulation run
+            # Reset bridge node telemetry state & TF buffer for fresh run
             if 'node' in globals() and globals()['node'] is not None:
                 try:
                     globals()['node'].reset_simulation_state()
                 except Exception as e:
                     logger.warning(f"[SystemLaunchManager] Node reset warning: {e}")
 
+            target_fn = self._start_hardware_sequence if AMR_MODE == 'hardware' else self._start_sequence
             self._worker_thread = threading.Thread(
-                target=self._start_sequence,
+                target=target_fn,
                 args=(target_map, world, headless, use_rviz),
                 daemon=True
             )
             self._worker_thread.start()
 
-            return {'ok': True, 'state': self.state, 'map_name': target_map}
+            return {'ok': True, 'state': self.state, 'map_name': target_map, 'mode': AMR_MODE}
+
+    def _sync_graph_fallback(self, map_name: str):
+        src_graph = _find_map_file(map_name, ('_graph.json', '.json'))
+        if src_graph and src_graph.exists():
+            for d in [_SIM_MAPS_DIR, _HW_MAPS_DIR]:
+                if d.exists():
+                    dest_graph = d / "warehouse_graph.json"
+                    try:
+                        shutil.copy2(src_graph, dest_graph)
+                    except Exception as e:
+                        logger.warning(f"[SystemLaunchManager] Sync graph warning: {e}")
+
+    def _start_hardware_sequence(self, map_name: str, world: Optional[str], headless: bool = True, use_rviz: bool = False):
+        try:
+            if 'mapping_mgr' in globals() and globals()['mapping_mgr'] is not None:
+                try:
+                    globals()['mapping_mgr'].stop()
+                except Exception as e:
+                    logger.warning(f"[SystemLaunchManager] Warning stopping mapping_mgr: {e}")
+
+            self._sync_graph_fallback(map_name)
+
+            # 1. Verify Pi sensors (/scan & /odometry/filtered) are streaming (assumes ./start_hardware.sh is running on Pi)
+            with self.lock:
+                self.stage = 1
+                self.stage_text = f'1/3 Checking Pi ({AMR_PI_IP}) /scan & /odometry/filtered...'
+
+            sensors_ok = False
+            n = globals().get('node')
+            for _ in range(8):
+                if self.state == 'STOPPING':
+                    return
+                now = time.time()
+                if n is not None and (now - getattr(n, '_last_scan_rx_time', 0.0)) < 3.0 and (now - getattr(n, '_last_odom_rx_time', 0.0)) < 3.0:
+                    sensors_ok = True
+                    break
+                time.sleep(0.5)
+
+            if not sensors_ok:
+                raise RuntimeError(
+                    f"Pi sensors (/scan, /odometry/filtered) not detected from {AMR_PI_IP}. "
+                    f"Ensure './start_hardware.sh' is running on the Raspberry Pi 5 first."
+                )
+
+            # 2. Best-effort inter-machine clock sync (non-blocking timeout, mirrors start_hardware_nav.sh)
+            with self.lock:
+                self.stage = 2
+                self.stage_text = f'2/3 Syncing Pi clock & launching hardware navigation ({map_name})...'
+
+            try:
+                epoch_str = f"{time.time():.6f}"
+                subprocess.run(
+                    [
+                        'ssh', '-o', 'ConnectTimeout=2', '-o', 'BatchMode=yes',
+                        '-o', 'StrictHostKeyChecking=no', f'amr@{AMR_PI_IP}',
+                        f"sudo date -s '@{epoch_str}'"
+                    ],
+                    capture_output=True, text=True, timeout=3.5
+                )
+            except Exception:
+                pass
+
+            # Kill lingering SLAM/static map->odom TF so AMCL owns map->odom
+            for pat in ['slam_toolbox', 'static_transform_publisher.*map.*odom']:
+                try:
+                    subprocess.run(['pkill', '-f', pat], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+
+            # Prepare run_logs file
+            log_dir = self.ws_root / "run_logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            ts = time.strftime('%Y%m%d_%H%M%S')
+            launch_log_path = log_dir / f"hardware_nav_{ts}.log"
+            latest_link = log_dir / "latest_launch.log"
+            try:
+                if latest_link.is_symlink() or latest_link.exists():
+                    latest_link.unlink()
+                latest_link.symlink_to(launch_log_path)
+            except Exception:
+                pass
+            self.active_log_path = str(launch_log_path)
+
+            # Resolve map YAML or map stem
+            yaml_p = _find_map_file(map_name, ('.yaml',), mode='hardware')
+            map_arg = str(yaml_p) if yaml_p else map_name
+
+            _configure_dds_environment('hardware', AMR_PI_IP)
+            dds_uri = os.environ.get('CYCLONEDDS_URI', '')
+            rviz_flag = 'true' if use_rviz else 'false'
+
+            # Keep exact hardware navigation speeds & use_bt:=false
+            hw_cmd = (
+                f"unset ROS_LOCALHOST_ONLY && "
+                f"export ROS_DOMAIN_ID=7 && "
+                f"export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && "
+                + (f"export CYCLONEDDS_URI=\"{dds_uri}\" && " if dds_uri else "")
+                + f"source /opt/ros/jazzy/setup.bash && "
+                f"source {self.ws_root}/install/setup.bash && "
+                f"ros2 launch agv_description hardware_navigation.launch.py "
+                f"map:=\"{map_arg}\" "
+                f"max_linear_speed:={HW_NAV_LIMITS['max_linear_speed']} "
+                f"cruise_linear_speed:={HW_NAV_LIMITS['cruise_linear_speed']} "
+                f"max_angular_speed:={HW_NAV_LIMITS['max_angular_speed']} "
+                f"lookahead_dist:={HW_NAV_LIMITS['lookahead_dist']} "
+                f"use_bt:=false "
+                f"use_rviz:={rviz_flag}"
+            )
+            logger.info(f"[SystemLaunchManager] Starting hardware_navigation: {hw_cmd}")
+            self.nav_log = open(launch_log_path, 'w')
+            self.nav_proc = subprocess.Popen(
+                hw_cmd,
+                shell=True,
+                executable='/bin/bash',
+                cwd=str(self.ws_root),
+                preexec_fn=os.setsid,
+                stdout=self.nav_log,
+                stderr=subprocess.STDOUT
+            )
+
+            # Wait for hardware_navigation nodes (map_server, amcl, auto_localizer, route_runner) to come online
+            with self.lock:
+                self.stage = 3
+                self.stage_text = f'3/3 Waiting for AMCL, Auto-Localizer & Route Runner ({map_name})...'
+
+            for _ in range(10):
+                time.sleep(0.8)
+                if self.state == 'STOPPING':
+                    return
+                if self.nav_proc.poll() is not None:
+                    tail = self._tail_log(str(launch_log_path))
+                    raise RuntimeError(f"hardware_navigation.launch.py exited early: {tail}")
+                if n is not None and (time.time() - getattr(n, '_last_state_rx_time', 0.0)) < 2.0:
+                    break
+
+            with self.lock:
+                if self.state != 'STOPPING':
+                    self.state = 'RUNNING'
+                    self.stage = 4
+                    self.stage_text = f'Hardware Nav Online ({map_name})'
+                    logger.info(f"[SystemLaunchManager] Hardware navigation stack is RUNNING on {map_name}!")
+        except Exception as e:
+            with self.lock:
+                self.state = 'ERROR'
+                self.error_msg = str(e)
+                self.stage_text = f'Error: {e}'
+                logger.error(f"[SystemLaunchManager] Hardware startup failed: {e}")
+                self._cleanup_processes()
 
     def _start_sequence(self, map_name: str, world: Optional[str], headless: bool = True, use_rviz: bool = False):
         try:
@@ -957,21 +1135,14 @@ class SystemLaunchManager:
                 except Exception as e:
                     logger.warning(f"[SystemLaunchManager] Warning stopping mapping_mgr: {e}")
 
-            maps_dir = self.ws_root / "src" / "agv_description" / "maps"
-            src_graph = maps_dir / f"{map_name}_graph.json"
-            if src_graph.exists():
-                dest_graph = maps_dir / "warehouse_graph.json"
-                try:
-                    shutil.copy2(src_graph, dest_graph)
-                    logger.info(f"[SystemLaunchManager] Synced {map_name}_graph.json -> warehouse_graph.json")
-                except Exception as e:
-                    logger.warning(f"[SystemLaunchManager] Sync graph warning: {e}")
+            self._sync_graph_fallback(map_name)
 
             # 1. Launch navigation_launch.py
             world_arg = f"world:={world}" if world else ""
             headless_arg = f"headless:={'true' if headless else 'false'}"
             rviz_arg = f"use_rviz:={'true' if use_rviz else 'false'}"
             nav_cmd = (
+                f"export ROS_LOCALHOST_ONLY=1 && "
                 f"export LIBGL_ALWAYS_SOFTWARE=1 && "
                 f"export MESA_GL_VERSION_OVERRIDE=3.3 && "
                 f"source /opt/ros/jazzy/setup.bash && "
@@ -980,6 +1151,7 @@ class SystemLaunchManager:
             )
             logger.info(f"[SystemLaunchManager] Starting navigation_launch: {nav_cmd}")
             self.nav_log = open('/tmp/amr_navigation.log', 'w')
+            self.active_log_path = '/tmp/amr_navigation.log'
             self.nav_proc = subprocess.Popen(
                 nav_cmd,
                 shell=True,
@@ -1005,6 +1177,7 @@ class SystemLaunchManager:
                 self.stage_text = '2/3 Starting MPPI Route Runner...'
 
             runner_cmd = (
+                f"export ROS_LOCALHOST_ONLY=1 && "
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
                 f"ros2 run agv_navigation route_runner --ros-args -p map_name:={map_name} -p use_sim_time:=true"
@@ -1034,6 +1207,7 @@ class SystemLaunchManager:
                 self.stage_text = '3/3 Starting Behavior Tree Manager...'
 
             bt_cmd = (
+                f"export ROS_LOCALHOST_ONLY=1 && "
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
                 f"ros2 run agv_navigation bt_manager --ros-args -p map_name:={map_name} -p use_sim_time:=true"
@@ -1052,6 +1226,7 @@ class SystemLaunchManager:
 
             # 4. Launch graph_visualizer
             graph_cmd = (
+                f"export ROS_LOCALHOST_ONLY=1 && "
                 f"source /opt/ros/jazzy/setup.bash && "
                 f"source {self.ws_root}/install/setup.bash && "
                 f"ros2 run agv_navigation graph_visualizer --ros-args -p map_name:={map_name} -p use_sim_time:=true"
@@ -1142,11 +1317,15 @@ class SystemLaunchManager:
         self.runner_proc = None
         self.nav_proc = None
 
-        for pattern in [
-            'graph_visualizer', 'bt_manager', 'route_runner', 'navigation_launch',
-            'gz sim', 'map_server', 'amcl', 'lifecycle_manager',
-            'parameter_bridge', 'ros_gz_bridge', 'ekf_node', 'robot_state_publisher'
-        ]:
+        patterns = [
+            'graph_visualizer', 'bt_manager', 'route_runner',
+            'navigation_launch', 'hardware_navigation',
+            'auto_localizer', 'run_logger',
+            'map_server', 'amcl', 'lifecycle_manager',
+        ]
+        if AMR_MODE == 'sim':
+            patterns.extend(['gz sim', 'parameter_bridge', 'ros_gz_bridge', 'ekf_node', 'robot_state_publisher'])
+        for pattern in patterns:
             try:
                 subprocess.run(['pkill', '-9', '-f', pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
@@ -1157,8 +1336,9 @@ class SystemLaunchManager:
             if self.state == 'RUNNING':
                 if self.nav_proc and self.nav_proc.poll() is not None:
                     self.state = 'ERROR'
-                    tail = self._tail_log('/tmp/amr_navigation.log')
-                    self.error_msg = f'navigation_launch terminated: {tail}'
+                    log_path = self.active_log_path or '/tmp/amr_navigation.log'
+                    tail = self._tail_log(log_path)
+                    self.error_msg = f'navigation launch terminated: {tail}'
                     logger.error(f"[SystemLaunchManager] {self.error_msg}")
                 elif self.runner_proc and self.runner_proc.poll() is not None:
                     self.state = 'ERROR'
@@ -1171,13 +1351,19 @@ class SystemLaunchManager:
                     self.error_msg = f'bt_manager terminated: {tail}'
                     logger.error(f"[SystemLaunchManager] {self.error_msg}")
 
+            external_running = False
+            if self.state == 'STOPPED':
+                external_running = self._is_external_nav_running()
+
             uptime = round(time.time() - self.start_time, 1) if (self.start_time and self.state == 'RUNNING') else 0.0
 
             return {
                 'ok': True,
+                'mode': AMR_MODE,
                 'state': self.state,
+                'external_running': external_running,
                 'stage': self.stage,
-                'stage_text': self.stage_text,
+                'stage_text': 'Active (External Session)' if external_running else self.stage_text,
                 'active_map': self.active_map,
                 'uptime_sec': uptime,
                 'error': self.error_msg,
@@ -1219,6 +1405,7 @@ class AmrBridgeNode(Node):
         self.seq_pub          = self.create_publisher(String,                     '/goal_sequence', 10)
         self.obstacle_cmd_pub = self.create_publisher(Twist,                      '/dynamic_obstacle/cmd_vel', 10)
         self.explore_resume_pub = self.create_publisher(Bool,                     '/explore/resume', 10)
+        self.auto_localize_client = self.create_client(Trigger, '/trigger_auto_relocalization') if _STD_SRVS_AVAILABLE else None
 
         latched_map_qos = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL, reliability=QoSReliabilityPolicy.RELIABLE)
 
@@ -1598,11 +1785,38 @@ class AmrBridgeNode(Node):
 
     # -------- Publisher helpers --------
 
+    def trigger_auto_relocalization(self, timeout_sec: float = 6.0) -> dict:
+        if not _STD_SRVS_AVAILABLE or self.auto_localize_client is None:
+            return {'ok': False, 'error': 'std_srvs Trigger not available in bridge'}
+        if not self.auto_localize_client.wait_for_service(timeout_sec=1.5):
+            return {
+                'ok': False,
+                'error': 'Auto-localizer service (/trigger_auto_relocalization) is not active yet.'
+            }
+        fut = self.auto_localize_client.call_async(Trigger.Request())
+        done_evt = threading.Event()
+        fut.add_done_callback(lambda _: done_evt.set())
+        if not done_evt.wait(timeout=timeout_sec):
+            return {'ok': False, 'error': 'Auto-relocalization request timed out.'}
+        try:
+            res = fut.result()
+            return {'ok': bool(res.success), 'message': res.message}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+
     def publish_cmd_vel(self, linear: float, angular: float):
+        if self._estop_latched and (abs(linear) > 1e-4 or abs(angular) > 1e-4):
+            return False
+        lin = float(linear)
+        ang = float(angular)
+        if AMR_MODE == 'hardware':
+            lin = max(-HW_TELEOP_LIMITS['max_linear'], min(HW_TELEOP_LIMITS['max_linear'], lin))
+            ang = max(-HW_TELEOP_LIMITS['max_angular'], min(HW_TELEOP_LIMITS['max_angular'], ang))
         t = Twist()
-        t.linear.x  = float(linear)
-        t.angular.z = float(angular)
+        t.linear.x  = lin
+        t.angular.z = ang
         self.cmd_pub.publish(t)
+        return True
 
     def publish_goal(self, x: float, y: float, yaw: float = 0.0):
         ps = PoseStamped()
@@ -2255,11 +2469,23 @@ async def get_map(map_name: Optional[str] = None, clean: bool = False):
 @app.post('/api/cmd_vel')
 async def post_cmd_vel(req: CmdVelRequest):
     if node:
+        if node._estop_latched and (req.linear != 0.0 or req.angular != 0.0):
+            return JSONResponse({'ok': False, 'error': 'E-STOP active. Clear E-STOP before driving.'}, status_code=409)
         # Seamless manual takeover: If user drives manually with non-zero command, pause auto-explore so Nav2 does not fight the user
         if (req.linear != 0.0 or req.angular != 0.0) and mapping_mgr.run_explore:
             mapping_mgr.pause_auto_explore(ros_node=node)
         node.publish_cmd_vel(req.linear, req.angular)
     return {'ok': True}
+
+@app.post('/api/localization/auto')
+async def post_auto_localize():
+    """Trigger zero-prior global scan-matching relocalization on hardware auto_localizer."""
+    if node is None:
+        return JSONResponse({'ok': False, 'error': 'ROS node not ready'}, status_code=503)
+    res = await asyncio.get_event_loop().run_in_executor(None, node.trigger_auto_relocalization)
+    if not res.get('ok'):
+        return JSONResponse(res, status_code=400)
+    return res
 
 @app.post('/api/goal')
 async def post_goal(req: GoalRequest):
@@ -3129,11 +3355,11 @@ async def post_dispatch_place(req: DispatchPlaceRequest):
         except Exception as e:
             logger.warning(f"Could not switch active map to {req.map_name}: {e}")
 
-    # 1. Publish to /goal_sequence with the assigned node_id
-    node.publish_goal_sequence([req.node_id])
-
-    # 2. Also publish to /goal_pose as standard Nav2 / AMCL pose fallback
-    node.publish_goal(req.x, req.y, req.yaw or 0.0)
+    # Publish to /goal_sequence (route_runner handles single-stop and multi-stop sequences cleanly)
+    if req.node_id:
+        node.publish_goal_sequence([req.node_id])
+    else:
+        node.publish_goal(req.x, req.y, req.yaw or 0.0)
 
     # 3. Track active place navigation
     node.active_place_nav = {
@@ -3176,9 +3402,7 @@ async def post_dispatch_sequence(req: DispatchSequenceRequest):
     node_ids = [p.node_id for p in req.places]
     node.publish_goal_sequence(node_ids)
 
-    # First stop
     first = req.places[0]
-    node.publish_goal(first.x, first.y, first.yaw or 0.0)
 
     node.active_place_nav = {
         'target_place': first.place_name,
@@ -3264,12 +3488,20 @@ async def get_system_status():
 async def post_gui_launch(req: GuiLaunchRequest):
     """Launch Gazebo GUI or RViz2 visualizer client in the current display."""
     target_app = req.app.lower().strip()
+    if AMR_MODE == 'hardware' and target_app in ('gazebo', 'gz'):
+        return JSONResponse({'ok': False, 'error': 'Gazebo 3D is disabled in Real Hardware mode.'}, status_code=400)
+
     env = os.environ.copy()
     env['DISPLAY'] = os.environ.get('DISPLAY', ':0')
     env['QT_QPA_PLATFORM'] = 'xcb'
     env['ROS_DOMAIN_ID'] = os.environ.get('ROS_DOMAIN_ID', '7')
     env['RMW_IMPLEMENTATION'] = os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
-    env['ROS_LOCALHOST_ONLY'] = '1'
+    env['AMR_MODE'] = AMR_MODE
+    env['AMR_PI_IP'] = AMR_PI_IP
+    if AMR_MODE == 'sim':
+        env['ROS_LOCALHOST_ONLY'] = '1'
+    else:
+        env.pop('ROS_LOCALHOST_ONLY', None)
     env['LIBGL_ALWAYS_SOFTWARE'] = '1'
     env['GALLIUM_DRIVER'] = 'llvmpipe'
     env['MESA_GL_VERSION_OVERRIDE'] = '4.5'
@@ -3278,7 +3510,10 @@ async def post_gui_launch(req: GuiLaunchRequest):
         script = _WORKSPACE_ROOT / "view_gazebo.sh"
         cmd = f"/bin/bash {script}"
     else:
-        mode_arg = req.mode or ("explore" if mapping_mgr.state == 'MAPPING' else "nav")
+        if AMR_MODE == 'hardware':
+            mode_arg = req.mode or ("hw_explore" if mapping_mgr.state == 'MAPPING' else "hw_nav")
+        else:
+            mode_arg = req.mode or ("explore" if mapping_mgr.state == 'MAPPING' else "nav")
         script = _WORKSPACE_ROOT / "view_rviz.sh"
         cmd = f"/bin/bash {script} {mode_arg}"
 

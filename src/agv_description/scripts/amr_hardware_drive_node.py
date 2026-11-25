@@ -35,6 +35,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist, TransformStamped, Quaternion
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool
 from tf2_ros import TransformBroadcaster
 
 # GPIO Pinout
@@ -164,6 +165,13 @@ class AMRHardwareDriveNode(Node):
         self._init_hardware()
 
         # ROS 2 Subscriptions & Publishers
+        self.estop_active = False
+        self.estop_sub = self.create_subscription(
+            Bool,
+            '/agv_estop',
+            self.estop_callback,
+            10
+        )
         self.cmd_vel_sub = self.create_subscription(
             Twist,
             '/cmd_vel',
@@ -343,8 +351,22 @@ class AMRHardwareDriveNode(Node):
         self.lgpio.tx_pwm(self.chip, LEFT_PWM_PIN, PWM_FREQ, 0)
         self.lgpio.tx_pwm(self.chip, RIGHT_PWM_PIN, PWM_FREQ, 0)
 
-    # ── Command Velocity Callback ──────────────────────────────────────────
+    # ── Emergency Stop & Command Velocity Callbacks ────────────────────────
+    def estop_callback(self, msg: Bool):
+        if msg.data:
+            if not self.estop_active:
+                self.get_logger().warn("[E-STOP] /agv_estop triggered — halting motors & locking /cmd_vel.")
+            self.estop_active = True
+            self.stop_motors()
+        else:
+            if self.estop_active:
+                self.get_logger().info("[E-STOP] /agv_estop cleared — /cmd_vel unlocked.")
+            self.estop_active = False
+
     def cmd_vel_callback(self, msg: Twist):
+        if self.estop_active:
+            self.stop_motors()
+            return
         now = self.get_clock().now()
         self.last_cmd_time = now
 
@@ -430,7 +452,7 @@ class AMRHardwareDriveNode(Node):
         self._wheel_pi['right']['v_filt'] = 0.45 * v_r_meas + 0.55 * self._wheel_pi['right']['v_filt']
 
         # 50 Hz Closed-loop per-wheel PI velocity control
-        if not timed_out:
+        if not timed_out and not self.estop_active:
             self._apply_closed_loop_motors(dt_ctrl, current_time.nanoseconds / 1e9)
 
         # Orientation Quaternion
