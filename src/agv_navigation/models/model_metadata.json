@@ -1,0 +1,160 @@
+{
+  "dataset_composition": {
+    "total_cluster_samples": 21818,
+    "simulation_samples": 17454,
+    "simulation_pct": 80.0,
+    "live_gazebo_raw_samples": 2727,
+    "live_gazebo_traj_sequences": 11,
+    "hardware_samples": 4364,
+    "hardware_pct": 20.0,
+    "hardware_captures_used": 0,
+    "hardware_maps_used": [
+      "prakash_room",
+      "hardware_map",
+      "final_map",
+      "my_room_map",
+      "my_next_map"
+    ],
+    "hardware_ydlidar_dropout_rate": 0.3444,
+    "total_trajectory_sequences": 3063
+  },
+  "classifier": {
+    "feature_names": [
+      "log_num_points",
+      "chord_width",
+      "max_span",
+      "point_density",
+      "expected_density_ratio",
+      "pca_std_major",
+      "pca_std_minor",
+      "linearity",
+      "chord_bulge",
+      "circle_fit_radius",
+      "circle_fit_rms",
+      "jump_left_m",
+      "jump_right_m",
+      "wall_edt_mean_m",
+      "wall_edt_min_m",
+      "kf_speed",
+      "velocity_variance",
+      "net_displacement_ratio",
+      "width_std",
+      "log_track_age"
+    ],
+    "class_names": [
+      "WALL",
+      "CLUTTER",
+      "PERSON"
+    ],
+    "selected_model": "RandomForest_80",
+    "selected_runtime_type": "tree_ensemble",
+    "benchmarks": {
+      "RandomForest_80": {
+        "macro_f1": 0.8523,
+        "wall_f1": 0.9816,
+        "clutter_f1": 0.853,
+        "person_f1": 0.7224,
+        "wall_as_person_fp": 0.0043,
+        "composite_score": 1.0604,
+        "train_sec": 0.67,
+        "infer_10_ms": 23.861
+      },
+      "ExtraTrees_80": {
+        "macro_f1": 0.8378,
+        "wall_f1": 0.9784,
+        "clutter_f1": 0.8412,
+        "person_f1": 0.6937,
+        "wall_as_person_fp": 0.0084,
+        "composite_score": 1.029,
+        "train_sec": 0.22,
+        "infer_10_ms": 23.953
+      },
+      "HistGradientBoosting": {
+        "macro_f1": 0.856,
+        "wall_f1": 0.9815,
+        "clutter_f1": 0.8578,
+        "person_f1": 0.7285,
+        "wall_as_person_fp": 0.0037,
+        "composite_score": 1.067,
+        "train_sec": 4.47,
+        "infer_10_ms": 1.5
+      },
+      "1D_CNN_Spatial": {
+        "macro_f1": 0.573,
+        "wall_f1": 0.9167,
+        "clutter_f1": 0.5121,
+        "person_f1": 0.2901,
+        "wall_as_person_fp": 0.0517,
+        "composite_score": 0.5566,
+        "train_sec": 3.28,
+        "infer_10_ms": 0.8
+      },
+      "CompactMLP_64_32": {
+        "macro_f1": 0.83,
+        "wall_f1": 0.9782,
+        "clutter_f1": 0.8479,
+        "person_f1": 0.664,
+        "wall_as_person_fp": 0.0088,
+        "composite_score": 1.0116,
+        "train_sec": 3.88,
+        "infer_10_ms": 0.05
+      },
+      "CompactMLP_96_48": {
+        "macro_f1": 0.8287,
+        "wall_f1": 0.9755,
+        "clutter_f1": 0.8539,
+        "person_f1": 0.6565,
+        "wall_as_person_fp": 0.0157,
+        "composite_score": 0.9942,
+        "train_sec": 3.51,
+        "infer_10_ms": 0.05
+      },
+      "CompactMLP_128_64": {
+        "macro_f1": 0.8421,
+        "wall_f1": 0.9785,
+        "clutter_f1": 0.855,
+        "person_f1": 0.6928,
+        "wall_as_person_fp": 0.0081,
+        "composite_score": 1.0339,
+        "train_sec": 3.14,
+        "infer_10_ms": 0.05
+      }
+    }
+  },
+  "predictor": {
+    "horizon_steps": 20,
+    "dt": 0.1,
+    "selected_model": "KalmanResidualGRU_32",
+    "selected_hidden_dim": 32,
+    "benchmarks": {
+      "ConstantVelocityKF": {
+        "ade_1s": 0.2418,
+        "fde_1s": 0.3382,
+        "ade_2s": 0.3664,
+        "fde_2s": 0.625
+      },
+      "PureGRU_32": {
+        "ade_1s": 0.2075,
+        "fde_1s": 0.2657,
+        "ade_2s": 0.2811,
+        "fde_2s": 0.4325
+      },
+      "KalmanResidualGRU_32": {
+        "ade_1s": 0.2132,
+        "fde_1s": 0.2815,
+        "ade_2s": 0.2981,
+        "fde_2s": 0.4677,
+        "cov_95_axis": 0.8959,
+        "fde_2s_improvement_vs_kf_pct": 25.17
+      },
+      "KalmanResidualGRU_48": {
+        "ade_1s": 0.2136,
+        "fde_1s": 0.2837,
+        "ade_2s": 0.2997,
+        "fde_2s": 0.4742,
+        "cov_95_axis": 0.897,
+        "fde_2s_improvement_vs_kf_pct": 24.13
+      }
+    }
+  }
+}

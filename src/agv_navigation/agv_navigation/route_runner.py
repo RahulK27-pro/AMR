@@ -3,14 +3,16 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy, QoSReliabilityPolicy
 from ament_index_python.packages import get_package_share_directory
 from nav_msgs.msg import Odometry, Path, OccupancyGrid
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import Twist, PoseStamped, Point
 from std_msgs.msg import String, Bool
 from sensor_msgs.msg import LaserScan
+from visualization_msgs.msg import Marker, MarkerArray
 import tf2_ros
 from tf2_ros import Buffer, TransformListener, TransformException
 import math
 import json
 import os
+import time
 import heapq
 import yaml
 
@@ -18,6 +20,14 @@ import numpy as np
 from scipy.spatial import KDTree
 from scipy.ndimage import binary_dilation
 from PIL import Image
+
+from agv_navigation.ml_perception import (
+    CLASS_CLUTTER,
+    CLASS_NAMES,
+    CLASS_PERSON,
+    CLASS_WALL,
+    PerceptionPipeline,
+)
 
 
 class RouteRunner(Node):
@@ -29,6 +39,10 @@ class RouteRunner(Node):
         self.mission_pub = self.create_publisher(String, '/mission_progress', 10)
         # App bridge: publish nav state so the Flutter / web dashboard can display it
         self.agv_state_pub = self.create_publisher(String, '/agv_state', 10)
+        # ML obstacle visualization, telemetry, and bridge alert publishers
+        self.obs_marker_pub = self.create_publisher(MarkerArray, '/agv_obstacle_markers', 10)
+        self.obs_alert_pub = self.create_publisher(String, '/obstacle_alert', 10)
+        self.ml_obs_pub = self.create_publisher(String, '/agv_obstacles_ml', 10)
 
         # Subscribers
         self.odom_sub = self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)
@@ -41,6 +55,9 @@ class RouteRunner(Node):
         # App bridge: emergency-stop command from Flutter / web dashboard
         self.estop_sub = self.create_subscription(
             Bool, '/agv_estop', self._estop_callback, 10)
+        # Live ML model hot-reload hook (triggered after dataset_trainer_agent exports better weights)
+        self.reload_ml_sub = self.create_subscription(
+            String, '/ml_pipeline/reload_models', self._reload_ml_models_cb, 10)
 
         # TF Buffer and Listener for AMCL / SLAM localization (map -> base_link)
         self.tf_buffer = Buffer()
@@ -53,6 +70,7 @@ class RouteRunner(Node):
 
         # Static map occupancy grid for filtering ghost dynamic obstacles
         self.static_map_data = None
+        self._static_occ_grid = None
         self.static_map_resolution = 0.05
         self.static_map_origin_x = 0.0
         self.static_map_origin_y = 0.0
@@ -176,15 +194,19 @@ class RouteRunner(Node):
         self.current_yaw = 0.0
         self.odom_ready = False
 
-        # Obstacles
+        # Obstacles & ML Perception State
         self.obstacles = np.array([])  # Static and dynamic points in map frame
         self.prev_obstacle_clusters = []
-        self.dynamic_obstacles = []    # List of dicts: {'pos': (x,y), 'vel': (vx,vy), 'speed': s, 'radius': r, 'age': int}
+        self.dynamic_obstacles = []    # List of dicts for PERSON / moving obstacles with pred_traj & pred_std
+        self.clutter_obstacles = []    # List of dicts for stationary CLUTTER obstacles
+        self.ml_obstacles = []         # Full TrackedObstacle list from PerceptionPipeline
         self.last_scan_time = None
-        # Fix 1 — LiDAR age filter: track how many consecutive scans each cluster has been seen
-        self._obs_age_map = {}         # Maps prev_cluster index -> age (consecutive scan count)
-        self._obs_start_pos_map = {}   # Maps prev_cluster index -> initial (x, y) centroid position
-        self._obs_vel_map = {}         # Maps prev_cluster index -> smoothed velocity vector
+        self._last_ml_infer_ms = 0.0
+        self._last_obs_alert_text = ""
+        self._last_obs_alert_pub_time = 0.0
+        self._obs_age_map = {}
+        self._obs_start_pos_map = {}
+        self._obs_vel_map = {}
 
         # Traffic & Re-routing parameters
         self.yield_timeout = 4.0       # Seconds to wait for transient dynamic obstacles before re-routing
@@ -271,8 +293,39 @@ class RouteRunner(Node):
 
         # MPPI Parameters
         self.dt = 0.1                  # 10 Hz
-        self.horizon = 15              # 1.5s preview
+        default_horizon = 20 if self.use_sim_time else 15
+        self.declare_parameter('enable_ml_perception', True)
+        self.declare_parameter('prediction_horizon_steps', default_horizon)
+        self.declare_parameter('classifier_model_path', '')
+        self.declare_parameter('predictor_model_path', '')
+        self.declare_parameter('person_social_margin', 0.16 if self.use_sim_time else 0.12)
+
+        self.enable_ml_perception = bool(self.get_parameter('enable_ml_perception').value)
+        self.horizon = max(10, int(self.get_parameter('prediction_horizon_steps').value))
+        self.person_social_margin = float(self.get_parameter('person_social_margin').value)
         self.num_samples = 80
+
+        clf_path = self._resolve_ml_model_path('classifier_model_path', 'obstacle_classifier.npz')
+        pred_path = self._resolve_ml_model_path('predictor_model_path', 'trajectory_predictor.npz')
+        self.perception = PerceptionPipeline(
+            classifier_path=clf_path,
+            predictor_path=pred_path,
+            prediction_steps=self.horizon,
+            dt=self.dt,
+            enable_ml=self.enable_ml_perception,
+        )
+        if self._static_occ_grid is not None:
+            self.perception.update_map(
+                self._static_occ_grid,
+                self.static_map_resolution,
+                self.static_map_origin_x,
+                self.static_map_origin_y,
+            )
+        self.get_logger().info(
+            f"[ML_PERCEPTION] Enabled={self.enable_ml_perception} | Horizon={self.horizon * self.dt:.1f}s ({self.horizon} steps) | "
+            f"Classifier={'LOADED' if self.perception.classifier.loaded else 'FALLBACK'} | "
+            f"Predictor={'LOADED' if self.perception.predictor.loaded else 'KF_FALLBACK'}"
+        )
 
         # MPPI Noise covariance
         self.noise_v = default_noise_v
@@ -291,7 +344,7 @@ class RouteRunner(Node):
         self.static_w_repulsive = 50.0      # Quadratic wall repulsion (smooth gradient in narrow passages)
 
         self.w_cross_track_nominal = 8.0
-        self.w_cross_track_evasion = 3.5   # Soften centerline tracking during evasion while preventing wandering
+        self.w_cross_track_evasion = 2.0   # Soften centerline tracking during active evasion to glide smoothly past obstacles
         self.w_cross_track = self.w_cross_track_nominal
 
         # Distance-gated evasion: only relax w_cross_track for obstacles within this range
@@ -332,8 +385,65 @@ class RouteRunner(Node):
         self.get_logger().info(f"Route Runner Active with KD-Tree ({len(self.node_ids)} nodes), Proactive Detour & Active Reverse Escape.")
 
     # ------------------------------------------------------------------
-    # Static Map Mask & App Bridge helpers
+    # Static Map Mask, ML Model Path & App Bridge helpers
     # ------------------------------------------------------------------
+
+    def _resolve_ml_model_path(self, param_name: str, default_filename: str):
+        """Resolve ML model .npz path from ROS parameter, package share, or workspace."""
+        param_val = self.get_parameter(param_name).get_parameter_value().string_value.strip()
+        if param_val and os.path.exists(param_val):
+            return param_val
+        candidates = []
+        try:
+            candidates.append(os.path.join(get_package_share_directory('agv_navigation'), 'models', default_filename))
+        except Exception:
+            pass
+        ws_root = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main')
+        candidates.append(os.path.join(ws_root, 'src', 'agv_navigation', 'models', default_filename))
+        candidates.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models', default_filename))
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        return None
+
+    def _reload_ml_models_cb(self, msg: String):
+        """Hot-reload newly trained ML classifier & trajectory predictor weights without restarting node."""
+        try:
+            clf_path = self._resolve_ml_model_path('classifier_model_path', 'obstacle_classifier.npz')
+            pred_path = self._resolve_ml_model_path('predictor_model_path', 'trajectory_predictor.npz')
+            if clf_path and self.enable_ml_perception:
+                self.perception.classifier.load(clf_path)
+            if pred_path and self.enable_ml_perception:
+                self.perception.predictor.load(pred_path)
+            self.get_logger().info(
+                f"[ML_PERCEPTION] Hot-reloaded models ({msg.data}) | "
+                f"Classifier={self.perception.classifier.model_type if self.perception.classifier.loaded else 'FALLBACK'} | "
+                f"Predictor={'LOADED' if self.perception.predictor.loaded else 'KF_FALLBACK'}"
+            )
+        except Exception as e:
+            self.get_logger().warn(f"[ML_PERCEPTION] Hot-reload failed: {e}")
+
+    def _compute_lateral_corridor_clearances(self, target_heading: float):
+        """Estimate open left vs right lateral clearance (m) around the robot using live obstacles."""
+        left_clear = 2.0
+        right_clear = 2.0
+        if len(self.obstacles) == 0:
+            return left_clear, right_clear
+        dx = self.obstacles[:, 0] - self.current_x
+        dy = self.obstacles[:, 1] - self.current_y
+        ch = math.cos(target_heading)
+        sh = math.sin(target_heading)
+        fwd = dx * ch + dy * sh
+        lat = -dx * sh + dy * ch
+        corridor = (fwd > -0.15) & (fwd < 1.80)
+        if np.any(corridor):
+            l_pts = lat[corridor & (lat > 0.12)]
+            r_pts = -lat[corridor & (lat < -0.12)]
+            if len(l_pts) > 0:
+                left_clear = float(np.min(l_pts))
+            if len(r_pts) > 0:
+                right_clear = float(np.min(r_pts))
+        return left_clear, right_clear
 
     def _load_static_map_file(self, map_name_param):
         """Loads static map YAML and PGM file to construct a binary wall mask."""
@@ -388,6 +498,7 @@ class RouteRunner(Node):
             arr = np.flipud(arr)
             # In ROS map standard: pixel value < 50 indicates occupied cell
             occ = (arr < 50)
+            self._static_occ_grid = occ
             # Dilate occupied walls by ~0.28m to absorb normal sensor spread
             iterations = max(2, int(0.28 / meta.get('resolution', 0.05)))
             self.static_wall_mask = binary_dilation(occ, iterations=iterations)
@@ -396,6 +507,13 @@ class RouteRunner(Node):
             self.static_map_origin_x = float(orig[0])
             self.static_map_origin_y = float(orig[1])
             self.static_map_height, self.static_map_width = arr.shape
+            if getattr(self, 'perception', None) is not None:
+                self.perception.update_map(
+                    occ,
+                    self.static_map_resolution,
+                    self.static_map_origin_x,
+                    self.static_map_origin_y,
+                )
             self.get_logger().info(
                 f"[MAP_MASK] Loaded static environment mask from {os.path.basename(pgm_file)} "
                 f"({self.static_map_width}x{self.static_map_height}, res={self.static_map_resolution}m, origin=({self.static_map_origin_x:.2f}, {self.static_map_origin_y:.2f}))."
@@ -410,6 +528,7 @@ class RouteRunner(Node):
             h = msg.info.height
             grid = np.array(msg.data, dtype=np.int8).reshape((h, w))
             occ = (grid > 50)
+            self._static_occ_grid = occ
             res = msg.info.resolution
             iterations = max(2, int(0.28 / res))
             self.static_wall_mask = binary_dilation(occ, iterations=iterations)
@@ -418,6 +537,13 @@ class RouteRunner(Node):
             self.static_map_origin_y = float(msg.info.origin.position.y)
             self.static_map_width = w
             self.static_map_height = h
+            if getattr(self, 'perception', None) is not None:
+                self.perception.update_map(
+                    occ,
+                    self.static_map_resolution,
+                    self.static_map_origin_x,
+                    self.static_map_origin_y,
+                )
             self.get_logger().info(f"[MAP_MASK] Updated static wall mask from /map topic ({w}x{h}).")
         except Exception as e:
             self.get_logger().warn(f"[MAP_MASK] Error parsing /map: {e}")
@@ -607,53 +733,18 @@ class RouteRunner(Node):
     def scan_callback(self, msg):
         self.update_robot_pose()
         now = self._now_sec()
-        ranges = np.array(msg.ranges)
-        angles = msg.angle_min + np.arange(len(ranges)) * msg.angle_increment
+        ranges = np.asarray(msg.ranges, dtype=np.float32)
+        angles = (msg.angle_min + np.arange(len(ranges)) * msg.angle_increment).astype(np.float32)
 
-        # Basic range validity filter
-        valid = (ranges > max(0.08, msg.range_min)) & (ranges < msg.range_max) & np.isfinite(ranges)
-        ranges = ranges[valid]
-        angles = angles[valid]
-
-        if len(ranges) == 0:
+        # Basic check before perception
+        valid_any = np.any((ranges > max(0.08, msg.range_min)) & (ranges < msg.range_max) & np.isfinite(ranges))
+        if not valid_any:
             self.obstacles = np.array([])
             self.dynamic_obstacles = []
+            self.clutter_obstacles = []
+            self.ml_obstacles = []
             self._latest_scan_local = None
             return
-
-        # Downsample LiDAR to every 3rd point
-        ranges = ranges[::3]
-        angles = angles[::3]
-
-        # Convert to robot local coordinate frame
-        ox_local = ranges * np.cos(angles)
-        oy_local = ranges * np.sin(angles)
-        r_local = np.sqrt(ox_local**2 + oy_local**2)
-
-        # Precise robot footprint self-masking:
-        # Mask points within the physical chassis perimeter (r < 0.160m)
-        is_chassis_self = r_local < 0.160
-        # Mask points strictly on the side wheel protrusions: |y| in [0.110, 0.165] and |x| <= 0.080
-        is_wheel_self = (np.abs(oy_local) >= 0.110) & (np.abs(oy_local) <= 0.165) & (np.abs(ox_local) <= 0.080)
-
-        external_mask = (~is_chassis_self) & (~is_wheel_self)
-        ranges = ranges[external_mask]
-        angles = angles[external_mask]
-        ox_local = ox_local[external_mask]
-        oy_local = oy_local[external_mask]
-
-        if len(ranges) == 0:
-            self.obstacles = np.array([])
-            self.dynamic_obstacles = []
-            self._latest_scan_local = None
-            return
-
-        # Keep bounded local scan points (0.18m..6.0m) for wheel-slip / stationary-chassis cross-checks
-        valid_local = (r_local[external_mask] > 0.18) & (r_local[external_mask] < 6.0)
-        if np.any(valid_local):
-            self._latest_scan_local = np.column_stack((ox_local[valid_local], oy_local[valid_local]))
-        else:
-            self._latest_scan_local = None
 
         # Use laser scan timestamp for map transformation to prevent rotational skew artifacts
         try:
@@ -670,128 +761,219 @@ class RouteRunner(Node):
             pose_y = self.current_y
             pose_yaw = self.current_yaw
 
-        # Convert to global map frame
-        cos_yaw = np.cos(pose_yaw)
-        sin_yaw = np.sin(pose_yaw)
+        dt_scan = max(0.04, min(0.35, now - self.last_scan_time)) if self.last_scan_time is not None else self.dt
 
-        ox_global = pose_x + ox_local * cos_yaw - oy_local * sin_yaw
-        oy_global = pose_y + ox_local * sin_yaw + oy_local * cos_yaw
+        # Full-360-beam polar segmentation, Kalman tracking, ML classification & 1-2s GRU trajectory prediction
+        t_ml0 = time.perf_counter()
+        tracks, ext_local, ext_map = self.perception.process_scan(
+            ranges=ranges,
+            angles=angles,
+            pose_x=pose_x,
+            pose_y=pose_y,
+            pose_yaw=pose_yaw,
+            dt=dt_scan,
+            range_min=float(msg.range_min),
+            range_max=float(msg.range_max),
+            robot_ang_vel=self.actual_w,
+            prediction_steps=self.horizon,
+        )
+        self._last_ml_infer_ms = (time.perf_counter() - t_ml0) * 1000.0
 
-        self.obstacles = np.column_stack((ox_global, oy_global))
+        if len(ext_local) == 0:
+            self.obstacles = np.array([])
+            self.dynamic_obstacles = []
+            self.clutter_obstacles = []
+            self.ml_obstacles = []
+            self._latest_scan_local = None
+            return
 
-        # --- Dynamic Obstacle Velocity Estimation ---
-        # 1. Spatial pre-filter: Keep obstacle points within 4.5m of the robot
-        dists_to_robot = np.sqrt(ox_local**2 + oy_local**2)
-        near_mask = dists_to_robot < 4.5
-        near_pts = self.obstacles[near_mask]
+        # Keep bounded local scan points (0.18m..6.0m) for wheel-slip / stationary-chassis cross-checks
+        r_ext = np.hypot(ext_local[:, 0], ext_local[:, 1])
+        valid_local = (r_ext > 0.18) & (r_ext < 6.0)
+        self._latest_scan_local = ext_local[valid_local] if np.any(valid_local) else None
 
-        # 2. Static Map Background Rejection:
-        # Filter out LiDAR points that fall onto known static walls, partitions, and perimeter geometry
-        if len(near_pts) > 0 and self.static_wall_mask is not None:
-            non_wall_mask = np.array([not self.is_near_static_wall(p[0], p[1]) for p in near_pts], dtype=bool)
-            dyn_candidate_pts = near_pts[non_wall_mask]
-        else:
-            dyn_candidate_pts = near_pts
+        # Keep high-density external points for MPPI static cost (downsample only if > 220 points)
+        self.obstacles = ext_map[::2] if len(ext_map) > 220 else ext_map
 
-        current_clusters = []
-        if len(dyn_candidate_pts) > 0:
-            # Cluster candidate points (0.35m grid bins)
-            bins = {}
-            for p in dyn_candidate_pts:
-                key = (round(p[0] / 0.35), round(p[1] / 0.35))
-                bins.setdefault(key, []).append(p)
-
-            for key, pts in bins.items():
-                if len(pts) >= 3:  # Require at least 3 points to reject noise specks
-                    centroid = np.mean(pts, axis=0)
-                    current_clusters.append(centroid)
-
-        # 3. Persistent Object Tracking with Association:
+        # Separate ML-classified tracks by semantic role
         new_dynamic_obs = []
-        if self.last_scan_time is not None:
-            dt = max(0.05, min(0.30, now - self.last_scan_time))
-            matched_track_ids = set()
+        new_clutter_obs = []
+        for tr in tracks:
+            if tr.age < 2:
+                continue
+            if tr.class_id == CLASS_PERSON and (tr.speed >= 0.08 or float(tr.class_probs[CLASS_PERSON]) >= 0.58):
+                new_dynamic_obs.append({
+                    'id': tr.track_id,
+                    'pos': tr.pos,
+                    'vel': tr.vel,
+                    'speed': tr.speed,
+                    'radius': max(0.22, min(0.42, tr.radius)),
+                    'age': tr.age,
+                    'class_name': tr.class_name,
+                    'class_probs': tr.class_probs,
+                    'pred_traj': tr.pred_traj,
+                    'pred_std': tr.pred_std,
+                    'is_leg_pair': tr.is_leg_pair,
+                })
+            elif tr.class_id == CLASS_CLUTTER:
+                new_clutter_obs.append({
+                    'id': tr.track_id,
+                    'pos': tr.pos,
+                    'radius': max(0.18, min(0.45, tr.radius)),
+                    'age': tr.age,
+                    'class_name': tr.class_name,
+                    'class_probs': tr.class_probs,
+                })
 
-            for curr_c in current_clusters:
-                best_track_id = None
-                min_match_dist = 0.35  # Realistic max displacement in 0.1s (< 3.5 m/s)
-
-                for tid, track in self._tracked_obstacles.items():
-                    if tid in matched_track_ids:
-                        continue
-                    d = float(np.linalg.norm(curr_c - track['pos']))
-                    if d < min_match_dist:
-                        min_match_dist = d
-                        best_track_id = tid
-
-                if best_track_id is not None:
-                    track = self._tracked_obstacles[best_track_id]
-                    raw_vel = (curr_c - track['pos']) / dt
-                    # Smooth velocity: 0.5 current, 0.5 historical
-                    smooth_vel = 0.5 * raw_vel + 0.5 * track['vel']
-                    speed = float(np.linalg.norm(smooth_vel))
-
-                    track['pos'] = curr_c
-                    track['vel'] = smooth_vel
-                    track['speed'] = speed
-                    track['age'] += 1
-                    track['misses'] = 0
-                    matched_track_ids.add(best_track_id)
-
-                    disp = float(np.linalg.norm(curr_c - track['start_pos']))
-
-                    # True dynamic obstacle confirmation:
-                    # - Tracked for at least 3 consecutive scans (>= 0.3s)
-                    # - Speed between 0.22 m/s and 2.0 m/s
-                    # - Net displacement >= 0.20m from origin spot
-                    # - Not located on a static wall
-                    if (0.22 <= speed <= 2.0 and track['age'] >= 3 and disp >= 0.20 and
-                            not self.is_near_static_wall(curr_c[0], curr_c[1])):
-                        new_dynamic_obs.append({
-                            'id': best_track_id,
-                            'pos': curr_c,
-                            'vel': smooth_vel,
-                            'speed': speed,
-                            'radius': 0.35,
-                            'age': track['age']
-                        })
-                else:
-                    # New candidate track (suppress instantiation whenever commanded or physically rotating)
-                    if abs(self.last_pub_w) < 0.10 and abs(self.actual_w) < 0.12:
-                        new_tid = self._next_track_id
-                        self._next_track_id += 1
-                        self._tracked_obstacles[new_tid] = {
-                            'pos': curr_c,
-                            'vel': np.zeros(2),
-                            'speed': 0.0,
-                            'start_pos': curr_c,
-                            'age': 1,
-                            'misses': 0
-                        }
-
-            # Age out unmatched tracks
-            to_delete = []
-            for tid, track in self._tracked_obstacles.items():
-                if tid not in matched_track_ids:
-                    track['misses'] += 1
-                    if track['misses'] > 2:
-                        to_delete.append(tid)
-            for tid in to_delete:
-                del self._tracked_obstacles[tid]
-
+        self.ml_obstacles = tracks
         self.dynamic_obstacles = new_dynamic_obs
+        self.clutter_obstacles = new_clutter_obs
         self.last_scan_time = now
+
+        # Publish RViz visualization markers, bridge alerts, and ML telemetry
+        self._publish_ml_obstacle_outputs(now)
 
         # Real-time LiDAR dynamic obstacle detection logging (rate-limited to 1 Hz)
         if len(self.dynamic_obstacles) > 0 and (now - self._last_dyn_log_time) > 1.0:
             self._last_dyn_log_time = now
             for i, dob in enumerate(self.dynamic_obstacles):
                 d_robot = math.hypot(dob['pos'][0] - self.current_x, dob['pos'][1] - self.current_y)
+                p_person = float(dob['class_probs'][CLASS_PERSON])
                 self.get_logger().info(
-                    f"[LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #{dob.get('id', i+1)} at map({dob['pos'][0]:.2f}, {dob['pos'][1]:.2f}) | "
+                    f"[LIDAR_SCAN: DYNAMIC_OBSTACLE] Tracked Obs #{dob.get('id', i+1)} [{dob['class_name']} p={p_person:.2f}] "
+                    f"at map({dob['pos'][0]:.2f}, {dob['pos'][1]:.2f}) | "
                     f"Vel=({dob['vel'][0]:.2f}, {dob['vel'][1]:.2f}) Speed={dob['speed']:.2f}m/s | "
-                    f"DistToRobot={d_robot:.2f}m | RobotPose=({self.current_x:.2f}, {self.current_y:.2f})"
+                    f"DistToRobot={d_robot:.2f}m | Infer={self._last_ml_infer_ms:.2f}ms | RobotPose=({self.current_x:.2f}, {self.current_y:.2f})"
                 )
+
+    def _publish_ml_obstacle_outputs(self, now: float):
+        """Publish RViz MarkerArray, bridge /obstacle_alert, and /agv_obstacles_ml JSON."""
+        stamp = self.get_clock().now().to_msg()
+        markers = MarkerArray()
+
+        clear_m = Marker()
+        clear_m.header.frame_id = "map"
+        clear_m.header.stamp = stamp
+        clear_m.action = Marker.DELETEALL
+        markers.markers.append(clear_m)
+
+        counts = {"WALL": 0, "CLUTTER": 0, "PERSON": 0}
+        nearest_alert = None
+        nearest_alert_dist = 2.4
+
+        for tr in self.ml_obstacles:
+            if tr.age < 2:
+                continue
+            counts[tr.class_name] = counts.get(tr.class_name, 0) + 1
+            d_robot = math.hypot(float(tr.pos[0]) - self.current_x, float(tr.pos[1]) - self.current_y)
+
+            if tr.class_id in (CLASS_PERSON, CLASS_CLUTTER) and d_robot < nearest_alert_dist:
+                nearest_alert_dist = d_robot
+                nearest_alert = tr
+
+            # Bounding cylinder marker
+            m = Marker()
+            m.header.frame_id = "map"
+            m.header.stamp = stamp
+            m.ns = "ml_obstacles"
+            m.id = int(tr.track_id)
+            m.type = Marker.CYLINDER
+            m.action = Marker.ADD
+            m.pose.position.x = float(tr.pos[0])
+            m.pose.position.y = float(tr.pos[1])
+            m.pose.position.z = 0.45 if tr.class_id == CLASS_PERSON else 0.25
+            m.pose.orientation.w = 1.0
+            diam = float(max(0.20, 2.0 * tr.radius))
+            m.scale.x = diam
+            m.scale.y = diam
+            m.scale.z = 0.90 if tr.class_id == CLASS_PERSON else 0.45
+            if tr.class_id == CLASS_PERSON:
+                m.color.r, m.color.g, m.color.b, m.color.a = 1.0, 0.22, 0.12, 0.72
+            elif tr.class_id == CLASS_CLUTTER:
+                m.color.r, m.color.g, m.color.b, m.color.a = 1.0, 0.78, 0.10, 0.68
+            else:
+                m.color.r, m.color.g, m.color.b, m.color.a = 0.55, 0.62, 0.70, 0.35
+            markers.markers.append(m)
+
+            # Text label for PERSON and CLUTTER
+            if tr.class_id in (CLASS_PERSON, CLASS_CLUTTER):
+                txt = Marker()
+                txt.header.frame_id = "map"
+                txt.header.stamp = stamp
+                txt.ns = "ml_labels"
+                txt.id = 10000 + int(tr.track_id)
+                txt.type = Marker.TEXT_VIEW_FACING
+                txt.action = Marker.ADD
+                txt.pose.position.x = float(tr.pos[0])
+                txt.pose.position.y = float(tr.pos[1])
+                txt.pose.position.z = 1.05 if tr.class_id == CLASS_PERSON else 0.65
+                txt.scale.z = 0.18
+                txt.color.r, txt.color.g, txt.color.b, txt.color.a = 1.0, 1.0, 1.0, 0.95
+                p_cls = float(tr.class_probs[tr.class_id])
+                txt.text = f"#{tr.track_id} {tr.class_name} ({p_cls:.2f}) {tr.speed:.2f}m/s"
+                markers.markers.append(txt)
+
+            # Predicted 1-2s trajectory ribbon & uncertainty ellipses for PERSON
+            if tr.class_id == CLASS_PERSON and tr.pred_traj is not None and len(tr.pred_traj) > 0:
+                rib = Marker()
+                rib.header.frame_id = "map"
+                rib.header.stamp = stamp
+                rib.ns = "ml_predictions"
+                rib.id = 20000 + int(tr.track_id)
+                rib.type = Marker.LINE_STRIP
+                rib.action = Marker.ADD
+                rib.scale.x = 0.045
+                rib.color.r, rib.color.g, rib.color.b, rib.color.a = 0.0, 0.92, 1.0, 0.90
+                p0 = Point(x=float(tr.pos[0]), y=float(tr.pos[1]), z=0.12)
+                rib.points.append(p0)
+                for pt in tr.pred_traj:
+                    rib.points.append(Point(x=float(pt[0]), y=float(pt[1]), z=0.12))
+                markers.markers.append(rib)
+
+                # Uncertainty ellipses at 1.0s (idx 9) and horizon end
+                if tr.pred_std is not None:
+                    for k_idx in (min(9, len(tr.pred_traj) - 1), len(tr.pred_traj) - 1):
+                        unc = Marker()
+                        unc.header.frame_id = "map"
+                        unc.header.stamp = stamp
+                        unc.ns = "ml_uncertainty"
+                        unc.id = 30000 + int(tr.track_id) * 10 + k_idx
+                        unc.type = Marker.SPHERE
+                        unc.action = Marker.ADD
+                        unc.pose.position.x = float(tr.pred_traj[k_idx, 0])
+                        unc.pose.position.y = float(tr.pred_traj[k_idx, 1])
+                        unc.pose.position.z = 0.06
+                        unc.pose.orientation.w = 1.0
+                        unc.scale.x = float(max(0.15, 2.0 * tr.pred_std[k_idx, 0]))
+                        unc.scale.y = float(max(0.15, 2.0 * tr.pred_std[k_idx, 1]))
+                        unc.scale.z = 0.05
+                        unc.color.r, unc.color.g, unc.color.b, unc.color.a = 0.1, 0.85, 1.0, 0.28
+                        markers.markers.append(unc)
+
+        self.obs_marker_pub.publish(markers)
+
+        # Publish /obstacle_alert for bridge_server.py (Flutter & Web UI)
+        if nearest_alert is not None:
+            alert_text = f"{nearest_alert.class_name} detected at {nearest_alert_dist:.2f}m ({nearest_alert.speed:.2f} m/s)"
+        else:
+            alert_text = ""
+
+        if alert_text != self._last_obs_alert_text or (now - self._last_obs_alert_pub_time) > 1.0:
+            self._last_obs_alert_text = alert_text
+            self._last_obs_alert_pub_time = now
+            amsg = String()
+            amsg.data = alert_text
+            self.obs_alert_pub.publish(amsg)
+
+        # Publish structured summary for run_logger & diagnostics
+        summary = String()
+        summary.data = json.dumps({
+            "counts": counts,
+            "infer_ms": round(self._last_ml_infer_ms, 3),
+            "dynamic_count": len(self.dynamic_obstacles),
+            "clutter_count": len(self.clutter_obstacles),
+        })
+        self.ml_obs_pub.publish(summary)
 
     def densify_path(self, node_path, step_m=0.30):
         """Interpolate dense (x, y, theta) waypoints every step_m meters."""
@@ -1220,16 +1402,27 @@ class RouteRunner(Node):
         # Circular Safe Zone: obstacle radius + robot radius (0.11m) + clearance margin (0.10m)
         r_safe = r_obs + self.robot_radius + 0.10
 
-        # Check if obstacle is dynamic (moving) or static unmapped
+        # Check if obstacle is ML-classified dynamic (PERSON) or static clutter (CLUTTER)
         is_dynamic = False
         obs_vel = (0.0, 0.0)
         obs_speed = 0.0
+        obs_class = 'CLUTTER'
         for dob in self.dynamic_obstacles:
-            if math.hypot(dob['pos'][0] - ox, dob['pos'][1] - oy) < 0.70 and dob['speed'] >= 0.25:
+            if math.hypot(float(dob['pos'][0]) - ox, float(dob['pos'][1]) - oy) < 0.75:
                 is_dynamic = True
-                obs_vel = tuple(dob['vel'])
-                obs_speed = dob['speed']
+                obs_vel = (float(dob['vel'][0]), float(dob['vel'][1]))
+                obs_speed = float(dob['speed'])
+                obs_class = dob.get('class_name', 'PERSON')
+                r_obs = max(r_obs, float(dob.get('radius', r_obs)))
+                r_safe = r_obs + self.robot_radius + 0.10
                 break
+        if not is_dynamic:
+            for cob in self.clutter_obstacles:
+                if math.hypot(float(cob['pos'][0]) - ox, float(cob['pos'][1]) - oy) < 0.65:
+                    obs_class = cob.get('class_name', 'CLUTTER')
+                    r_obs = max(r_obs, float(cob.get('radius', r_obs)))
+                    r_safe = r_obs + self.robot_radius + 0.10
+                    break
 
         # Coordinate frame along the path at obstacle
         theta_path = block_pt[2]
@@ -2039,15 +2232,26 @@ class RouteRunner(Node):
         else:
             approach_scale = 1.0
 
-        # Dynamic obstacle proximity deceleration: if dynamic obstacle is ahead within 1.5m, scale v_mean down
+        # Predictive dynamic obstacle slowdown: only decelerate when predicted trajectory actually crosses near our path
         dyn_slowdown = 1.0
         for dob in self.dynamic_obstacles:
-            d_obs = math.hypot(dob['pos'][0] - self.current_x, dob['pos'][1] - self.current_y)
+            d_obs = math.hypot(float(dob['pos'][0]) - self.current_x, float(dob['pos'][1]) - self.current_y)
             if d_obs < 1.5:
-                angle_to_obs = math.atan2(dob['pos'][1] - self.current_y, dob['pos'][0] - self.current_x)
-                angle_diff = abs(math.atan2(math.sin(angle_to_obs - self.current_yaw), math.cos(angle_to_obs - self.current_yaw)))
-                if angle_diff < math.radians(60):
-                    dyn_slowdown = min(dyn_slowdown, max(0.20, d_obs / 1.5))
+                pred_traj = dob.get('pred_traj')
+                if pred_traj is not None and len(pred_traj) > 0:
+                    check_n = min(12, len(pred_traj))
+                    t_vec = np.arange(1, check_n + 1, dtype=np.float32) * self.dt
+                    nom_v = max(self.min_linear_speed, self.cruise_linear_speed * 0.7)
+                    ego_x = self.current_x + nom_v * math.cos(self.current_yaw) * t_vec
+                    ego_y = self.current_y + nom_v * math.sin(self.current_yaw) * t_vec
+                    min_cpa = float(np.min(np.hypot(pred_traj[:check_n, 0] - ego_x, pred_traj[:check_n, 1] - ego_y)))
+                    if min_cpa < 0.65:
+                        dyn_slowdown = min(dyn_slowdown, max(0.35, min_cpa / 0.65))
+                else:
+                    angle_to_obs = math.atan2(float(dob['pos'][1]) - self.current_y, float(dob['pos'][0]) - self.current_x)
+                    angle_diff = abs(math.atan2(math.sin(angle_to_obs - self.current_yaw), math.cos(angle_to_obs - self.current_yaw)))
+                    if angle_diff < math.radians(55):
+                        dyn_slowdown = min(dyn_slowdown, max(0.35, d_obs / 1.5))
 
         # Heading-Velocity Coupling with Hysteresis Pivot Alignment:
         # Align heading cleanly before accelerating so robot tracks path centerline & hits exact goal coordinates
@@ -2076,7 +2280,7 @@ class RouteRunner(Node):
         else:
             v_seq = np.random.normal(v_mean, self.noise_v, (self.num_samples, self.horizon))
 
-        # Swerve side commitment: guides MPPI sampling prior only for unexpected close dynamic obstacles
+        # Swerve side commitment: guides MPPI sampling prior using predicted CPA position
         if len(close_dyn) > 0 and is_evading:
             # If already deviating (> 45 deg) from target heading, cancel swerve bias to prioritize path realignment
             if abs_h_err > math.radians(45):
@@ -2084,23 +2288,47 @@ class RouteRunner(Node):
                 self._swerve_lock_ticks = 0
             elif self._swerve_lock_ticks <= 0:
                 nearest = min(close_dyn, key=lambda d: math.hypot(
-                    d['pos'][0] - self.current_x, d['pos'][1] - self.current_y))
+                    float(d['pos'][0]) - self.current_x, float(d['pos'][1]) - self.current_y))
                 dx_t = target_x - self.current_x
                 dy_t = target_y - self.current_y
-                dx_o = nearest['pos'][0] - self.current_x
-                dy_o = nearest['pos'][1] - self.current_y
-                cross = dx_t * dy_o - dy_t * dx_o  # >0 = obstacle on left -> swerve right
-                obs_dist = math.hypot(dx_o, dy_o)
-                proposed_bias_sign = -1.0 if cross > 0 else 1.0
-                side_str = "RIGHT (obs on LEFT)" if cross > 0 else "LEFT (obs on RIGHT)"
 
-                raw_bias = self.swerve_bias_strength * (self.evasion_range / max(0.20, obs_dist))
-                bias_mag = min(0.35, max(0.15, raw_bias))
+                # Evaluate predicted Closest Point of Approach (CPA) along GRU rollout so we pass BEHIND crossing pedestrians
+                obs_ref_x = float(nearest['pos'][0])
+                obs_ref_y = float(nearest['pos'][1])
+                pred_traj = nearest.get('pred_traj')
+                if pred_traj is not None and len(pred_traj) > 0:
+                    check_n = min(10, len(pred_traj))
+                    t_vec = (np.arange(1, check_n + 1, dtype=np.float32) * self.dt)
+                    ego_x = self.current_x + v_mean * math.cos(self.current_yaw) * t_vec
+                    ego_y = self.current_y + v_mean * math.sin(self.current_yaw) * t_vec
+                    cpa_dists = np.hypot(pred_traj[:check_n, 0] - ego_x, pred_traj[:check_n, 1] - ego_y)
+                    cpa_idx = int(np.argmin(cpa_dists))
+                    obs_ref_x = float(pred_traj[cpa_idx, 0])
+                    obs_ref_y = float(pred_traj[cpa_idx, 1])
+
+                dx_o = obs_ref_x - self.current_x
+                dy_o = obs_ref_y - self.current_y
+                cross = dx_t * dy_o - dy_t * dx_o  # >0 = predicted obstacle on left -> swerve right
+                obs_dist = math.hypot(float(nearest['pos'][0]) - self.current_x, float(nearest['pos'][1]) - self.current_y)
+                proposed_bias_sign = -1.0 if cross > 0 else 1.0
+
+                # Respect physical wall/furniture clearance so robot never swerves into a wall or parked trolley
+                left_clear, right_clear = self._compute_lateral_corridor_clearances(target_heading)
+                min_side_clear = self.robot_radius + 0.14
+                if proposed_bias_sign < 0 and right_clear < min_side_clear and left_clear > right_clear + 0.12:
+                    proposed_bias_sign = 1.0
+                elif proposed_bias_sign > 0 and left_clear < min_side_clear and right_clear > left_clear + 0.12:
+                    proposed_bias_sign = -1.0
+                side_str = "RIGHT" if proposed_bias_sign < 0 else "LEFT"
+
+                raw_bias = self.swerve_bias_strength * (self.evasion_range / max(0.25, obs_dist))
+                max_bias = 0.65 if self.use_sim_time else 0.35
+                bias_mag = min(max_bias, max(0.18, raw_bias))
                 self._swerve_bias = proposed_bias_sign * bias_mag
                 self._swerve_lock_ticks = self.swerve_lock_duration
                 self.get_logger().info(
-                    f"[BRAIN: SWERVE] Committed dynamic evasion swerve {side_str} for {self.swerve_lock_duration} ticks | "
-                    f"bias={self._swerve_bias:+.2f} rad/s (dist={obs_dist:.2f}m)"
+                    f"[BRAIN: SWERVE] Committed predictive evasion swerve {side_str} for {self.swerve_lock_duration} ticks | "
+                    f"bias={self._swerve_bias:+.2f} rad/s (dist={obs_dist:.2f}m, L={left_clear:.2f}m, R={right_clear:.2f}m)"
                 )
             else:
                 self._swerve_lock_ticks -= 1
@@ -2121,7 +2349,8 @@ class RouteRunner(Node):
                 w_guidance = math.copysign(min_pivot_w, heading_error)
 
         w_mean = float(np.clip(w_guidance + self._swerve_bias, -self.w_max, self.w_max))
-        w_seq = np.random.normal(w_mean, self.noise_w, (self.num_samples, self.horizon))
+        eff_noise_w = self.noise_w * (1.35 if is_evading else 1.0)
+        w_seq = np.random.normal(w_mean, eff_noise_w, (self.num_samples, self.horizon))
         v_seq = np.clip(v_seq, self.v_min, self.v_max)
         w_seq = np.clip(w_seq, -self.w_max, self.w_max)
 
@@ -2160,23 +2389,49 @@ class RouteRunner(Node):
             min_dists = np.min(dists, axis=-1)
             costs += self.w_cross_track * np.sum(min_dists, axis=-1)
 
-        # Collision & Repulsion from Dynamic Moving Obstacles (Predictive Rollout)
-        for dyn_obs in self.dynamic_obstacles:
-            obs_pos = dyn_obs['pos']
-            obs_vel = dyn_obs['vel']
-            for t in range(self.horizon):
-                # Predicted dynamic obstacle position at horizon step t
-                pred_obs_t = obs_pos + obs_vel * (t * self.dt)
-                pts_t = np.stack([x_rollout[:, t], y_rollout[:, t]], axis=-1)
-                dist_to_dyn = np.linalg.norm(pts_t - pred_obs_t, axis=-1)
+        # Collision & Uncertainty-Aware Repulsion from Dynamic Moving Obstacles (Kalman-NN 1-2s Rollout)
+        if len(self.dynamic_obstacles) > 0:
+            rollout_xy = np.stack([x_rollout, y_rollout], axis=-1)  # (K, T, 2)
+            t_vec = (np.arange(1, self.horizon + 1, dtype=np.float32) * self.dt)[:, None]
+            for dyn_obs in self.dynamic_obstacles:
+                obs_pos = np.asarray(dyn_obs['pos'], dtype=np.float32)
+                obs_vel = np.asarray(dyn_obs['vel'], dtype=np.float32)
+                r_obs = float(dyn_obs.get('radius', 0.28))
+                pred_traj = dyn_obs.get('pred_traj')
+                pred_std = dyn_obs.get('pred_std')
 
-                # Hard safety collision
-                col_mask = dist_to_dyn < self.collision_radius
-                costs[col_mask] += self.w_collision
+                if pred_traj is not None and len(pred_traj) >= self.horizon:
+                    traj_t = pred_traj[:self.horizon]
+                    std_t = pred_std[:self.horizon] if (pred_std is not None and len(pred_std) >= self.horizon) else np.full((self.horizon, 2), 0.10, dtype=np.float32)
+                else:
+                    traj_t = obs_pos[None, :] + obs_vel[None, :] * t_vec
+                    std_t = np.full((self.horizon, 2), 0.08, dtype=np.float32) + 0.12 * t_vec
 
-                # Smooth proactive repulsion
-                rep_mask = dist_to_dyn < self.dynamic_repulsive_dist
-                costs[rep_mask] += self.dynamic_w_repulsive * (self.dynamic_repulsive_dist - dist_to_dyn[rep_mask])
+                diff = rollout_xy - traj_t[None, :, :]  # (K, T, 2)
+                dists = np.linalg.norm(diff, axis=-1)   # (K, T)
+
+                # Effective collision clearance accounts for robot radius + physical obstacle radius + bounded uncertainty pad
+                sigma_mag = np.hypot(std_t[:, 0], std_t[:, 1])
+                sigma_pad = np.minimum(0.16, 0.40 * sigma_mag)
+                eff_coll_r = (self.robot_radius + 0.04 + r_obs + sigma_pad)[None, :]
+                col_any = np.any(dists < eff_coll_r, axis=1)
+                costs[col_any] += self.w_collision
+
+                # Smooth uncertainty-expanded social repulsion + anisotropic Gaussian risk
+                eff_bubble = np.maximum(
+                    self.dynamic_repulsive_dist,
+                    eff_coll_r + self.person_social_margin + 0.20 + np.mean(std_t, axis=-1)[None, :],
+                )
+                rep_mask = dists < eff_bubble
+                if np.any(rep_mask):
+                    pen = np.where(rep_mask, eff_bubble - dists, 0.0)
+                    costs += self.dynamic_w_repulsive * np.sum(pen + 0.75 * pen * pen, axis=1)
+
+                # Mild probabilistic Mahalanobis risk over predicted covariance envelope
+                sx2 = (std_t[:, 0] + r_obs + self.robot_radius) ** 2 + 1e-4
+                sy2 = (std_t[:, 1] + r_obs + self.robot_radius) ** 2 + 1e-4
+                maha2 = (diff[:, :, 0] ** 2) / sx2[None, :] + (diff[:, :, 1] ** 2) / sy2[None, :]
+                costs += 18.0 * np.sum(np.exp(-0.5 * np.minimum(maha2, 20.0)), axis=1)
 
         # Collision & Repulsion from Static Obstacles (Walls, Shelves)
         if len(self.obstacles) > 0:
@@ -2185,11 +2440,25 @@ class RouteRunner(Node):
             near_mask = obs_dists_sq < 12.25  # 3.5^2
             near_obs = self.obstacles[near_mask]
 
+            # Exclude points belonging to active moving PERSON obstacles at t >= 2 so they aren't frozen as walls
+            static_only_obs = near_obs
+            if len(near_obs) > 0 and len(self.dynamic_obstacles) > 0:
+                keep_static = np.ones(len(near_obs), dtype=bool)
+                for dob in self.dynamic_obstacles:
+                    dp = np.asarray(dob['pos'], dtype=np.float32)
+                    dr = float(dob.get('radius', 0.30)) + 0.14
+                    keep_static &= (np.linalg.norm(near_obs - dp[None, :], axis=-1) > dr)
+                static_only_obs = near_obs[keep_static]
+
             if len(near_obs) > 0:
-                obs = near_obs[np.newaxis, :, :]
+                obs_imm = near_obs[np.newaxis, :, :]
+                obs_fut = static_only_obs[np.newaxis, :, :] if len(static_only_obs) > 0 else None
                 for t in range(self.horizon):
+                    obs_t = obs_imm if t < 2 else obs_fut
+                    if obs_t is None:
+                        continue
                     pts = np.stack([x_rollout[:, t], y_rollout[:, t]], axis=-1)[:, np.newaxis, :]
-                    min_dists = np.min(np.linalg.norm(pts - obs, axis=-1), axis=1)
+                    min_dists = np.min(np.linalg.norm(pts - obs_t, axis=-1), axis=1)
 
                     # Hard collision
                     col_mask = min_dists < self.collision_radius

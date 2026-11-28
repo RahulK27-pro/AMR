@@ -388,6 +388,21 @@ Visualization Manager:
         Reliability Policy: System Default
         Value: /agv_graph_markers
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MLObstacleMarkers
+      Namespaces:
+        ml_labels: true
+        ml_obstacles: true
+        ml_predictions: true
+        ml_uncertainty: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: System Default
+        Value: /agv_obstacle_markers
+      Value: true
     - Alpha: 1
       Axes Length: 0.800000011920929
       Axes Radius: 0.07999999821186066

@@ -33,3 +33,7 @@ warehouse_graph.json
 
 # Navigation run logs (auto-generated CSVs, .log files, symlinks)
 run_logs/
+
+# Offline ML training virtual environment & raw datasets
+.venv_ml/
+ml_datasets/

@@ -22,6 +22,7 @@ import sys
 import time
 import math
 import csv
+import json
 from datetime import datetime
 
 import rclpy
@@ -66,7 +67,8 @@ class AMRRunLogger(Node):
             'ekf_x', 'ekf_y', 'ekf_vx', 'ekf_wz',
             'cmd_v', 'cmd_w',
             'path_len', 'current_target_idx', 'dist_to_goal',
-            'min_scan_dist_m', 'num_valid_beams'
+            'min_scan_dist_m', 'num_valid_beams',
+            'ml_person_count', 'ml_clutter_count', 'ml_wall_count', 'ml_infer_ms'
         ])
 
         # Text logger
@@ -110,8 +112,14 @@ class AMRRunLogger(Node):
         self.min_scan_dist = 99.0
         self.valid_beams = 0
 
+        self.ml_person_count = 0
+        self.ml_clutter_count = 0
+        self.ml_wall_count = 0
+        self.ml_infer_ms = 0.0
+
         # Subscriptions
         self.create_subscription(String, '/agv_state', self.state_cb, 10)
+        self.create_subscription(String, '/agv_obstacles_ml', self.ml_obs_cb, 10)
         self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.amcl_cb, 10)
         self.create_subscription(Odometry, '/odometry/filtered', self.ekf_cb, 10)
         self.create_subscription(Twist, '/cmd_vel', self.cmd_vel_cb, 10)
@@ -190,6 +198,17 @@ class AMRRunLogger(Node):
         self.valid_beams = len(ranges)
         self.min_scan_dist = min(ranges) if len(ranges) > 0 else 99.0
 
+    def ml_obs_cb(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+            counts = data.get('counts', {})
+            self.ml_person_count = int(counts.get('PERSON', 0))
+            self.ml_clutter_count = int(counts.get('CLUTTER', 0))
+            self.ml_wall_count = int(counts.get('WALL', 0))
+            self.ml_infer_ms = float(data.get('infer_ms', 0.0))
+        except Exception:
+            pass
+
     def timer_tick(self):
         # 1. Update Map Frame Pose from TF
         try:
@@ -234,7 +253,8 @@ class AMRRunLogger(Node):
             f"{self.ekf_x:.3f}", f"{self.ekf_y:.3f}", f"{self.ekf_vx:.3f}", f"{self.ekf_wz:.3f}",
             f"{self.cmd_v:.3f}", f"{self.cmd_w:.3f}",
             len(self.path_points), self.current_target_idx, f"{self.dist_to_goal:.3f}",
-            f"{self.min_scan_dist:.3f}", self.valid_beams
+            f"{self.min_scan_dist:.3f}", self.valid_beams,
+            self.ml_person_count, self.ml_clutter_count, self.ml_wall_count, f"{self.ml_infer_ms:.3f}"
         ])
 
     def destroy_node(self):

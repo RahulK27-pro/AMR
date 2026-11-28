@@ -1,0 +1,216 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <model name="human_pedestrian">
+    <pose>0 0 0.01 0 0 0</pose>
+
+    <link name="base_link">
+      <inertial>
+        <mass>12.0</mass>
+        <inertia>
+          <ixx>0.8</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.8</iyy><iyz>0</iyz>
+          <izz>0.4</izz>
+        </inertia>
+      </inertial>
+
+      <!-- Left leg (intersected by 2D LiDAR at z ~ 0.15m) -->
+      <collision name="left_leg_collision">
+        <pose>0.07 0.115 0.42 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.070</radius>
+            <length>0.70</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name="left_leg_visual">
+        <pose>0.07 0.115 0.42 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.070</radius>
+            <length>0.70</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.15 0.25 0.55 1</ambient>
+          <diffuse>0.18 0.30 0.65 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- Right leg (staggered stride offset for realistic dual-cluster LiDAR signature) -->
+      <collision name="right_leg_collision">
+        <pose>-0.07 -0.115 0.42 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.070</radius>
+            <length>0.70</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name="right_leg_visual">
+        <pose>-0.07 -0.115 0.42 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.070</radius>
+            <length>0.70</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.15 0.25 0.55 1</ambient>
+          <diffuse>0.18 0.30 0.65 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- Torso & high-visibility vest above 2D LiDAR scan plane -->
+      <collision name="torso_collision">
+        <pose>0 0 1.08 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.20</radius>
+            <length>0.62</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name="torso_visual">
+        <pose>0 0 1.08 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.20</radius>
+            <length>0.62</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.95 0.65 0.05 1</ambient>
+          <diffuse>0.95 0.70 0.10 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- Head -->
+      <visual name="head_visual">
+        <pose>0 0 1.52 0 0 0</pose>
+        <geometry>
+          <sphere>
+            <radius>0.11</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0.85 0.70 0.58 1</ambient>
+          <diffuse>0.90 0.75 0.62 1</diffuse>
+        </material>
+      </visual>
+    </link>
+
+    <!-- Drive wheels for DiffDrive control -->
+    <link name="left_wheel">
+      <pose>0 0.15 0.05 -1.5708 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.002</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.002</iyy><iyz>0</iyz>
+          <izz>0.002</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.03</length>
+          </cylinder>
+        </geometry>
+        <surface><friction><ode><mu>10.0</mu><mu2>10.0</mu2></ode></friction></surface>
+      </collision>
+    </link>
+
+    <link name="right_wheel">
+      <pose>0 -0.15 0.05 -1.5708 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.002</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.002</iyy><iyz>0</iyz>
+          <izz>0.002</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.03</length>
+          </cylinder>
+        </geometry>
+        <surface><friction><ode><mu>10.0</mu><mu2>10.0</mu2></ode></friction></surface>
+      </collision>
+    </link>
+
+    <link name="front_caster">
+      <pose>0.12 0 0.015 0 0 0</pose>
+      <inertial>
+        <mass>0.5</mass>
+        <inertia>
+          <ixx>0.0002</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0002</iyy><iyz>0</iyz>
+          <izz>0.0002</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry>
+          <sphere><radius>0.015</radius></sphere>
+        </geometry>
+        <surface><friction><ode><mu>0.001</mu><mu2>0.001</mu2></ode></friction></surface>
+      </collision>
+    </link>
+
+    <link name="rear_caster">
+      <pose>-0.12 0 0.015 0 0 0</pose>
+      <inertial>
+        <mass>0.5</mass>
+        <inertia>
+          <ixx>0.0002</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.0002</iyy><iyz>0</iyz>
+          <izz>0.0002</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry>
+          <sphere><radius>0.015</radius></sphere>
+        </geometry>
+        <surface><friction><ode><mu>0.001</mu><mu2>0.001</mu2></ode></friction></surface>
+      </collision>
+    </link>
+
+    <joint name="left_wheel_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>left_wheel</child>
+      <axis><xyz>0 0 1</xyz></axis>
+    </joint>
+    <joint name="right_wheel_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>right_wheel</child>
+      <axis><xyz>0 0 1</xyz></axis>
+    </joint>
+    <joint name="front_caster_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>front_caster</child>
+    </joint>
+    <joint name="rear_caster_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>rear_caster</child>
+    </joint>
+
+    <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>0.30</wheel_separation>
+      <wheel_radius>0.05</wheel_radius>
+      <max_linear_acceleration>4.0</max_linear_acceleration>
+      <max_angular_acceleration>5.0</max_angular_acceleration>
+      <topic>/dynamic_obstacle/cmd_vel</topic>
+      <odom_topic>/dynamic_obstacle/odom</odom_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>human_pedestrian/base_link</child_frame_id>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>false</publish_odom_tf>
+    </plugin>
+  </model>
+</sdf>

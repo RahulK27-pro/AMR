@@ -17,30 +17,57 @@ Usage examples:
 """
 
 import os
+import subprocess
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, TimerAction
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction, TimerAction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 
-def generate_launch_description():
+def _detect_gz_world(default_world: str = 'hospital') -> str:
+    """Detect the currently running Gazebo world name via gz service."""
+    try:
+        res = subprocess.run(
+            [
+                'gz', 'service', '-s', '/gazebo/worlds',
+                '--reqtype', 'gz.msgs.Empty',
+                '--reptype', 'gz.msgs.StringMsg_V',
+                '--timeout', '1200', '--req', ''
+            ],
+            capture_output=True, text=True, timeout=2.0
+        )
+        if res.returncode == 0 and 'data:' in res.stdout:
+            for line in res.stdout.splitlines():
+                if 'data:' in line:
+                    w = line.split('data:')[-1].strip().strip('"').strip("'")
+                    if w:
+                        return w
+    except Exception:
+        pass
+    return default_world
+
+
+def _spawn_setup(context, *args, **kwargs):
     pkg_agv = get_package_share_directory('agv_description')
-    obstacle_sdf = os.path.join(pkg_agv, 'models', 'dynamic_obstacle', 'model.sdf')
+    model_type = LaunchConfiguration('model_type').perform(context).strip().lower()
+    z_val = LaunchConfiguration('z').perform(context).strip()
+    world_val = LaunchConfiguration('world').perform(context).strip()
+    if not world_val or world_val == 'auto':
+        world_val = _detect_gz_world('hospital')
 
-    # Arguments
-    x_arg = DeclareLaunchArgument('x', default_value='1.8', description='Initial X position')
-    y_arg = DeclareLaunchArgument('y', default_value='0.0', description='Initial Y position')
-    z_arg = DeclareLaunchArgument('z', default_value='0.5', description='Initial Z position')
-    yaw_arg = DeclareLaunchArgument('yaw', default_value='1.57', description='Initial Yaw angle')
-    name_arg = DeclareLaunchArgument('name', default_value='dynamic_obstacle_1', description='Model name in Gazebo')
-    pattern_arg = DeclareLaunchArgument('pattern', default_value='aisle_crossing', description='Patrol pattern')
-    speed_arg = DeclareLaunchArgument('speed', default_value='0.35', description='Speed in m/s')
-    run_controller_arg = DeclareLaunchArgument('run_controller', default_value='true', description='Run automated controller')
-    world_arg = DeclareLaunchArgument('world', default_value='test1', description='Gazebo world name')
+    if model_type in ('pedestrian', 'human', 'person'):
+        obstacle_sdf = os.path.join(pkg_agv, 'models', 'human_pedestrian', 'model.sdf')
+        if z_val == 'auto':
+            z_val = '0.01'
+    else:
+        obstacle_sdf = os.path.join(pkg_agv, 'models', 'dynamic_obstacle', 'model.sdf')
+        if z_val == 'auto':
+            z_val = '0.5'
 
-    # Spawn obstacle into Gazebo Harmonic
+    print(f"[OBSTACLE] Spawning '{model_type}' into Gazebo world '{world_val}' at z={z_val}")
+
     spawn_obstacle = Node(
         package='ros_gz_sim',
         executable='create',
@@ -48,14 +75,29 @@ def generate_launch_description():
         arguments=[
             '-name', LaunchConfiguration('name'),
             '-file', obstacle_sdf,
-            '-world', LaunchConfiguration('world'),
+            '-world', world_val,
             '-x', LaunchConfiguration('x'),
             '-y', LaunchConfiguration('y'),
-            '-z', LaunchConfiguration('z'),
+            '-z', z_val,
             '-Y', LaunchConfiguration('yaw')
         ],
         output='screen'
     )
+    return [spawn_obstacle]
+
+
+def generate_launch_description():
+    # Arguments
+    x_arg = DeclareLaunchArgument('x', default_value='1.8', description='Initial X position')
+    y_arg = DeclareLaunchArgument('y', default_value='0.0', description='Initial Y position')
+    z_arg = DeclareLaunchArgument('z', default_value='auto', description='Initial Z position (or auto)')
+    yaw_arg = DeclareLaunchArgument('yaw', default_value='1.57', description='Initial Yaw angle')
+    name_arg = DeclareLaunchArgument('name', default_value='dynamic_obstacle_1', description='Model name in Gazebo')
+    model_type_arg = DeclareLaunchArgument('model_type', default_value='cart', description='Obstacle model: cart or pedestrian')
+    pattern_arg = DeclareLaunchArgument('pattern', default_value='aisle_crossing', description='Patrol pattern')
+    speed_arg = DeclareLaunchArgument('speed', default_value='0.35', description='Speed in m/s')
+    run_controller_arg = DeclareLaunchArgument('run_controller', default_value='true', description='Run automated controller')
+    world_arg = DeclareLaunchArgument('world', default_value='auto', description='Gazebo world name (or auto)')
 
     # Automated patrol controller (starts 2 seconds after spawn)
     patrol_controller = TimerAction(
@@ -66,6 +108,7 @@ def generate_launch_description():
                 executable='dynamic_obstacle_manager',
                 name='dynamic_obstacle_manager',
                 parameters=[{
+                    'use_sim_time': True,
                     'pattern': LaunchConfiguration('pattern'),
                     'speed': LaunchConfiguration('speed'),
                 }],
@@ -82,10 +125,11 @@ def generate_launch_description():
         z_arg,
         yaw_arg,
         name_arg,
+        model_type_arg,
         pattern_arg,
         speed_arg,
         run_controller_arg,
         LogInfo(msg='[OBSTACLE] Spawning dynamic obstacle into Gazebo Harmonic...'),
-        spawn_obstacle,
+        OpaqueFunction(function=_spawn_setup),
         patrol_controller,
     ])
