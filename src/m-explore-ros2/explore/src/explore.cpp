@@ -289,13 +289,23 @@ void Explore::makePlan()
   }
 
   if (frontiers.empty()) {
-    RCLCPP_WARN(logger_, "No frontiers found, stopping.");
+    constexpr int kMaxEmptyFrontiersStreak = 5;
+    ++empty_frontiers_streak_;
+    if (empty_frontiers_streak_ < kMaxEmptyFrontiersStreak) {
+      RCLCPP_INFO(logger_,
+                  "Temporarily found no frontiers (%d/%d) — waiting for map update before stopping.",
+                  empty_frontiers_streak_, kMaxEmptyFrontiersStreak);
+      return;
+    }
+    RCLCPP_WARN(logger_, "No frontiers found for %d consecutive cycles, stopping.",
+                empty_frontiers_streak_);
     auto status_msg = explore_lite_msgs::msg::ExploreStatus();
     status_msg.status = explore_lite_msgs::msg::ExploreStatus::EXPLORATION_COMPLETE;
     status_pub_->publish(status_msg);
     stop(true);
     return;
   }
+  empty_frontiers_streak_ = 0;
 
   // publish frontiers as visualization markers
   if (visualize_) {
@@ -538,6 +548,7 @@ void Explore::stop(bool finished_exploring)
 void Explore::resume()
 {
   resuming_ = true;
+  empty_frontiers_streak_ = 0;
   RCLCPP_INFO(logger_, "Exploration resuming.");
   auto status_msg = explore_lite_msgs::msg::ExploreStatus();
   status_msg.status = explore_lite_msgs::msg::ExploreStatus::EXPLORATION_IN_PROGRESS;

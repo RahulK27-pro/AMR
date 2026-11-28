@@ -196,13 +196,13 @@ Frontier FrontierSearch::buildNewFrontier(unsigned int initial_cell,
       output.safe_target.x = wx;
       output.safe_target.y = wy;
 
-      // Inset only if robot is comfortably far away (d > 0.80m)
-      // to avoid shrinking the goal inside the robot's goal tolerance footprint
+      // Inset away from the frontier boundary so safe_target is not pinned against an obstacle wall,
+      // while keeping the target outside min_target_distance_ (0.35m) to prevent premature retirement.
       double dx = reference_x - wx;
       double dy = reference_y - wy;
       double d = std::sqrt(dx * dx + dy * dy);
-      if (d > 0.80) {
-        double step = 0.20;
+      if (d > 0.45) {
+        double step = std::min(0.25, d - 0.38);
         double cand_x = wx + (dx / d) * step;
         double cand_y = wy + (dy / d) * step;
         unsigned int cand_mx, cand_my;

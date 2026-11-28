@@ -146,6 +146,7 @@ private:
   std::string robot_base_frame_;
   bool resuming_ = false;
   bool goal_active_{false};
+  int empty_frontiers_streak_{0};
   rclcpp_action::GoalUUID active_goal_id_;
   rclcpp::Time goal_dispatched_time_;
 };
