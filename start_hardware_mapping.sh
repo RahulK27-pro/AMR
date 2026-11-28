@@ -86,11 +86,21 @@ export CYCLONEDDS_URI="file://$CFG_FILE"
 # Clean up temporary DDS config on exit
 trap "rm -f $CFG_FILE 2>/dev/null || true" EXIT
 
-# 4. CRITICAL: Kill any lingering static transform publishers (map -> odom)
-# In pure hardware bringup, a static publisher is used; in SLAM, SLAM Toolbox MUST own map -> odom!
-if pgrep -f "static_transform_publisher.*map.*odom" >/dev/null 2>&1; then
-    echo "[WARN] Found existing static 'map -> odom' transform publisher. Terminating it to avoid TF collisions with SLAM Toolbox..."
-    pkill -f "static_transform_publisher.*map.*odom" || true
+# 3b. Best-effort clock sync & remote Pi SLAM collision check
+echo "[INFO] Synchronizing system clock with Raspberry Pi ($PI_IP)..."
+if ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no "amr@$PI_IP" "sudo -n date -s '@$(date +%s.%N)'" 2>/dev/null; then
+    echo "  ✅ Clock synchronized successfully with Raspberry Pi!"
+else
+    echo "  ⚠️  Could not auto-sync clock over SSH without password."
+fi
+ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no "amr@$PI_IP" \
+    "pkill -INT -f '[s]lam_toolbox|[a]sync_slam_toolbox_node|[s]tatic_transform_publisher.*map.*odom' 2>/dev/null || true" 2>/dev/null || true
+
+# 4. CRITICAL: Kill any lingering local localization / static transform publishers (map -> odom)
+# In SLAM, SLAM Toolbox MUST exclusively own map -> odom!
+if pgrep -f "static_transform_publisher.*map.*odom|nav2_amcl|amcl" >/dev/null 2>&1; then
+    echo "[WARN] Found lingering local AMCL / static 'map -> odom' publisher. Terminating to avoid TF collisions with SLAM Toolbox..."
+    pkill -f "static_transform_publisher.*map.*odom|nav2_amcl|amcl" || true
     sleep 0.5
 fi
 

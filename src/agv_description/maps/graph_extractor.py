@@ -48,7 +48,8 @@ def extract_graph(
     step_medium: float = 0.55,
     step_open: float = 0.85,
     output_json: str = None,
-    output_vis: str = None
+    output_vis: str = None,
+    sync_default: bool = False,
 ) -> dict:
     """Extracts a topological navigation roadmap (nodes & edges) from an occupancy grid map."""
     print(f"Loading map from {map_yaml_path}...")
@@ -315,13 +316,14 @@ def extract_graph(
         json.dump(json_graph, f, indent=4)
     print(f"Graph exported to {json_path}")
 
-    # Also update default warehouse_graph.json so ROS 2 route runner uses the active graph
-    default_graph_path = os.path.join(dir_name, "warehouse_graph.json")
-    try:
-        with open(default_graph_path, 'w', encoding='utf-8') as f:
-            json.dump(json_graph, f, indent=4)
-    except Exception as e:
-        print(f"Note: Could not update default warehouse_graph.json: {e}")
+    # Only overwrite warehouse_graph.json when explicitly requested (prevents cross-map pollution)
+    if sync_default:
+        default_graph_path = os.path.join(dir_name, "warehouse_graph.json")
+        try:
+            with open(default_graph_path, 'w', encoding='utf-8') as f:
+                json.dump(json_graph, f, indent=4)
+        except Exception as e:
+            print(f"Note: Could not update default warehouse_graph.json: {e}")
 
     # Visualization
     vis_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -379,6 +381,10 @@ if __name__ == "__main__":
     parser.add_argument("--robot-radius", type=float, default=0.11, help="Robot footprint radius in meters")
     parser.add_argument("--safety-margin", type=float, default=0.09, help="Safety margin in meters")
     parser.add_argument("--search-radius", type=float, default=2.5, help="Line of sight connection radius in meters")
+    parser.add_argument("--step-corridor", type=float, default=0.40, help="Corridor grid step in meters")
+    parser.add_argument("--step-medium", type=float, default=0.55, help="Medium space grid step in meters")
+    parser.add_argument("--step-open", type=float, default=0.85, help="Open space grid step in meters")
+    parser.add_argument("--sync-default", action="store_true", help="Also copy to warehouse_graph.json in map dir")
     parser.add_argument("--output", type=str, default=None, help="Output JSON path")
     args = parser.parse_args()
 
@@ -387,5 +393,9 @@ if __name__ == "__main__":
         robot_radius=args.robot_radius,
         safety_margin=args.safety_margin,
         global_search_radius=args.search_radius,
-        output_json=args.output
+        step_corridor=args.step_corridor,
+        step_medium=args.step_medium,
+        step_open=args.step_open,
+        output_json=args.output,
+        sync_default=args.sync_default,
     )

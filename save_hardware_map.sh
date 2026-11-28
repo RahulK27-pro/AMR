@@ -76,14 +76,20 @@ from PIL import Image
 # 1. Generate standard PNG
 Image.open('${FULL_PATH}.pgm').save('${FULL_PATH}.png')
 
-# 2. Filter isolated single-cell noise specks (< 4 cells = < 10cm x 10cm)
+# 2. Filter isolated single-cell noise specks (< 4 cells = < 10cm x 10cm) without turning unknown space into false free pockets
 img = cv2.imread('${FULL_PATH}.pgm', cv2.IMREAD_UNCHANGED)
 if img is not None:
     occ = (img == 0).astype(np.uint8)
+    free_mask = (img >= 250).astype(np.uint8)
+    free_dilated = cv2.dilate(free_mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
     n, labels, stats, _ = cv2.connectedComponentsWithStats(occ, connectivity=8)
     for i in range(1, n):
         if stats[i, cv2.CC_STAT_AREA] < 4:
-            img[labels == i] = 254
+            comp_mask = (labels == i)
+            if np.any(free_dilated[comp_mask] > 0):
+                img[comp_mask] = 254
+            else:
+                img[comp_mask] = 205
     cv2.imwrite('${FULL_PATH}.pgm', img)
     cv2.imwrite('${FULL_PATH}.png', img)
 " 2>/dev/null || true
