@@ -307,16 +307,26 @@ export default function StatusBar({
             <button
               id="btn-nav-map-new-place"
               className="btn btn--map-entry"
-              disabled={mode === 'hardware'}
-              onClick={() => mode !== 'hardware' && onViewChange('mapping')}
+              disabled={
+                isSwitchingMode
+                || telemetry?.system_status?.state === 'RUNNING'
+                || Boolean(telemetry?.system_status?.external_running)
+              }
+              onClick={() => onViewChange('mapping')}
               title={
-                mode === 'hardware'
-                  ? 'Mapping UI is simulation-only for Phase 1 (use hardware mapping script on Pi)'
+                telemetry?.system_status?.state === 'RUNNING' || telemetry?.system_status?.external_running
+                  ? 'Stop active Navigation stack before opening SLAM Mapping'
+                  : mode === 'hardware'
+                  ? 'Open Physical Hardware SLAM Mapping Workflow'
                   : 'Open Dedicated Mapping Workflow'
               }
-              style={mode === 'hardware' ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              style={
+                (isSwitchingMode || telemetry?.system_status?.state === 'RUNNING' || telemetry?.system_status?.external_running)
+                  ? { opacity: 0.5, cursor: 'not-allowed' }
+                  : undefined
+              }
             >
-              {mode === 'hardware' ? '🗺️ Map (Sim Only)' : '🗺️ Map New Place'}
+              {mode === 'hardware' ? '🗺️ Map Room (HW)' : '🗺️ Map New Place'}
             </button>
           )}
         </div>

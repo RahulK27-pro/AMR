@@ -318,21 +318,36 @@ class AmrBridgeService {
     }
   }
   async getActiveMap()               { return this._get('/api/map/active'); }
-  async setActiveMap(mapName)        { return this._post('/api/map/active', { map_name: mapName }); }
+  async setActiveMap(mapName)        { return this._postJson('/api/map/active', { map_name: mapName }); }
 
-  // ---- Mapping Pipeline (Phase 1) ----
+  // ---- Mapping Pipeline (Phase 1 & 2A Hardware Coexistence) ----
   async getMappingStatus() { return this._get('/api/mapping/status'); }
-  async startMapping(mapName = 'hospital_map', world = 'hospital.world', runExplore = false, headless = true, useRviz = false) {
-    this.emitEvent('info', `Started mapping pipeline: "${mapName}" (world: ${world}, explore: ${runExplore ? 'autonomous' : 'manual'}, gui: ${useRviz ? 'enabled' : 'headless'})`);
-    return this._post('/api/mapping/start', { map_name: mapName, world, run_explore: runExplore, headless, use_rviz: useRviz });
+  async startMapping(mapName = 'hospital_map', world = 'hospital.world', runExplore = false, headless = true, useRviz = false, options = {}) {
+    const payload = {
+      map_name: mapName,
+      world: world || null,
+      run_explore: Boolean(runExplore),
+      headless: Boolean(headless),
+      use_rviz: Boolean(useRviz),
+      auto_start_pi: Boolean(options?.autoStartPi),
+      stop_pi_on_stop: Boolean(options?.stopPiOnStop),
+    };
+    this.emitEvent('info', `Starting mapping pipeline: "${mapName}" (${world ? `world: ${world}, ` : 'hardware, '}explore: ${runExplore ? 'autonomous' : 'manual'})`);
+    const res = await this._postJson('/api/mapping/start', payload);
+    if (!res.ok) {
+      this.emitEvent('critical', res.error || 'Failed to start mapping session');
+    }
+    return res;
   }
-  async stopMapping() {
+  async stopMapping(options = {}) {
     this.emitEvent('warn', 'Stopped mapping session');
-    return this._post('/api/mapping/stop');
+    const body = options?.stopPi !== undefined ? { stop_pi: Boolean(options.stopPi) } : {};
+    return this._postJson('/api/mapping/stop', body);
   }
-  async redoMapping() {
+  async redoMapping(options = {}) {
     this.emitEvent('info', 'Reset mapping session (Redo)');
-    return this._post('/api/mapping/redo');
+    const body = options?.stopPi !== undefined ? { stop_pi: Boolean(options.stopPi) } : {};
+    return this._postJson('/api/mapping/redo', body);
   }
   async launchGui(app = 'rviz', mode = null) {
     this.emitEvent('info', `Launching ${app.toUpperCase()} GUI visualizer...`);
@@ -353,16 +368,24 @@ class AmrBridgeService {
     }
   }
   async startAutoExplore() {
-    this.emitEvent('info', 'Started autonomous frontier exploration');
-    return this._post('/api/mapping/explore/start');
+    this.emitEvent('info', 'Starting autonomous frontier exploration');
+    const res = await this._postJson('/api/mapping/explore/start', {});
+    if (!res.ok) {
+      this.emitEvent('warn', res.error || 'Auto-explore rejected');
+    }
+    return res;
   }
   async pauseAutoExplore() {
     this.emitEvent('warn', 'Paused autonomous exploration');
-    return this._post('/api/mapping/explore/pause');
+    return this._postJson('/api/mapping/explore/pause', {});
   }
   async resumeAutoExplore() {
     this.emitEvent('info', 'Resumed autonomous exploration');
-    return this._post('/api/mapping/explore/resume');
+    const res = await this._postJson('/api/mapping/explore/resume', {});
+    if (!res.ok) {
+      this.emitEvent('warn', res.error || 'Could not resume auto-explore');
+    }
+    return res;
   }
   async getLiveMap(clean = false) { 
     return this._get(`/api/mapping/live_map?clean=${clean ? 'true' : 'false'}`); 
@@ -383,7 +406,8 @@ class AmrBridgeService {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.ok) {
-        this.emitEvent('success', `Map "${mapName}" successfully verified & saved to disk!`);
+        const piMsg = data.report?.pi_synced ? ' & synced to Pi' : '';
+        this.emitEvent('success', `Map "${data.report?.map_name || mapName}" verified & saved${piMsg}!`);
         return { ok: true, report: data.report };
       }
       const errMsg = data?.error || 'Failed to save map';

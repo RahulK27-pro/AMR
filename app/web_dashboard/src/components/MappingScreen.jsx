@@ -12,22 +12,88 @@ import bridge from '../services/amrBridge';
  *   4. Graph Verification (Roadmap Quality & Route Audit)
  *   5. Place Naming & Final Save (Semantic Stations & System Activation)
  */
-export default function MappingScreen({ telemetry, onReturnToDashboard, onMapChange }) {
+const HW_MAPPING_FALLBACK_LIMITS = {
+  min_linear: 0.04,
+  max_linear: 0.20,
+  max_reverse_linear: 0.12,
+  default_linear: 0.13,
+  linear_step: 0.02,
+  min_angular: 0.20,
+  max_angular: 0.50,
+  default_angular: 0.35,
+  angular_step: 0.05,
+  presets: [
+    { label: 'Slow', linear: 0.08, angular: 0.25 },
+    { label: 'Normal', linear: 0.13, angular: 0.35 },
+    { label: 'Fast', linear: 0.18, angular: 0.50 },
+  ],
+};
+
+const SIM_MAPPING_FALLBACK_LIMITS = {
+  min_linear: 0.10,
+  max_linear: 0.80,
+  max_reverse_linear: 0.56,
+  default_linear: 0.40,
+  linear_step: 0.05,
+  min_angular: 0.20,
+  max_angular: 1.80,
+  default_angular: 1.00,
+  angular_step: 0.15,
+};
+
+export default function MappingScreen({
+  telemetry,
+  onReturnToDashboard,
+  onMapChange,
+  activeMap,
+  theme = 'dark',
+  mode = 'sim',
+  piIp = '10.244.248.208',
+}) {
   // Mapping state from telemetry or local fallback
   const mappingData = telemetry?.mapping ?? {};
+  const hwLink = telemetry?.hardware_link;
+  const piSsh = hwLink?.pi_ssh;
   const pose = telemetry?.pose ?? { x: 0, y: 0, yaw: 0 };
   const vel = telemetry?.velocity ?? { linear: 0, angular: 0 };
   const velocity = vel;
   const navState = telemetry?.nav_state ?? 'IDLE';
   const minObs = telemetry?.min_obstacle_dist;
+  const isEstopActive = Boolean(telemetry?.estop_active) || navState === 'ESTOP';
+  const isWheelSlip = navState === 'WHEEL_SLIP';
+  const externalMappingActive = Boolean(mappingData?.external_running);
+  const navStackActive = telemetry?.system_status?.state === 'RUNNING' || Boolean(telemetry?.system_status?.external_running);
 
-  const [mapName, setMapName] = useState(mappingData.map_name || 'hospital_map');
+  const activeLimits = useMemo(() => {
+    if (mode === 'hardware') {
+      return telemetry?.mapping_limits || HW_MAPPING_FALLBACK_LIMITS;
+    }
+    return telemetry?.mapping_limits || telemetry?.limits || SIM_MAPPING_FALLBACK_LIMITS;
+  }, [mode, telemetry?.mapping_limits, telemetry?.limits]);
+
+  const [mapName, setMapName] = useState(
+    mappingData.map_name || (mode === 'hardware' ? 'hardware_map' : 'hospital_map')
+  );
   const isMapNameDirtyRef = useRef(false);
   const [world, setWorld] = useState('hospital.world');
-  const [runExplore, setRunExplore] = useState(Boolean(mappingData.run_explore));
-  const [status, setStatus] = useState(mappingData.state || 'READY'); // 'READY' | 'MAPPING' | 'STOPPED' | 'SAVED'
+  const [runExplore, setRunExplore] = useState(
+    mode === 'hardware' ? false : Boolean(mappingData.run_explore)
+  );
+  const [status, setStatus] = useState(mappingData.state || 'READY'); // 'READY' | 'MAPPING' | 'STOPPED' | 'SAVED' | 'ERROR'
   const [elapsedSec, setElapsedSec] = useState(mappingData.elapsed_sec || 0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isPiLoading, setIsPiLoading] = useState(false);
+  const [piLogOpen, setPiLogOpen] = useState(false);
+  const [piLogsText, setPiLogsText] = useState('');
+  const [autoStartPi, setAutoStartPi] = useState(() => {
+    const saved = localStorage.getItem('amr_auto_start_pi');
+    return saved === null ? true : saved === 'true';
+  });
+  const [stopPiOnStop, setStopPiOnStop] = useState(() => {
+    return localStorage.getItem('amr_stop_pi_on_stop') === 'true';
+  });
+  const [showExploreSafetyModal, setShowExploreSafetyModal] = useState(false);
+  const [showScanOverlay, setShowScanOverlay] = useState(mode === 'hardware');
   const [liveMap, setLiveMap] = useState({
     image: null,
     meta: null,
@@ -36,8 +102,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
   });
   const liveMapImg = liveMap.image;
   const liveMapMeta = liveMap.meta;
-  const [teleopSpeed, setTeleopSpeed] = useState(0.4); // m/s safe mapping speed
-  const [enableGui, setEnableGui] = useState(true); // Complete GUI mode (Gazebo 3D + RViz2)
+  const [teleopSpeed, setTeleopSpeed] = useState(activeLimits.default_linear);
+  const [angularSpeed, setAngularSpeed] = useState(activeLimits.default_angular);
+  const [enableGui, setEnableGui] = useState(mode !== 'hardware');
   const [guiFeedback, setGuiFeedback] = useState(null);
 
   // Virtual Joystick & Teleop refs
@@ -46,10 +113,25 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
   const cmdTimerRef = useRef(null);
   const cmdRef = useRef({ linear: 0, angular: 0 });
   const speedRef = useRef(teleopSpeed);
+  const angularSpeedRef = useRef(angularSpeed);
 
   useEffect(() => {
     speedRef.current = teleopSpeed;
   }, [teleopSpeed]);
+
+  useEffect(() => {
+    angularSpeedRef.current = angularSpeed;
+  }, [angularSpeed]);
+
+  // Clamp speed sliders cleanly whenever runtime limits change
+  useEffect(() => {
+    setTeleopSpeed((prev) =>
+      Math.max(activeLimits.min_linear, Math.min(activeLimits.max_linear, prev || activeLimits.default_linear))
+    );
+    setAngularSpeed((prev) =>
+      Math.max(activeLimits.min_angular, Math.min(activeLimits.max_angular, prev || activeLimits.default_angular))
+    );
+  }, [activeLimits]);
 
   // Autonomous exploration state from telemetry
   const exploration = mappingData.exploration || {};
@@ -78,8 +160,10 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
 
   // Phase 3: Graph Extraction state
   const [savedMaps, setSavedMaps] = useState([]);
-  const [selectedMapForGraph, setSelectedMapForGraph] = useState(mapName || 'hospital_map');
-  const [densityPreset, setDensityPreset] = useState('balanced'); // 'balanced' | 'dense' | 'sparse' | 'custom'
+  const [selectedMapForGraph, setSelectedMapForGraph] = useState(
+    mapName || (mode === 'hardware' ? 'hardware_map' : 'hospital_map')
+  );
+  const [densityPreset, setDensityPreset] = useState(mode === 'hardware' ? 'hw_room' : 'balanced'); // 'balanced' | 'dense' | 'hw_room' | 'sparse' | 'custom'
   const [customParams, setCustomParams] = useState({
     robotRadius: 0.11,
     safetyMargin: 0.10,
@@ -250,14 +334,14 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     };
 
     fetchLiveMap();
-    if (status === 'MAPPING') {
+    if (status === 'MAPPING' || externalMappingActive) {
       mapTimer = setInterval(fetchLiveMap, 1500); // 1.5s refresh for occupancy grid
     }
     return () => {
       isMounted = false;
       if (mapTimer) clearInterval(mapTimer);
     };
-  }, [status]);
+  }, [status, externalMappingActive]);
 
   // Coordinate transform for live SLAM map SVG overlay
   const activeMapMeta = liveMap.meta || verificationData || mappingData?.map_info;
@@ -297,10 +381,71 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     return worldToCanvasPx(pose.x, pose.y);
   }, [pose, worldToCanvasPx]);
 
-  // Teleop command helper
+  // Teleop command helper (clamped and E-STOP gated)
   const sendDrive = useCallback((linear, angular) => {
-    bridge.sendCmdVel(linear, angular);
+    if (isEstopActive && (linear !== 0 || angular !== 0)) {
+      bridge.sendCmdVel(0, 0);
+      return;
+    }
+    const maxRev = activeLimits.max_reverse_linear ?? activeLimits.max_linear;
+    const clampedLin = Math.max(-maxRev, Math.min(activeLimits.max_linear, Number(linear) || 0));
+    const clampedAng = Math.max(-activeLimits.max_angular, Math.min(activeLimits.max_angular, Number(angular) || 0));
+    bridge.sendCmdVel(clampedLin, clampedAng);
+  }, [isEstopActive, activeLimits]);
+
+  // Immediately zero drive state if E-STOP activates
+  useEffect(() => {
+    if (isEstopActive) {
+      cmdRef.current = { linear: 0, angular: 0 };
+      bridge.sendCmdVel(0, 0);
+    }
+  }, [isEstopActive]);
+
+  const handleTriggerEstop = useCallback(async () => {
+    cmdRef.current = { linear: 0, angular: 0 };
+    await bridge.sendStop();
   }, []);
+
+  const handleClearEstop = useCallback(async () => {
+    await bridge.clearEstop();
+  }, []);
+
+  const handleToggleAutoStartPi = (checked) => {
+    setAutoStartPi(checked);
+    localStorage.setItem('amr_auto_start_pi', String(checked));
+  };
+
+  const handleToggleStopPiOnStop = (checked) => {
+    setStopPiOnStop(checked);
+    localStorage.setItem('amr_stop_pi_on_stop', String(checked));
+  };
+
+  const handleStartPiHardware = async () => {
+    setIsPiLoading(true);
+    try {
+      await bridge.startPiHardware();
+    } finally {
+      setIsPiLoading(false);
+    }
+  };
+
+  const handleStopPiHardware = async () => {
+    setIsPiLoading(true);
+    try {
+      await bridge.stopPiHardware();
+    } finally {
+      setIsPiLoading(false);
+    }
+  };
+
+  const handleTogglePiLogs = async () => {
+    const next = !piLogOpen;
+    setPiLogOpen(next);
+    if (next) {
+      const res = await bridge.getPiLogs(60);
+      setPiLogsText(res?.ok ? (res.logs || '(empty log)') : `Error: ${res?.error || 'Could not read Pi log'}`);
+    }
+  };
 
   // Exploration control handlers (declared early to prevent any hoisting or TDZ issues)
   const handlePauseExplore = useCallback(async () => {
@@ -313,21 +458,26 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
   }, []);
 
   const handleResumeExplore = useCallback(async () => {
+    if (isEstopActive) return;
     setIsProcessing(true);
     try {
       await bridge.resumeAutoExplore();
     } finally {
       setIsProcessing(false);
     }
-  }, []);
+  }, [isEstopActive]);
 
-  const handleSwitchMode = useCallback(async (enableExplore) => {
+  const applyExploreModeSwitch = useCallback(async (enableExplore) => {
     setRunExplore(enableExplore);
     if (status === 'MAPPING') {
       setIsProcessing(true);
       try {
         if (enableExplore) {
-          await bridge.startAutoExplore();
+          const res = await bridge.startAutoExplore();
+          if (!res?.ok) {
+            setSaveErrorMsg(res?.error || 'Auto-explore failed to start');
+            setRunExplore(false);
+          }
         } else {
           await bridge.pauseAutoExplore();
         }
@@ -337,11 +487,19 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     }
   }, [status]);
 
-  // NippleJS Virtual Joystick Setup (Interactive in manual mode OR when auto-explore is paused)
+  const handleSwitchMode = useCallback(async (enableExplore) => {
+    if (enableExplore && mode === 'hardware') {
+      setShowExploreSafetyModal(true);
+      return;
+    }
+    await applyExploreModeSwitch(enableExplore);
+  }, [mode, applyExploreModeSwitch]);
+
+  // NippleJS Virtual Joystick Setup (Interactive when mapping & E-STOP is not active)
   useEffect(() => {
     if (!joystickRef.current) return;
 
-    const isInteractive = status === 'MAPPING';
+    const isInteractive = (status === 'MAPPING' || externalMappingActive) && !isEstopActive;
 
     const manager = nipplejs.create({
       zone: joystickRef.current,
@@ -362,10 +520,12 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
       const linearRaw = data.vector.y;
       const angularRaw = -data.vector.x;
       const f = data.force ? Math.min(data.force, 1) : 1;
+      const maxRev = activeLimits.max_reverse_linear ?? activeLimits.max_linear;
+      const linScale = linearRaw >= 0 ? speedRef.current : Math.min(speedRef.current, maxRev);
 
       cmdRef.current = {
-        linear: linearRaw * f * speedRef.current,
-        angular: angularRaw * f * 1.6,
+        linear: linearRaw * f * linScale,
+        angular: angularRaw * f * angularSpeedRef.current,
       };
     });
 
@@ -384,28 +544,48 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     }, 100);
 
     return () => {
+      cmdRef.current = { linear: 0, angular: 0 };
+      sendDrive(0, 0);
       manager.destroy();
       clearInterval(cmdTimerRef.current);
     };
-  }, [status, runExplore, exploreIsActive, exploreIsPaused, currentStep, sendDrive, handlePauseExplore]);
+  }, [status, externalMappingActive, isEstopActive, runExplore, exploreIsActive, exploreIsPaused, currentStep, activeLimits, sendDrive, handlePauseExplore]);
 
-  // Keyboard driving controls (W/A/S/D & Arrow keys) during mapping (with seamless takeover & resume)
+  // Keyboard driving controls (W/A/S/D & Arrow keys) + window blur zeroing
   useEffect(() => {
-    if (status !== 'MAPPING') return;
+    if ((status !== 'MAPPING' && !externalMappingActive) || isEstopActive) return;
+
+    const zeroMotors = () => {
+      cmdRef.current = { linear: 0, angular: 0 };
+      sendDrive(0, 0);
+    };
 
     const handleKeyDown = (e) => {
       if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
       if (e.repeat) return;
 
-      // Enter key resumes exploration if paused
-      if (e.key === 'Enter' && runExplore && exploreIsPaused) {
+      // In simulation only: Enter key resumes paused exploration (disabled on hardware for safety)
+      if (e.key === 'Enter' && runExplore && exploreIsPaused && mode !== 'hardware') {
         e.preventDefault();
         handleResumeExplore();
         return;
       }
 
+      // Speed trim +/- keys
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        setTeleopSpeed((s) => Math.min(activeLimits.max_linear, +(s + activeLimits.linear_step).toFixed(2)));
+        return;
+      }
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        setTeleopSpeed((s) => Math.max(activeLimits.min_linear, +(s - activeLimits.linear_step).toFixed(2)));
+        return;
+      }
+
       const spd = speedRef.current;
-      const ang = 1.0;
+      const ang = angularSpeedRef.current;
+      const maxRev = activeLimits.max_reverse_linear ?? activeLimits.max_linear;
 
       // If exploring, touching any movement key seamlessly pauses exploration to allow manual driving
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'].includes(e.key)) {
@@ -420,8 +600,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
         sendDrive(spd, 0);
       } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
         e.preventDefault();
-        cmdRef.current = { linear: -spd * 0.7, angular: 0 };
-        sendDrive(-spd * 0.7, 0);
+        const revSpd = -Math.min(spd * 0.85, maxRev);
+        cmdRef.current = { linear: revSpd, angular: 0 };
+        sendDrive(revSpd, 0);
       } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
         e.preventDefault();
         cmdRef.current = { linear: 0, angular: ang };
@@ -432,26 +613,37 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
         sendDrive(0, -ang);
       } else if (e.key === ' ' || e.key === 'x' || e.key === 'X') {
         e.preventDefault();
-        cmdRef.current = { linear: 0, angular: 0 };
-        sendDrive(0, 0);
+        zeroMotors();
       }
     };
 
     const handleKeyUp = (e) => {
       if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'].includes(e.key)) {
-        cmdRef.current = { linear: 0, angular: 0 };
-        sendDrive(0, 0);
+        zeroMotors();
+      }
+    };
+
+    const handleVisibilityOrBlur = () => {
+      if (document.hidden || document.visibilityState === 'hidden') {
+        zeroMotors();
+      } else {
+        zeroMotors();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', zeroMotors);
+    document.addEventListener('visibilitychange', handleVisibilityOrBlur);
     return () => {
+      zeroMotors();
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', zeroMotors);
+      document.removeEventListener('visibilitychange', handleVisibilityOrBlur);
     };
-  }, [status, runExplore, exploreIsActive, exploreIsPaused, sendDrive, handlePauseExplore, handleResumeExplore]);
+  }, [status, externalMappingActive, isEstopActive, mode, runExplore, exploreIsActive, exploreIsPaused, activeLimits, sendDrive, handlePauseExplore, handleResumeExplore]);
 
   // Format MM:SS
   const formatTime = (secs) => {
@@ -463,7 +655,8 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
   const handleLaunchGui = async (app) => {
     setGuiFeedback({ app, status: 'launching', text: `Opening ${app.toUpperCase()} GUI...` });
     try {
-      const res = await bridge.launchGui(app, 'explore');
+      const guiMode = app === 'rviz' ? (mode === 'hardware' ? 'hw_mapping' : 'explore') : null;
+      const res = await bridge.launchGui(app, guiMode);
       if (res?.ok) {
         setGuiFeedback({ app, status: 'success', text: `${app.toUpperCase()} GUI opened in desktop!` });
       } else {
@@ -483,19 +676,29 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     try {
       const headless = !enableGui;
       const useRviz = enableGui;
-      const targetMapName = (mapName || 'hospital_map').trim();
-      const ok = await bridge.startMapping(targetMapName, world, runExplore, headless, useRviz);
-      if (ok) {
+      const fallbackName = mode === 'hardware' ? 'hardware_map' : 'hospital_map';
+      const targetMapName = (mapName || fallbackName).trim();
+      const res = await bridge.startMapping(
+        targetMapName,
+        mode === 'hardware' ? null : world,
+        runExplore,
+        headless,
+        useRviz,
+        {
+          autoStartPi: mode === 'hardware' ? autoStartPi : false,
+          stopPiOnStop: mode === 'hardware' ? stopPiOnStop : false,
+        }
+      );
+      if (res?.ok) {
         setStatus('MAPPING');
         setCurrentStep(1);
         setElapsedSec(0);
         setIsSaved(false);
         setSavedReport(null);
         setVerificationData(null);
-        setLiveMapImg(null);
-        setLiveMapMeta(null);
+        setLiveMap({ image: null, meta: null, width: 0, height: 0 });
       } else {
-        setSaveErrorMsg('Failed to start mapping session. Please verify that the AMR Bridge server is running on port 8000.');
+        setSaveErrorMsg(res?.error || 'Failed to start mapping session. Verify AMR Bridge server on port 8000.');
       }
     } catch (err) {
       setSaveErrorMsg(`Error starting mapping: ${err.message}`);
@@ -508,11 +711,15 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     setIsProcessing(true);
     try {
       sendDrive(0, 0);
-      const ok = await bridge.stopMapping();
-      if (ok) {
+      const res = await bridge.stopMapping({
+        stopPi: mode === 'hardware' ? stopPiOnStop : false,
+      });
+      if (res?.ok) {
         setStatus('STOPPED');
         setCurrentStep(2);
         fetchVerificationData();
+      } else {
+        setSaveErrorMsg(res?.error || 'Failed to stop mapping session.');
       }
     } finally {
       setIsProcessing(false);
@@ -523,22 +730,35 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     setIsProcessing(true);
     try {
       sendDrive(0, 0);
-      const ok = await bridge.redoMapping();
-      if (ok) {
+      const res = await bridge.redoMapping({
+        stopPi: mode === 'hardware' ? stopPiOnStop : false,
+      });
+      if (res?.ok) {
         setStatus('READY');
         setCurrentStep(1);
         setElapsedSec(0);
-        setLiveMapImg(null);
-        setLiveMapMeta(null);
+        setLiveMap({ image: null, meta: null, width: 0, height: 0 });
         setIsSaved(false);
         setSavedReport(null);
         setVerificationData(null);
         setSaveSuccessMsg(null);
         setSaveErrorMsg(null);
+      } else {
+        setSaveErrorMsg(res?.error || 'Failed to reset mapping session.');
       }
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleSafeReturnToDashboard = () => {
+    cmdRef.current = { linear: 0, angular: 0 };
+    sendDrive(0, 0);
+    if (status === 'MAPPING') {
+      const ok = window.confirm('SLAM mapping is still running. Return to Live Dashboard anyway? (Motors will stop.)');
+      if (!ok) return;
+    }
+    if (onReturnToDashboard) onReturnToDashboard();
   };
 
   // Phase 2: Save Map Action
@@ -623,7 +843,17 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
         map_name: targetMap,
       };
 
-      if (densityPreset === 'balanced') {
+      if (densityPreset === 'hw_room') {
+        payload = {
+          ...payload,
+          robot_radius: 0.13,
+          safety_margin: 0.07,
+          search_radius: 2.5,
+          step_corridor: 0.28,
+          step_medium: 0.38,
+          step_open: 0.55,
+        };
+      } else if (densityPreset === 'balanced') {
         payload = {
           ...payload,
           robot_radius: 0.11,
@@ -967,6 +1197,23 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
     }
   };
 
+  const handleSaveAndLaunchHardwareNav = async () => {
+    const targetMap = (selectedMapForGraph || mapName || 'hardware_map').trim();
+    if (!isFinalSaved) {
+      await handleFinalSaveMap();
+    }
+    if (status === 'MAPPING') {
+      await bridge.stopMapping({ stopPi: false });
+    }
+    if (onReturnToDashboard) {
+      onReturnToDashboard();
+    }
+    await bridge.startNavigationSystem(targetMap, '', {
+      autoStartPi,
+      stopPiOnStop,
+    });
+  };
+
   const handleCanvasClickForNodePick = (e) => {
     if (currentStep !== 5 || !isPickNodeOnCanvasMode) return;
     const img = e.currentTarget.querySelector('img.mapping-slam-img');
@@ -1025,11 +1272,12 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
 
   // Status badges & text
   const hasMapData = mappingData.has_map_data || Boolean(liveMapImg);
+  const mapDirPrefix = mode === 'hardware' ? 'maps/' : 'src/agv_description/maps/';
   const mapStatusText = hasMapData
     ? (mappingData.map_status_text || 'Receiving map data from SLAM Toolbox (/map active)')
     : status === 'MAPPING'
-    ? 'Waiting for SLAM Toolbox to publish /map...'
-    : 'Ready to start mapping';
+    ? (mappingData.stage_text || 'Waiting for SLAM Toolbox to publish /map...')
+    : (mappingData.error || 'Ready to start mapping');
 
   // Active step subtitle
   const stepSubtitle =
@@ -1050,7 +1298,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
         <div className="mapping-pipeline-header__left">
           <button
             className="btn btn--outline"
-            onClick={onReturnToDashboard}
+            onClick={handleSafeReturnToDashboard}
             style={{ fontSize: 13, gap: 6, padding: '6px 14px' }}
           >
             ← Back to Dashboard
@@ -1174,7 +1422,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                   <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <label className="mapping-label">Map Name</label>
                     <span className="text-dim text-xs" style={{ fontFamily: 'var(--font-mono)' }}>
-                      src/agv_description/maps/{mapName || '...'}.yaml
+                      {mapDirPrefix}{mapName || '...'}.yaml
                     </span>
                   </div>
                   <input
@@ -1185,71 +1433,210 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       isMapNameDirtyRef.current = true;
                       setMapName(e.target.value);
                     }}
-                    placeholder="e.g. hospital_map or test1_map"
+                    placeholder={mode === 'hardware' ? 'e.g. room_map or lab_floor' : 'e.g. hospital_map or test1_map'}
                   />
                 </div>
 
-                {/* Target Simulation World */}
-                <div className="mapping-field">
-                  <label className="mapping-label">Simulation World</label>
-                  <div className="flex-row" style={{ gap: 8 }}>
-                    <input
-                      className="input-field mapping-input text-mono"
-                      type="text"
-                      value={world}
-                      onChange={(e) => setWorld(e.target.value)}
-                      placeholder="hospital.world"
-                      disabled={status === 'MAPPING'}
-                    />
-                    <span className="world-tag-badge">SDF World</span>
-                  </div>
+                {/* Hardware Pi Readiness & SSH Bringup Card (Hardware Mode) */}
+                {mode === 'hardware' ? (
+                  <div
+                    className="mapping-field"
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid var(--border)',
+                      background: 'var(--bg-elevated)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                    }}
+                  >
+                    <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="mapping-label" style={{ margin: 0 }}>
+                        Pi 5 Hardware ({piIp})
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: hwLink?.sensors_ready
+                            ? '#10b981'
+                            : piSsh?.state === 'STARTING'
+                            ? '#38bdf8'
+                            : piSsh?.ssh_ready
+                            ? '#f59e0b'
+                            : '#f87171',
+                        }}
+                      >
+                        {hwLink?.sensors_ready
+                          ? 'Sensors Streaming'
+                          : piSsh?.state === 'STARTING'
+                          ? 'Booting Pi (Hold Still)...'
+                          : piSsh?.ssh_ready
+                          ? 'SSH Ready'
+                          : 'Start ./start_hardware.sh on Pi'}
+                      </span>
+                    </div>
 
-                  {/* Quick World Presets */}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                    <button
-                      type="button"
-                      className={`btn-view-pill ${world === 'hospital.world' ? 'btn-view-pill--active' : ''}`}
-                      onClick={() => {
-                        setWorld('hospital.world');
-                        if (!isMapNameDirtyRef.current) {
-                          setMapName('hospital_map');
-                        }
-                      }}
-                      disabled={status === 'MAPPING'}
-                      style={{ fontSize: 11, padding: '3px 8px' }}
-                    >
-                      🏥 Hospital
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn-view-pill ${world === 'test1.world' ? 'btn-view-pill--active' : ''}`}
-                      onClick={() => {
-                        setWorld('test1.world');
-                        if (!isMapNameDirtyRef.current) {
-                          setMapName('test1_map');
-                        }
-                      }}
-                      disabled={status === 'MAPPING'}
-                      style={{ fontSize: 11, padding: '3px 8px' }}
-                    >
-                      🏢 Multi-Room
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn-view-pill ${world === 'warehouse.world' ? 'btn-view-pill--active' : ''}`}
-                      onClick={() => {
-                        setWorld('warehouse.world');
-                        if (!isMapNameDirtyRef.current) {
-                          setMapName('warehouse_map');
-                        }
-                      }}
-                      disabled={status === 'MAPPING'}
-                      style={{ fontSize: 11, padding: '3px 8px' }}
-                    >
-                      🏭 Warehouse
-                    </button>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10 }}>
+                      <span className={`badge ${piSsh?.ssh_ready ? 'badge--green' : 'badge--gray'}`}>
+                        SSH: {piSsh?.ssh_ready ? 'OK' : 'NO'}
+                      </span>
+                      <span className={`badge ${hwLink?.scan_alive ? 'badge--green' : 'badge--gray'}`}>
+                        /scan: {hwLink?.scan_alive ? 'OK' : 'WAIT'}
+                      </span>
+                      <span className={`badge ${hwLink?.odom_alive ? 'badge--green' : 'badge--gray'}`}>
+                        /odom: {hwLink?.odom_alive ? 'OK' : 'WAIT'}
+                      </span>
+                      <span className={`badge ${hwLink?.clock_synced ? 'badge--green' : 'badge--gray'}`}>
+                        Clock: {hwLink?.clock_synced === true ? 'SYNCED' : hwLink?.clock_synced === false ? 'SKEW' : 'AUTO'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {hwLink?.sensors_ready || piSsh?.remote_running ? (
+                        <button
+                          type="button"
+                          className="btn btn--outline"
+                          disabled={isPiLoading || isProcessing}
+                          onClick={handleStopPiHardware}
+                          style={{ padding: '3px 8px', fontSize: 10, borderColor: '#ef4444', color: '#f87171' }}
+                        >
+                          {isPiLoading ? 'Stopping…' : 'Stop Pi'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn--outline"
+                          disabled={isPiLoading || isProcessing || piSsh?.state === 'STARTING' || (piSsh && piSsh.ssh_ready === false)}
+                          onClick={handleStartPiHardware}
+                          style={{ padding: '3px 8px', fontSize: 10, borderColor: '#10b981', color: '#34d399' }}
+                        >
+                          {isPiLoading || piSsh?.state === 'STARTING' ? 'Starting…' : 'Start Pi'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        onClick={handleTogglePiLogs}
+                        style={{ padding: '3px 6px', fontSize: 10 }}
+                      >
+                        {piLogOpen ? 'Hide Log' : 'Pi Log'}
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 11, color: 'var(--text-secondary)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={autoStartPi}
+                          onChange={(e) => handleToggleAutoStartPi(e.target.checked)}
+                        />
+                        <span>Auto-start Pi on Map Start</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={stopPiOnStop}
+                          onChange={(e) => handleToggleStopPiOnStop(e.target.checked)}
+                        />
+                        <span>Stop Pi on Stop</span>
+                      </label>
+                    </div>
+
+                    {piLogOpen && (
+                      <pre
+                        style={{
+                          margin: 0,
+                          maxHeight: 110,
+                          overflowY: 'auto',
+                          padding: 6,
+                          borderRadius: 4,
+                          background: 'rgba(0,0,0,0.35)',
+                          fontSize: 10,
+                          lineHeight: 1.35,
+                          color: 'var(--text-secondary)',
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {piLogsText || 'Loading...'}
+                      </pre>
+                    )}
+
+                    {externalMappingActive && (
+                      <div style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>
+                        External hardware mapping session detected (live view + Save Map enabled).
+                      </div>
+                    )}
+                    {navStackActive && (
+                      <div style={{ fontSize: 10, color: '#f87171', fontWeight: 600 }}>
+                        Navigation stack is currently active — stop navigation before starting SLAM mapping.
+                      </div>
+                    )}
                   </div>
-                </div>
+                ) : (
+                  /* Target Simulation World (Simulation Mode Only) */
+                  <div className="mapping-field">
+                    <label className="mapping-label">Simulation World</label>
+                    <div className="flex-row" style={{ gap: 8 }}>
+                      <input
+                        className="input-field mapping-input text-mono"
+                        type="text"
+                        value={world}
+                        onChange={(e) => setWorld(e.target.value)}
+                        placeholder="hospital.world"
+                        disabled={status === 'MAPPING'}
+                      />
+                      <span className="world-tag-badge">SDF World</span>
+                    </div>
+
+                    {/* Quick World Presets */}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className={`btn-view-pill ${world === 'hospital.world' ? 'btn-view-pill--active' : ''}`}
+                        onClick={() => {
+                          setWorld('hospital.world');
+                          if (!isMapNameDirtyRef.current) {
+                            setMapName('hospital_map');
+                          }
+                        }}
+                        disabled={status === 'MAPPING'}
+                        style={{ fontSize: 11, padding: '3px 8px' }}
+                      >
+                        🏥 Hospital
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn-view-pill ${world === 'test1.world' ? 'btn-view-pill--active' : ''}`}
+                        onClick={() => {
+                          setWorld('test1.world');
+                          if (!isMapNameDirtyRef.current) {
+                            setMapName('test1_map');
+                          }
+                        }}
+                        disabled={status === 'MAPPING'}
+                        style={{ fontSize: 11, padding: '3px 8px' }}
+                      >
+                        🏢 Multi-Room
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn-view-pill ${world === 'warehouse.world' ? 'btn-view-pill--active' : ''}`}
+                        onClick={() => {
+                          setWorld('warehouse.world');
+                          if (!isMapNameDirtyRef.current) {
+                            setMapName('warehouse_map');
+                          }
+                        }}
+                        disabled={status === 'MAPPING'}
+                        style={{ fontSize: 11, padding: '3px 8px' }}
+                      >
+                        🏭 Warehouse
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Exploration Mode */}
                 <div className="mapping-field">
@@ -1280,7 +1667,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                 <div className="mapping-field">
                   <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <label className="mapping-label">GUI Windows</label>
-                    <span className="text-dim text-mono" style={{ fontSize: 10 }}>Gazebo 3D + RViz2</span>
+                    <span className="text-dim text-mono" style={{ fontSize: 10 }}>
+                      {mode === 'hardware' ? 'RViz2 Only' : 'Gazebo 3D + RViz2'}
+                    </span>
                   </div>
                   <div className="mode-toggle-group">
                     <button
@@ -1288,9 +1677,9 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       className={`btn-mode-toggle ${enableGui ? 'btn-mode-toggle--active' : ''}`}
                       onClick={() => setEnableGui(true)}
                       disabled={isProcessing || status === 'MAPPING'}
-                      title="Launch full desktop GUI with Gazebo 3D simulation and RViz2 SLAM windows"
+                      title={mode === 'hardware' ? 'Launch RViz2 SLAM display on laptop' : 'Launch full desktop GUI with Gazebo 3D simulation and RViz2 SLAM windows'}
                     >
-                      🖥️ Complete GUI (Gazebo + RViz)
+                      {mode === 'hardware' ? '🗺️ RViz2 SLAM Window' : '🖥️ Complete GUI (Gazebo + RViz)'}
                     </button>
                     <button
                       type="button"
@@ -1299,7 +1688,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       disabled={isProcessing || status === 'MAPPING'}
                       title="Run headless in background for lower resource usage"
                     >
-                      ⚡ Headless (Background)
+                      {mode === 'hardware' ? '⚡ Web UI Only' : '⚡ Headless (Background)'}
                     </button>
                   </div>
                 </div>
@@ -1362,16 +1751,38 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                   </div>
                 </div>
 
+                {saveErrorMsg && (
+                  <div className="save-error-banner" style={{ marginBottom: 8 }}>
+                    ⚠️ {saveErrorMsg}
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="mapping-actions">
-                  {status === 'READY' && (
+                  {(status === 'READY' || status === 'ERROR') && !externalMappingActive && (
                     <button
                       id="btn-start-mapping"
                       className="btn btn--primary btn--lg btn--start-mapping"
                       onClick={handleStartMapping}
-                      disabled={isProcessing}
+                      disabled={isProcessing || navStackActive}
                     >
-                      🚀 START MAPPING
+                      {isProcessing
+                        ? '⏳ STARTING SLAM...'
+                        : mode === 'hardware'
+                        ? '🚀 START HARDWARE MAPPING'
+                        : '🚀 START MAPPING'}
+                    </button>
+                  )}
+
+                  {externalMappingActive && (
+                    <button
+                      className="btn btn--primary btn--lg"
+                      onClick={() => {
+                        setCurrentStep(2);
+                        fetchVerificationData();
+                      }}
+                    >
+                      💾 Verify & Save Active Map
                     </button>
                   )}
 
@@ -1430,15 +1841,17 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                     )}
                   </div>
                   <div className="flex-row" style={{ gap: 8 }}>
-                    <button
-                      type="button"
-                      className="btn btn--outline"
-                      style={{ flex: 1, fontSize: 11, padding: '7px 8px', borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
-                      onClick={() => handleLaunchGui('gazebo')}
-                      title="Open Gazebo Harmonic 3D window (or run ./view_gazebo.sh in terminal)"
-                    >
-                      🖥️ Gazebo 3D
-                    </button>
+                    {mode !== 'hardware' && (
+                      <button
+                        type="button"
+                        className="btn btn--outline"
+                        style={{ flex: 1, fontSize: 11, padding: '7px 8px', borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
+                        onClick={() => handleLaunchGui('gazebo')}
+                        title="Open Gazebo Harmonic 3D window (or run ./view_gazebo.sh in terminal)"
+                      >
+                        🖥️ Gazebo 3D
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn btn--outline"
@@ -1446,11 +1859,13 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       onClick={() => handleLaunchGui('rviz')}
                       title="Open RViz2 SLAM Map window (or run ./view_rviz.sh in terminal)"
                     >
-                      🗺️ RViz2 SLAM
+                      🗺️ RViz2 {mode === 'hardware' ? 'HW Mapping' : 'SLAM'}
                     </button>
                   </div>
                   <div className="text-dim text-mono" style={{ fontSize: 10, marginTop: 4, textAlign: 'center' }}>
-                    Terminal commands: <code style={{ color: '#38bdf8' }}>./view_gazebo.sh</code> | <code style={{ color: '#c084fc' }}>./view_rviz.sh</code>
+                    {mode === 'hardware'
+                      ? <>Terminal: <code style={{ color: '#c084fc' }}>./view_rviz.sh hw_explore</code></>
+                      : <>Terminal commands: <code style={{ color: '#38bdf8' }}>./view_gazebo.sh</code> | <code style={{ color: '#c084fc' }}>./view_rviz.sh</code></>}
                   </div>
                 </div>
               </div>
@@ -1462,8 +1877,14 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                     <div className="card__title" style={{ fontSize: 13 }}>
                       🤖 Autonomous Frontier Explorer
                     </div>
-                    <span className="world-tag-badge">explore_lite</span>
+                    <span className="world-tag-badge">{mode === 'hardware' ? 'HW Cap <=0.15 m/s' : 'explore_lite'}</span>
                   </div>
+
+                  {isEstopActive && (
+                    <div className="save-error-banner" style={{ marginTop: 6, padding: '6px 8px', fontSize: 11 }}>
+                      🛑 E-STOP LATCHED — Autonomous exploration halted.
+                    </div>
+                  )}
 
                   <div className="explore-status-box mt-xs">
                     <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1487,7 +1908,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                         <button
                           className="btn btn--success btn--sm flex-1"
                           onClick={handleResumeExplore}
-                          disabled={isProcessing}
+                          disabled={isProcessing || isEstopActive}
                         >
                           ▶ Resume Exploration
                         </button>
@@ -1497,34 +1918,91 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                           onClick={handlePauseExplore}
                           disabled={isProcessing}
                         >
-                          ⏸ Pause Exploration
+                          ⏸ Pause & Take Over
                         </button>
                       )}
                     </div>
                   )}
 
+                  {isEstopActive ? (
+                    <button
+                      type="button"
+                      className="btn btn--sm btn--success"
+                      onClick={handleClearEstop}
+                      style={{ width: '100%', fontWeight: 700, padding: '7px 12px', marginTop: 6 }}
+                    >
+                      🔓 CLEAR E-STOP
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn--sm btn--danger"
+                      onClick={handleTriggerEstop}
+                      style={{ width: '100%', fontWeight: 800, padding: '7px 12px', marginTop: 6 }}
+                    >
+                      🛑 EMERGENCY STOP
+                    </button>
+                  )}
+
                   <div className="text-dim text-xs explore-info-footer">
-                    <span>• Automatically discovers unknown frontiers via Nav2 MPPI planner.</span>
+                    <span>
+                      {mode === 'hardware'
+                        ? '• Capped at 0.15 m/s linear / 0.45 rad/s angular with Collision Monitor active.'
+                        : '• Automatically discovers unknown frontiers via Nav2 MPPI planner.'}
+                    </span>
                   </div>
                 </div>
               ) : (
                 <div className="card teleop-mapping-card">
                   <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <div className="card__title" style={{ fontSize: 13 }}>
-                      🎮 Precision Teleop Joystick
+                      🎮 Precision Teleop {mode === 'hardware' ? '(HW Mapping Cap)' : 'Joystick'}
                     </div>
-                    <span className="text-dim text-mono text-xs">{teleopSpeed.toFixed(2)} m/s</span>
+                    <span className="text-dim text-mono text-xs">
+                      {teleopSpeed.toFixed(2)} m/s • {angularSpeed.toFixed(2)} r/s
+                    </span>
                   </div>
 
+                  {Array.isArray(activeLimits.presets) && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      {activeLimits.presets.map((p) => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          className={`btn-view-pill ${Math.abs(teleopSpeed - p.linear) < 0.015 ? 'btn-view-pill--active' : ''}`}
+                          onClick={() => {
+                            setTeleopSpeed(p.linear);
+                            setAngularSpeed(p.angular);
+                          }}
+                          style={{ flex: 1, fontSize: 10, padding: '3px 6px' }}
+                        >
+                          {p.label} ({p.linear.toFixed(2)})
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="teleop-speed-slider">
-                    <span className="text-dim text-xs">Safe Speed</span>
+                    <span className="text-dim text-xs">Linear</span>
                     <input
                       type="range"
-                      min="0.1"
-                      max="0.8"
-                      step="0.05"
+                      min={activeLimits.min_linear}
+                      max={activeLimits.max_linear}
+                      step={activeLimits.linear_step}
                       value={teleopSpeed}
                       onChange={(e) => setTeleopSpeed(parseFloat(e.target.value))}
+                      className="slider"
+                    />
+                  </div>
+                  <div className="teleop-speed-slider">
+                    <span className="text-dim text-xs">Turn</span>
+                    <input
+                      type="range"
+                      min={activeLimits.min_angular}
+                      max={activeLimits.max_angular}
+                      step={activeLimits.angular_step}
+                      value={angularSpeed}
+                      onChange={(e) => setAngularSpeed(parseFloat(e.target.value))}
                       className="slider"
                     />
                   </div>
@@ -1547,41 +2025,68 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       style={{
                         width: 130,
                         height: 130,
-                        opacity: status === 'MAPPING' ? 1 : 0.25,
-                        pointerEvents: status === 'MAPPING' ? 'auto' : 'none',
+                        opacity: (status === 'MAPPING' || externalMappingActive) && !isEstopActive ? 1 : 0.25,
+                        pointerEvents: (status === 'MAPPING' || externalMappingActive) && !isEstopActive ? 'auto' : 'none',
                         transition: 'opacity 0.2s ease',
                       }}
                     />
-                    {status !== 'MAPPING' && (
+                    {((status !== 'MAPPING' && !externalMappingActive) || isEstopActive) && (
                       <div className="joystick-lock-overlay" style={{ padding: 6, gap: 4 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8' }}>
-                          LOCKED (NOT MAPPING)
+                        <span style={{ fontSize: 10, fontWeight: 700, color: isEstopActive ? '#f87171' : '#94a3b8' }}>
+                          {isEstopActive ? 'E-STOP LOCKED' : 'LOCKED (NOT MAPPING)'}
                         </span>
                         <span style={{ fontSize: 9, color: '#64748b' }}>
-                          Start mapping in Step 1 to steer robot
+                          {isEstopActive ? 'Clear E-STOP before driving' : 'Start mapping in Step 1 to steer robot'}
                         </span>
                       </div>
                     )}
                   </div>
 
-                  {/* Stop Button */}
-                  <button
-                    type="button"
-                    className="btn btn--sm btn--danger"
-                    onClick={() => {
-                      cmdRef.current = { linear: 0, angular: 0 };
-                      sendDrive(0, 0);
-                    }}
-                    disabled={status !== 'MAPPING'}
-                    style={{ width: '100%', fontWeight: 700, padding: '6px 12px' }}
-                    title="Stop robot motors immediately (Spacebar)"
-                  >
-                    ⏹ Stop Motors (Space)
-                  </button>
+                  {/* Stop & E-STOP Controls */}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      className="btn btn--sm btn--outline"
+                      onClick={() => {
+                        cmdRef.current = { linear: 0, angular: 0 };
+                        sendDrive(0, 0);
+                      }}
+                      disabled={status !== 'MAPPING' && !externalMappingActive}
+                      style={{ flex: 1, fontWeight: 700, padding: '6px 8px' }}
+                      title="Send zero cmd_vel immediately (Spacebar)"
+                    >
+                      ⏹ Stop (Space)
+                    </button>
+                    {isEstopActive ? (
+                      <button
+                        type="button"
+                        className="btn btn--sm btn--success"
+                        onClick={handleClearEstop}
+                        style={{ flex: 1, fontWeight: 700, padding: '6px 8px' }}
+                      >
+                        🔓 Clear E-STOP
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn--sm btn--danger"
+                        onClick={handleTriggerEstop}
+                        style={{ flex: 1, fontWeight: 800, padding: '6px 8px' }}
+                      >
+                        🛑 E-STOP
+                      </button>
+                    )}
+                  </div>
 
                   <div className="text-dim text-xs text-center">
-                    Keyboard: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or Arrow Keys • <kbd>Space</kbd> Stop
+                    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / Arrows • <kbd>+</kbd><kbd>-</kbd> Trim • <kbd>Space</kbd> Zero
                   </div>
+                </div>
+              )}
+
+              {isWheelSlip && (
+                <div className="save-error-banner" style={{ fontSize: 11 }}>
+                  ⚠️ WHEEL_SLIP detected: encoders rotated while LiDAR scan stayed stationary.
                 </div>
               )}
 
@@ -1740,7 +2245,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                     </div>
 
                     <div className="text-dim text-xs">
-                      Target Location: <span className="text-mono" style={{ color: 'var(--accent-cyan)' }}>src/agv_description/maps/{mapName}.yaml</span>
+                      Target Location: <span className="text-mono" style={{ color: 'var(--accent-cyan)' }}>{mapDirPrefix}{mapName}.yaml</span>
                     </div>
 
                     {saveErrorMsg && (
@@ -1777,14 +2282,21 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       </div>
                       <div className="saved-files-list">
                         <div className="saved-file-item">
-                          📄 {savedReport?.files?.yaml || `src/agv_description/maps/${mapName}.yaml`}
+                          📄 {savedReport?.files?.yaml || `${mapDirPrefix}${mapName}.yaml`}
                         </div>
                         <div className="saved-file-item">
-                          🖼️ {savedReport?.files?.pgm || `src/agv_description/maps/${mapName}.pgm`}
+                          🖼️ {savedReport?.files?.pgm || `${mapDirPrefix}${mapName}.pgm`}
                         </div>
                         <div className="saved-file-item">
-                          🖼️ {savedReport?.files?.png || `src/agv_description/maps/${mapName}.png`}
+                          🖼️ {savedReport?.files?.png || `${mapDirPrefix}${mapName}.png`}
                         </div>
+                        {mode === 'hardware' && savedReport?.pi_synced !== undefined && (
+                          <div className="saved-file-item" style={{ color: savedReport.pi_synced ? '#10b981' : '#fbbf24' }}>
+                            {savedReport.pi_synced
+                              ? `✅ Synced to Pi (${piIp}:~/AMR/maps/)`
+                              : `⚠️ Local only (Pi sync: ${savedReport.pi_sync_error || 'skipped'})`}
+                          </div>
+                        )}
                       </div>
                       <div className="text-dim text-xs" style={{ color: 'var(--text-secondary)' }}>
                         On-disk verification passed. PGM and YAML specification are ready for topological roadmap generation.
@@ -1851,17 +2363,28 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                   disabled={isExtracting}
                 >
                   {savedMaps.length > 0 ? (
-                    savedMaps.map((m) => (
-                      <option key={m.name} value={m.name}>
-                        {m.name} ({m.size_kb} KB)
-                      </option>
-                    ))
+                    (() => {
+                      const hwMaps = savedMaps.filter((m) => m.category === 'hardware');
+                      const simMaps = savedMaps.filter((m) => m.category !== 'hardware');
+                      const groups = mode === 'hardware'
+                        ? [{ label: 'Hardware Maps', list: hwMaps }, { label: 'Simulation Maps', list: simMaps }]
+                        : [{ label: 'Simulation Maps', list: simMaps }, { label: 'Hardware Maps', list: hwMaps }];
+                      return groups.map((g) => g.list.length > 0 ? (
+                        <optgroup key={g.label} label={g.label}>
+                          {g.list.map((m) => (
+                            <option key={`${m.category}_${m.name}`} value={m.name}>
+                              {m.name} ({m.size_kb} KB)
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null);
+                    })()
                   ) : (
                     <option value={mapName}>{mapName}.yaml</option>
                   )}
                 </select>
                 <span className="text-dim text-xs">
-                  Active target: <code className="text-mono" style={{ color: 'var(--accent-cyan)' }}>src/agv_description/maps/{selectedMapForGraph || mapName}.yaml</code>
+                  Active target: <code className="text-mono" style={{ color: 'var(--accent-cyan)' }}>{mapDirPrefix}{selectedMapForGraph || mapName}.yaml</code>
                 </span>
               </div>
 
@@ -1869,13 +2392,24 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
               <div className="mapping-field">
                 <label className="mapping-label">Roadmap Density & Clearance Preset</label>
                 <div className="density-presets-grid">
+                  {mode === 'hardware' && (
+                    <div
+                      className={`preset-card ${densityPreset === 'hw_room' ? 'preset-card--active' : ''}`}
+                      onClick={() => setDensityPreset('hw_room')}
+                    >
+                      <div className="preset-card__title">HW Room (Fine)</div>
+                      <div className="preset-card__desc">0.13m r • 0.28m step</div>
+                      <div className="preset-card__badge">Hardware Best</div>
+                    </div>
+                  )}
+
                   <div
                     className={`preset-card ${densityPreset === 'balanced' ? 'preset-card--active' : ''}`}
                     onClick={() => setDensityPreset('balanced')}
                   >
                     <div className="preset-card__title">Balanced</div>
                     <div className="preset-card__desc">0.21m clearance • 2.5m search</div>
-                    <div className="preset-card__badge">Recommended</div>
+                    <div className="preset-card__badge">{mode === 'hardware' ? 'Standard' : 'Recommended'}</div>
                   </div>
 
                   <div
@@ -2054,14 +2588,16 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
 
                     <div className="saved-files-list mt-xs">
                       <div className="saved-file-item">
-                        📄 {extractedGraphReport.json_path || `src/agv_description/maps/${selectedMapForGraph}_graph.json`}
+                        📄 {extractedGraphReport.json_path || `${mapDirPrefix}${selectedMapForGraph}_graph.json`}
                       </div>
                       <div className="saved-file-item">
-                        🔄 src/agv_description/maps/warehouse_graph.json (Synced to Nav2)
+                        🖼️ {extractedGraphReport.vis_path || `${mapDirPrefix}${selectedMapForGraph}_graph_vis.png`}
                       </div>
-                      <div className="saved-file-item">
-                        🖼️ {extractedGraphReport.vis_path || `src/agv_description/maps/${selectedMapForGraph}_graph_vis.png`}
-                      </div>
+                      {mode === 'hardware' && extractedGraphReport.pi_synced !== undefined && (
+                        <div className="saved-file-item" style={{ color: extractedGraphReport.pi_synced ? '#10b981' : '#fbbf24' }}>
+                          {extractedGraphReport.pi_synced ? '✅ Graph synced to Pi maps/' : '⚠️ Pi graph sync pending'}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2655,20 +3191,31 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                     {/* Files Verified List */}
                     <div className="saved-files-list" style={{ marginTop: 8 }}>
                       <div className="saved-file-item">
-                        📄 src/agv_description/maps/{selectedMapForGraph || mapName}.yaml
+                        📄 {mapDirPrefix}{selectedMapForGraph || mapName}.yaml
                       </div>
                       <div className="saved-file-item">
-                        🖼️ src/agv_description/maps/{selectedMapForGraph || mapName}.pgm
+                        🖼️ {mapDirPrefix}{selectedMapForGraph || mapName}.pgm
                       </div>
                       <div className="saved-file-item">
-                        🕸️ src/agv_description/maps/{selectedMapForGraph || mapName}_graph.json
+                        🕸️ {mapDirPrefix}{selectedMapForGraph || mapName}_graph.json
                       </div>
                       <div className="saved-file-item">
-                        🏷️ src/agv_description/maps/{selectedMapForGraph || mapName}_places.json ({namedPlaces.length} stations)
+                        🏷️ {mapDirPrefix}{selectedMapForGraph || mapName}_places.json ({namedPlaces.length} stations)
                       </div>
                     </div>
 
                     <div className="mapping-actions" style={{ marginTop: 12 }}>
+                      {mode === 'hardware' && (
+                        <button
+                          id="btn-save-and-launch-hw-nav"
+                          type="button"
+                          className="btn btn--primary"
+                          onClick={handleSaveAndLaunchHardwareNav}
+                          style={{ width: '100%', padding: '10px 18px', fontWeight: 700, fontSize: 13, background: 'linear-gradient(135deg, #059669, #10b981)' }}
+                        >
+                          🚀 LAUNCH HARDWARE NAV ON &quot;{selectedMapForGraph || mapName}&quot;
+                        </button>
+                      )}
                       <button
                         id="btn-return-dashboard-final"
                         type="button"
@@ -2804,6 +3351,17 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
               >
                 ▦ Grid
               </button>
+
+              {currentStep <= 2 && (
+                <button
+                  className={`btn btn--ghost btn--sm ${showScanOverlay ? 'btn-view-pill--active' : ''}`}
+                  onClick={() => setShowScanOverlay((s) => !s)}
+                  title="Toggle Live LiDAR /scan points overlay"
+                  style={{ fontSize: 11, padding: '4px 8px' }}
+                >
+                  📡 Scan
+                </button>
+              )}
 
               {/* Zoom / Pan controls */}
               <div className="viewport-controls">
@@ -3088,9 +3646,10 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                   alt="SLAM Occupancy Grid"
                   className="mapping-slam-img"
                   draggable={false}
+                  style={theme === 'light' ? { filter: 'invert(0.92) hue-rotate(180deg) contrast(1.08)' } : undefined}
                 />
 
-                {/* SVG Live Robot & Exploration Overlay */}
+                {/* SVG Live Robot, LiDAR Scan & Exploration Overlay */}
                 {liveMap.width > 0 && liveMap.height > 0 && mapViewMode === 'overlay' && (
                   <svg
                     className="mapping-live-svg-overlay"
@@ -3105,6 +3664,21 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                       zIndex: 4,
                     }}
                   >
+                    {/* Live LiDAR Scan Rays */}
+                    {showScanOverlay && Array.isArray(telemetry?.scan) && telemetry.scan.length > 0 && (
+                      <g opacity="0.88">
+                        {telemetry.scan.map((r, idx) => {
+                          if (!r || r < 0.15 || r > 8.0) return null;
+                          const angle = pose.yaw + (telemetry.scan_angle_min || 0) + idx * (telemetry.scan_angle_inc || 0);
+                          const wx = pose.x + r * Math.cos(angle);
+                          const wy = pose.y + r * Math.sin(angle);
+                          const pt = worldToCanvasPx(wx, wy);
+                          if (!pt) return null;
+                          return <circle key={`scan-${idx}`} cx={pt.x} cy={pt.y} r="0.9" fill="#ef4444" />;
+                        })}
+                      </g>
+                    )}
+
                     {/* Active Exploration Frontiers */}
                     {telemetry?.mapping?.exploration?.frontiers?.map((f, i) => {
                       const fPx = worldToCanvasPx(f.x, f.y);
@@ -3177,7 +3751,7 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
                     ? 'Click [ RUN GRAPH EXTRACTION ] to extract collision-free navigation nodes and lines-of-sight across the floorplan.'
                     : status === 'MAPPING'
                     ? 'Connecting to ROS 2 /map topic. SLAM Toolbox is processing initial scans to construct the occupancy grid...'
-                    : 'Click [ START MAPPING ] to trigger SLAM Toolbox and begin mapping test1.world. The map will render here in real time.'}
+                    : `Click [ START ${mode === 'hardware' ? 'HARDWARE ' : ''}MAPPING ] to trigger SLAM Toolbox and begin mapping ${mode === 'hardware' ? 'the physical room' : (world || 'test1.world')}. The map will render here in real time.`}
                 </p>
                 {status === 'MAPPING' && (
                   <div className="mapping-spinner-ring" />
@@ -3214,6 +3788,56 @@ export default function MappingScreen({ telemetry, onReturnToDashboard, onMapCha
           </div>
         </div>
       </div>
+
+      {/* Hardware Auto-Explore Safety Confirmation Modal */}
+      {showExploreSafetyModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2, 6, 23, 0.78)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: 16,
+          }}
+        >
+          <div className="card" style={{ maxWidth: 440, width: '100%', border: '1px solid rgba(245, 158, 11, 0.55)' }}>
+            <div className="card__title" style={{ color: '#fbbf24', fontSize: 15 }}>
+              ⚠️ Confirm Hardware Autonomous Exploration
+            </div>
+            <p className="text-secondary" style={{ fontSize: 12, lineHeight: 1.5, margin: '8px 0' }}>
+              Autonomous frontier exploration will drive the physical robot autonomously using Nav2 MPPI + Collision Monitor (capped at <strong>0.15 m/s</strong> linear, <strong>0.45 rad/s</strong> angular).
+            </p>
+            <ul className="text-dim" style={{ fontSize: 11, lineHeight: 1.5, paddingLeft: 18, margin: '6px 0 12px' }}>
+              <li>The 2D LiDAR (z = 0.16 m) cannot detect overhangs, glass, cables, or stairs.</li>
+              <li>Verify floor clearance and keep E-STOP ready before starting.</li>
+              <li>Sensors Ready: <strong>{hwLink?.sensors_ready ? 'YES' : 'NO'}</strong> | Clock Sync: <strong>{hwLink?.clock_synced === false ? 'SKEW' : 'OK'}</strong></li>
+            </ul>
+            <div className="flex-row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn--outline"
+                onClick={() => setShowExploreSafetyModal(false)}
+              >
+                Cancel (Keep Manual)
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                disabled={isEstopActive}
+                onClick={async () => {
+                  setShowExploreSafetyModal(false);
+                  await applyExploreModeSwitch(true);
+                }}
+              >
+                Confirm Auto-Explore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -249,11 +249,14 @@ export default function App() {
         <main className="mapping-screen-wrapper">
           <ErrorBoundary onReturnToDashboard={() => setCurrentView('dashboard')}>
             <MappingScreen
+              key={effectiveMode}
               telemetry={telemetry}
               onReturnToDashboard={() => setCurrentView('dashboard')}
               onMapChange={handleMapChange}
               activeMap={activeMap}
               theme={theme}
+              mode={effectiveMode}
+              piIp={piIp}
             />
           </ErrorBoundary>
         </main>
