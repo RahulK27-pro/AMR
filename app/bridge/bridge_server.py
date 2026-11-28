@@ -157,6 +157,12 @@ try:
 except ImportError:
     _STD_SRVS_AVAILABLE = False
 
+try:
+    from action_msgs.srv import CancelGoal
+    _CANCEL_GOAL_AVAILABLE = True
+except ImportError:
+    _CANCEL_GOAL_AVAILABLE = False
+
 # Ensure local install packages (like explore_lite_msgs) are on sys.path
 _WS_BOOTSTRAP = Path(os.environ.get("AMR_WS", Path.home() / "AMR" / "AMR-main"))
 _py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
@@ -231,6 +237,23 @@ HW_TELEOP_LIMITS = {
         {'label': 'Fast', 'linear': 0.35, 'angular': 1.40},
     ],
 }
+# Hardware SLAM mapping teleop limits calibrated for ~10 Hz YDLIDAR X2 + 35% PWM cap
+HW_MAPPING_TELEOP_LIMITS = {
+    'max_linear': 0.20,
+    'max_reverse_linear': 0.12,
+    'min_linear': 0.04,
+    'default_linear': 0.13,
+    'linear_step': 0.02,
+    'max_angular': 0.50,
+    'min_angular': 0.20,
+    'default_angular': 0.35,
+    'angular_step': 0.05,
+    'presets': [
+        {'label': 'Slow', 'linear': 0.08, 'angular': 0.25},
+        {'label': 'Normal', 'linear': 0.13, 'angular': 0.35},
+        {'label': 'Fast', 'linear': 0.18, 'angular': 0.50},
+    ],
+}
 HW_NAV_LIMITS = {
     'max_linear_speed': 0.13,
     'cruise_linear_speed': 0.10,
@@ -238,6 +261,50 @@ HW_NAV_LIMITS = {
     'lookahead_dist': 0.25,
     'use_bt': False,
 }
+
+
+def _active_teleop_limits() -> dict:
+    """Return normal or mapping-restricted teleop limits for the current mode."""
+    if AMR_MODE != 'hardware':
+        return SIM_TELEOP_LIMITS
+    mm = globals().get('mapping_mgr')
+    is_hw_mapping = mm is not None and (
+        getattr(mm, 'state', None) == 'MAPPING' or mm.is_external_mapping_running()
+    )
+    return HW_MAPPING_TELEOP_LIMITS if is_hw_mapping else HW_TELEOP_LIMITS
+
+
+def _mode_map_dir() -> Path:
+    return _HW_MAPS_DIR if AMR_MODE == 'hardware' else _SIM_MAPS_DIR
+
+
+def _mode_sync_dirs() -> List[Path]:
+    if AMR_MODE == 'hardware':
+        return [_HW_MAPS_DIR]
+    install_maps_dir = _WORKSPACE_ROOT / "install" / "agv_description" / "share" / "agv_description" / "maps"
+    return [d for d in (_SIM_MAPS_DIR, install_maps_dir) if d.exists()]
+
+
+def _filter_occupancy_speckles(raw_occ: np.ndarray) -> np.ndarray:
+    """Remove isolated <4-cell occupied specks without turning unknown space into false free pockets."""
+    out = raw_occ.copy()
+    try:
+        import cv2
+        occ = (out > 50).astype(np.uint8)
+        free_mask = (out == 0).astype(np.uint8)
+        free_dilated = cv2.dilate(free_mask, np.ones((3, 3), dtype=np.uint8), iterations=1)
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(occ, connectivity=8)
+        for i in range(1, n):
+            if stats[i, cv2.CC_STAT_AREA] < 4:
+                comp_mask = (labels == i)
+                out[comp_mask] = 0 if np.any(free_dilated[comp_mask] > 0) else -1
+    except Exception:
+        pass
+    return out
+
+
+def _default_mapping_name_for_mode(mode: str) -> str:
+    return 'hardware_map' if mode == 'hardware' else 'hospital_map'
 
 
 def _get_map_search_dirs(mode: Optional[str] = None) -> List[Path]:
@@ -458,15 +525,18 @@ def world_to_pixel(wx: float, wy: float, map_name: Optional[str] = None):
 # ---------------------------------------------------------------------------
 
 class MappingManager:
-    """Manages the lifecycle of mapping sessions (SLAM Toolbox + explore_lite) and map saving."""
+    """Manages SLAM mapping sessions (Gazebo sim vs physical hardware) and verified map saving."""
     def __init__(self, workspace_root: Path):
         self.ws_root = workspace_root
-        self.state = 'READY'  # 'READY' | 'MAPPING' | 'STOPPED' | 'SAVED'
-        self.map_name = 'hospital_map'
+        self.state = 'READY'  # 'READY' | 'MAPPING' | 'STOPPED' | 'SAVED' | 'ERROR'
+        self.map_name = _default_mapping_name_for_mode(AMR_MODE)
         self.start_time: Optional[float] = None
         self.stop_time: Optional[float] = None
         self.proc: Optional[subprocess.Popen] = None
         self.explore_proc: Optional[subprocess.Popen] = None
+        self.mapping_log = None
+        self.explore_log = None
+        self.active_log_path: Optional[str] = None
         self.target_world = 'hospital.world'
         self.run_explore = False
         self.is_saved: bool = False
@@ -474,75 +544,108 @@ class MappingManager:
         self.saved_paths: Dict[str, str] = {}
         self.verification_report: Optional[dict] = None
         self.last_extracted_graph: Optional[dict] = None
+        self.error_msg: Optional[str] = None
+        self.stage_text: Optional[str] = None
+        self._stop_pi_on_stop: bool = False
         self.lock = threading.Lock()
 
-    def _cleanup_processes(self):
-        if self.explore_proc and self.explore_proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(self.explore_proc.pid), signal.SIGTERM)
-                try:
-                    self.explore_proc.wait(timeout=2.0)
-                except subprocess.TimeoutExpired:
-                    os.killpg(os.getpgid(self.explore_proc.pid), signal.SIGKILL)
-            except Exception:
-                pass
-        self.explore_proc = None
-
-        if self.proc and self.proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(self.proc.pid), signal.SIGINT)
-                try:
-                    self.proc.wait(timeout=2.0)
-                except subprocess.TimeoutExpired:
-                    os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
-            except Exception:
-                pass
-        self.proc = None
-
-        # Clean up any lingering mapping sub-processes
+    @staticmethod
+    def is_external_mapping_running() -> bool:
         try:
-            subprocess.run(
-                ['pkill', '-f', 'async_slam_toolbox_node|explore_lite|rviz2'],
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            res = subprocess.run(
+                ['pgrep', '-f', r'[h]ardware_mapping\.launch\.py|[s]tart_hardware_mapping\.sh|[a]sync_slam_toolbox_node'],
+                capture_output=True, text=True
             )
+            if res.returncode == 0 and res.stdout.strip():
+                return True
         except Exception:
             pass
+        if AMR_MODE == 'hardware':
+            n = globals().get('node')
+            sm = globals().get('system_mgr')
+            nav_inactive = sm is None or (getattr(sm, 'state', 'STOPPED') == 'STOPPED' and not sm._is_external_nav_running())
+            if n is not None and nav_inactive and getattr(n, '_has_live_map', False):
+                if (time.time() - getattr(n, '_last_map_time', 0.0)) < 5.0:
+                    return True
+        return False
 
-        for pattern in [
-            'mapping_session', 'async_slam_toolbox_node', 'slam_toolbox',
+    def _cleanup_processes(self):
+        for proc in (self.explore_proc, self.proc):
+            if proc and proc.poll() is None:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+                    try:
+                        proc.wait(timeout=2.5)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        try:
+                            proc.wait(timeout=1.5)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    pass
+        self.explore_proc = None
+        self.proc = None
+
+        for log_f in (self.explore_log, self.mapping_log):
+            if log_f:
+                try:
+                    log_f.close()
+                except Exception:
+                    pass
+        self.explore_log = None
+        self.mapping_log = None
+
+        patterns = [
+            'hardware_mapping', 'mapping_session', 'async_slam_toolbox_node', 'slam_toolbox',
             'explore_node', 'explore_lite', 'controller_server', 'planner_server',
+            'velocity_smoother', 'collision_monitor',
             'behavior_server', 'bt_navigator', 'waypoint_follower', 'lifecycle_manager',
-            'gz sim', 'parameter_bridge', 'ros_gz_bridge', 'ekf_node', 'robot_state_publisher'
-        ]:
+            'rviz2_mapping',
+        ]
+        if AMR_MODE == 'sim':
+            patterns.extend(['gz sim', 'parameter_bridge', 'ros_gz_bridge', 'ekf_node', 'robot_state_publisher', 'rviz2'])
+        for pattern in patterns:
             try:
                 subprocess.run(['pkill', '-9', '-f', pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
 
-    def start(self, map_name: str = 'hospital_map', world: str = 'hospital.world', run_explore: bool = False, headless: bool = True, use_rviz: bool = False):
+    def start(
+        self,
+        map_name: Optional[str] = None,
+        world: Optional[str] = 'hospital.world',
+        run_explore: bool = False,
+        headless: bool = True,
+        use_rviz: bool = False,
+        auto_start_pi: bool = False,
+        stop_pi_on_stop: bool = False,
+    ) -> dict:
         with self.lock:
-            # 1. Stop any active navigation stack first to prevent conflicts
-            if 'system_mgr' in globals() and globals()['system_mgr'] is not None:
-                try:
-                    globals()['system_mgr'].stop()
-                except Exception as e:
-                    logger.warning(f"[MappingManager] Warning stopping system_mgr: {e}")
+            sm = globals().get('system_mgr')
+            if sm is not None and (sm.state in ('STARTING', 'RUNNING') or sm._is_external_nav_running()):
+                return {
+                    'ok': False,
+                    'status_code': 409,
+                    'error': 'Navigation stack is currently active. Stop navigation before starting SLAM mapping.'
+                }
+            if self.proc is None and self.is_external_mapping_running():
+                return {
+                    'ok': False,
+                    'status_code': 409,
+                    'error': 'An external hardware mapping session is already running. Use Save Map or stop the terminal session first.'
+                }
 
-            # 2. Clean up any leftover navigation / mapping processes
             self._cleanup_processes()
 
-            # 3. Reset bridge node state for clean mapping session
             if 'node' in globals() and globals()['node'] is not None:
                 try:
                     globals()['node'].reset_simulation_state()
-                    globals()['node']._has_live_map = False
-                    globals()['node']._live_map_b64 = None
-                    globals()['node']._clean_map_b64 = None
                 except Exception as e:
                     logger.warning(f"[MappingManager] Node reset warning: {e}")
 
-            if map_name and map_name.strip():
-                self.map_name = map_name.strip()
+            target_name = (map_name or self.map_name or _default_mapping_name_for_mode(AMR_MODE)).strip()
+            self.map_name = target_name
             self.state = 'MAPPING'
             self.start_time = time.time()
             self.stop_time = None
@@ -550,9 +653,21 @@ class MappingManager:
             self.saved_map_name = None
             self.saved_paths = {}
             self.verification_report = None
-            self.target_world = world if (world.endswith('.world') or world.endswith('.sdf')) else f"{world}.world"
-            self.run_explore = run_explore
+            self.last_extracted_graph = None
+            self.error_msg = None
+            self.stage_text = None
+            self.run_explore = bool(run_explore)
+            self._stop_pi_on_stop = bool(stop_pi_on_stop) if AMR_MODE == 'hardware' else False
 
+            if AMR_MODE == 'hardware':
+                return self._start_hardware_mapping_locked(
+                    run_explore=bool(run_explore),
+                    use_rviz=bool(use_rviz),
+                    auto_start_pi=bool(auto_start_pi),
+                )
+
+            world_val = (world or 'hospital.world').strip()
+            self.target_world = world_val if (world_val.endswith('.world') or world_val.endswith('.sdf')) else f"{world_val}.world"
             run_sim_flag = 'true'
             run_explore_flag = 'true' if run_explore else 'false'
             headless_flag = 'true' if headless else 'false'
@@ -566,9 +681,8 @@ class MappingManager:
                 f"export QT_QPA_PLATFORM=xcb && "
                 f"export ROS_DOMAIN_ID=\"{domain_id}\" && "
                 f"export RMW_IMPLEMENTATION=\"{rmw_impl}\" && "
-                + (f"export ROS_LOCALHOST_ONLY=1 && " if AMR_MODE == 'sim' else f"unset ROS_LOCALHOST_ONLY && ")
-                + (f"export CYCLONEDDS_URI=\"{os.environ.get('CYCLONEDDS_URI', '')}\" && " if (AMR_MODE == 'hardware' and os.environ.get('CYCLONEDDS_URI')) else "")
-                + f"export LIBGL_ALWAYS_SOFTWARE=1 && "
+                f"export ROS_LOCALHOST_ONLY=1 && "
+                f"export LIBGL_ALWAYS_SOFTWARE=1 && "
                 f"export GALLIUM_DRIVER=llvmpipe && "
                 f"export MESA_GL_VERSION_OVERRIDE=4.5 && "
                 f"source /opt/ros/jazzy/setup.bash && "
@@ -577,18 +691,16 @@ class MappingManager:
                 f"world:={self.target_world} run_sim:={run_sim_flag} run_explore:={run_explore_flag} "
                 f"headless:={headless_flag} use_rviz:={rviz_flag}"
             )
-            logger.info(f"[MappingManager] Starting mapping_session: {cmd}")
+            logger.info(f"[MappingManager] Starting simulation mapping_session: {cmd}")
             try:
                 self.mapping_log = open('/tmp/amr_mapping.log', 'w')
+                self.active_log_path = '/tmp/amr_mapping.log'
                 sub_env = os.environ.copy()
                 sub_env['DISPLAY'] = display_env
                 sub_env['QT_QPA_PLATFORM'] = 'xcb'
                 sub_env['ROS_DOMAIN_ID'] = domain_id
                 sub_env['RMW_IMPLEMENTATION'] = rmw_impl
-                if AMR_MODE == 'sim':
-                    sub_env['ROS_LOCALHOST_ONLY'] = '1'
-                else:
-                    sub_env.pop('ROS_LOCALHOST_ONLY', None)
+                sub_env['ROS_LOCALHOST_ONLY'] = '1'
                 sub_env['LIBGL_ALWAYS_SOFTWARE'] = '1'
                 sub_env['GALLIUM_DRIVER'] = 'llvmpipe'
                 sub_env['MESA_GL_VERSION_OVERRIDE'] = '4.5'
@@ -602,17 +714,117 @@ class MappingManager:
                     stderr=subprocess.STDOUT,
                     env=sub_env
                 )
+                return {'ok': True}
             except Exception as e:
-                logger.error(f"[MappingManager] Failed to launch mapping_session: {e}")
-            return True
+                self.state = 'ERROR'
+                self.error_msg = f"Failed to launch mapping_session: {e}"
+                logger.error(f"[MappingManager] {self.error_msg}")
+                return {'ok': False, 'status_code': 500, 'error': self.error_msg}
 
-    def start_auto_explore(self, ros_node=None):
-        """Dynamically activate explore_lite if not already running."""
+    def _start_hardware_mapping_locked(self, run_explore: bool, use_rviz: bool, auto_start_pi: bool) -> dict:
+        """Launch hardware_mapping.launch.py on Domain 7 after ensuring Pi sensors & clock sync."""
+        self.stage_text = f"Verifying Pi ({AMR_PI_IP}) sensors for hardware SLAM..."
+        ok_sensors, err_msg = _ensure_pi_sensors_ready(
+            auto_start_pi=auto_start_pi,
+            status_cb=lambda msg: setattr(self, 'stage_text', msg),
+        )
+        if not ok_sensors:
+            self.state = 'ERROR'
+            self.error_msg = err_msg
+            self.stage_text = err_msg
+            return {'ok': False, 'status_code': 503, 'error': err_msg}
+
+        # Clear any remote Pi slam_toolbox / static map->odom TF & sync clock
+        pi_remote_mgr.clear_remote_slam_tf(AMR_PI_IP)
+        pi_remote_mgr.sync_clock(AMR_PI_IP)
+        for pat in ['amcl', 'map_server', 'lifecycle_manager_localization', 'static_transform_publisher.*map.*odom']:
+            try:
+                subprocess.run(['pkill', '-f', pat], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
+        _configure_dds_environment('hardware', AMR_PI_IP)
+        dds_uri = os.environ.get('CYCLONEDDS_URI', '')
+        log_dir = self.ws_root / "run_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        ts = time.strftime('%Y%m%d_%H%M%S')
+        log_path = log_dir / f"hardware_mapping_{ts}.log"
+        self.active_log_path = str(log_path)
+
+        display_env = os.environ.get('DISPLAY', ':0')
+        rviz_flag = 'true' if use_rviz else 'false'
+        explore_flag = 'true' if run_explore else 'false'
+        rviz_env_prefix = (
+            f"export DISPLAY=\"{display_env}\" && "
+            f"export QT_QPA_PLATFORM=xcb && "
+            f"export LIBGL_ALWAYS_SOFTWARE=1 && "
+            f"export GALLIUM_DRIVER=llvmpipe && "
+            f"export MESA_GL_VERSION_OVERRIDE=4.5 && "
+        ) if use_rviz else ""
+
+        hw_cmd = (
+            rviz_env_prefix
+            + "unset ROS_LOCALHOST_ONLY && "
+            + "export ROS_DOMAIN_ID=7 && "
+            + "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && "
+            + (f"export CYCLONEDDS_URI=\"{dds_uri}\" && " if dds_uri else "")
+            + "source /opt/ros/jazzy/setup.bash && "
+            + f"source {self.ws_root}/install/setup.bash && "
+            + "ros2 launch agv_description hardware_mapping.launch.py "
+            + f"use_sim_time:=false use_rviz:={rviz_flag} run_explore:={explore_flag}"
+        )
+        logger.info(f"[MappingManager] Starting hardware_mapping: {hw_cmd}")
+        try:
+            self.mapping_log = open(log_path, 'w')
+            sub_env = os.environ.copy()
+            sub_env.pop('ROS_LOCALHOST_ONLY', None)
+            sub_env['ROS_DOMAIN_ID'] = '7'
+            sub_env['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
+            if dds_uri:
+                sub_env['CYCLONEDDS_URI'] = dds_uri
+            self.proc = subprocess.Popen(
+                hw_cmd,
+                shell=True,
+                executable='/bin/bash',
+                cwd=str(self.ws_root),
+                preexec_fn=os.setsid,
+                stdout=self.mapping_log,
+                stderr=subprocess.STDOUT,
+                env=sub_env,
+            )
+            time.sleep(1.2)
+            if self.proc.poll() is not None:
+                tail = SystemLaunchManager._tail_log(str(log_path))
+                self.state = 'ERROR'
+                self.error_msg = f"hardware_mapping.launch.py exited early: {tail}"
+                self.stage_text = self.error_msg
+                return {'ok': False, 'status_code': 500, 'error': self.error_msg}
+
+            self.stage_text = (
+                "Hardware SLAM + speed-capped Auto-Explore active"
+                if run_explore
+                else "Hardware SLAM Toolbox active (drive slowly via Teleop)"
+            )
+            return {'ok': True}
+        except Exception as e:
+            self.state = 'ERROR'
+            self.error_msg = f"Failed to launch hardware_mapping: {e}"
+            self.stage_text = self.error_msg
+            return {'ok': False, 'status_code': 500, 'error': self.error_msg}
+
+    def start_auto_explore(self, ros_node=None) -> dict:
+        """Dynamically activate explore_lite (and speed-capped HW Nav2 stack if in hardware mode)."""
+        if ros_node and (ros_node._estop_latched or ros_node.nav_state == 'ESTOP'):
+            return {'ok': False, 'status_code': 409, 'error': 'E-STOP active. Clear E-STOP before starting exploration.'}
+
         with self.lock:
+            if self.state != 'MAPPING':
+                return {'ok': False, 'status_code': 409, 'error': 'Start SLAM mapping before activating Auto-Explore.'}
+
             self.run_explore = True
             is_running = False
             try:
-                res = subprocess.run(['pgrep', '-f', 'explore_node'], stdout=subprocess.PIPE)
+                res = subprocess.run(['pgrep', '-f', '[e]xplore_node'], stdout=subprocess.PIPE)
                 if res.returncode == 0 and res.stdout.strip():
                     is_running = True
             except Exception:
@@ -621,38 +833,45 @@ class MappingManager:
             if is_running:
                 if ros_node:
                     ros_node.publish_explore_resume(True)
-                return True
+                return {'ok': True}
 
-            if self.state == 'MAPPING':
-                domain_id = os.environ.get('ROS_DOMAIN_ID', '7')
-                rmw_impl = os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
-                cmd = (
-                    f"export ROS_DOMAIN_ID=\"{domain_id}\" && "
-                    f"export RMW_IMPLEMENTATION=\"{rmw_impl}\" && "
-                    + ("export ROS_LOCALHOST_ONLY=1 && " if AMR_MODE == 'sim' else "unset ROS_LOCALHOST_ONLY && ")
-                    + f"source /opt/ros/jazzy/setup.bash && "
-                    f"source {self.ws_root}/install/setup.bash && "
-                    f"ros2 run explore_lite explore --ros-args -r __node:=explore_node "
-                    f"--params-file {self.ws_root}/src/agv_description/config/nav2_params_explore.yaml "
-                    f"-p use_sim_time:=true"
+            if AMR_MODE == 'hardware':
+                return {
+                    'ok': False,
+                    'status_code': 400,
+                    'error': 'Hardware Auto-Explore requires selecting Auto-Explore mode before clicking Start Mapping so the speed-capped Nav2 + Collision Monitor stack launches safely.'
+                }
+
+            domain_id = os.environ.get('ROS_DOMAIN_ID', '7')
+            rmw_impl = os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
+            cmd = (
+                f"export ROS_DOMAIN_ID=\"{domain_id}\" && "
+                f"export RMW_IMPLEMENTATION=\"{rmw_impl}\" && "
+                f"export ROS_LOCALHOST_ONLY=1 && "
+                f"source /opt/ros/jazzy/setup.bash && "
+                f"source {self.ws_root}/install/setup.bash && "
+                f"ros2 run explore_lite explore --ros-args -r __node:=explore_node "
+                f"--params-file {self.ws_root}/src/agv_description/config/nav2_params_explore.yaml "
+                f"-p use_sim_time:=true"
+            )
+            try:
+                self.explore_log = open('/tmp/amr_explore.log', 'a')
+                self.explore_proc = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    executable='/bin/bash',
+                    cwd=str(self.ws_root),
+                    preexec_fn=os.setsid,
+                    stdout=self.explore_log,
+                    stderr=subprocess.STDOUT
                 )
-                try:
-                    self.explore_log = open('/tmp/amr_explore.log', 'a')
-                    self.explore_proc = subprocess.Popen(
-                        cmd,
-                        shell=True,
-                        executable='/bin/bash',
-                        cwd=str(self.ws_root),
-                        preexec_fn=os.setsid,
-                        stdout=self.explore_log,
-                        stderr=subprocess.STDOUT
-                    )
-                    logger.info("[MappingManager] Spawning explore_node dynamically...")
-                except Exception as e:
-                    logger.error(f"[MappingManager] Failed to spawn explore_node: {e}")
-            return True
+                logger.info("[MappingManager] Spawning explore_node dynamically...")
+                return {'ok': True}
+            except Exception as e:
+                logger.error(f"[MappingManager] Failed to spawn explore_node: {e}")
+                return {'ok': False, 'status_code': 500, 'error': str(e)}
 
-    def pause_auto_explore(self, ros_node=None):
+    def pause_auto_explore(self, ros_node=None) -> bool:
         """Pause exploration without killing the node, allowing manual driving."""
         with self.lock:
             self.run_explore = False
@@ -660,15 +879,17 @@ class MappingManager:
                 ros_node.publish_explore_resume(False)
             return True
 
-    def resume_auto_explore(self, ros_node=None):
+    def resume_auto_explore(self, ros_node=None) -> dict:
         """Resume exploration."""
+        if ros_node and (ros_node._estop_latched or ros_node.nav_state == 'ESTOP'):
+            return {'ok': False, 'status_code': 409, 'error': 'E-STOP active. Clear E-STOP before resuming exploration.'}
         with self.lock:
             self.run_explore = True
             if ros_node:
                 ros_node.publish_explore_resume(True)
-            return True
+            return {'ok': True}
 
-    def stop(self):
+    def stop(self, stop_pi: Optional[bool] = None) -> dict:
         with self.lock:
             self.state = 'STOPPED'
             self.stop_time = time.time()
@@ -679,13 +900,29 @@ class MappingManager:
                     globals()['node'].publish_cmd_vel(0.0, 0.0)
                 except Exception:
                     pass
+            should_stop_pi = (
+                AMR_MODE == 'hardware'
+                and (stop_pi if stop_pi is not None else self._stop_pi_on_stop)
+            )
+            self._stop_pi_on_stop = False
+            pi_stopped = False
+            if should_stop_pi and 'pi_remote_mgr' in globals():
+                pi_res = pi_remote_mgr.stop_hardware(AMR_PI_IP)
+                pi_stopped = bool(pi_res and pi_res.get('ok'))
             logger.info("[MappingManager] Mapping session stopped cleanly.")
-            return True
+            return {'ok': True, 'pi_stopped': pi_stopped}
 
-    def redo(self):
+    def redo(self, stop_pi: Optional[bool] = None) -> dict:
         with self.lock:
             self.run_explore = False
             self._cleanup_processes()
+            should_stop_pi = (
+                AMR_MODE == 'hardware'
+                and (stop_pi if stop_pi is not None else self._stop_pi_on_stop)
+            )
+            self._stop_pi_on_stop = False
+            if should_stop_pi and 'pi_remote_mgr' in globals():
+                pi_remote_mgr.stop_hardware(AMR_PI_IP)
             self.state = 'READY'
             self.start_time = None
             self.stop_time = None
@@ -694,67 +931,73 @@ class MappingManager:
             self.saved_paths = {}
             self.verification_report = None
             self.last_extracted_graph = None
+            self.error_msg = None
+            self.stage_text = None
             if 'node' in globals() and globals()['node'] is not None:
                 try:
                     globals()['node'].reset_simulation_state()
-                    globals()['node']._has_live_map = False
-                    globals()['node']._live_map_b64 = None
-                    globals()['node']._clean_map_b64 = None
                 except Exception:
                     pass
             logger.info("[MappingManager] Mapping session reset (redo).")
-            return True
+            return {'ok': True}
 
     def save_map(self, map_name: str, ros_node=None) -> dict:
-        """Saves active SLAM map into src/agv_description/maps/<map_name>.yaml + .pgm + .png
-        and performs strict on-disk verification checks (Phase 2).
-        """
+        """Save active SLAM map to the active mode's map dir with unknown-safe speckle filtering."""
         with self.lock:
-            if not ros_node or not ros_node._has_live_map or ros_node._last_raw_occupancy is None:
+            is_ext = self.is_external_mapping_running()
+            if self.state not in ('MAPPING', 'STOPPED', 'SAVED') and not is_ext:
                 return {
                     'ok': False,
-                    'error': 'No active SLAM map data available to save. Run mapping before saving.'
+                    'error': 'No active or stopped SLAM mapping session. Start mapping before saving.'
                 }
+            if not ros_node:
+                return {'ok': False, 'error': 'ROS node not ready.'}
 
-            import re
-            raw_name = (map_name or self.map_name or 'hospital_map').strip()
+            with ros_node._map_lock:
+                if not ros_node._has_live_map or ros_node._last_raw_occupancy is None:
+                    return {
+                        'ok': False,
+                        'error': 'No active SLAM map data available to save. Run mapping before saving.'
+                    }
+                w = ros_node._live_map_width
+                h = ros_node._live_map_height
+                res = float(ros_node._live_map_resolution)
+                ox = float(ros_node._live_map_origin_x)
+                oy = float(ros_node._live_map_origin_y)
+                raw_copy = ros_node._last_raw_occupancy.copy()
+
+            raw_name = (map_name or self.map_name or _default_mapping_name_for_mode(AMR_MODE)).strip()
             clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_name)
             if not clean_name:
-                clean_name = 'hospital_map'
+                clean_name = _default_mapping_name_for_mode(AMR_MODE)
 
-            maps_dir = self.ws_root / "src" / "agv_description" / "maps"
+            category = 'hardware' if AMR_MODE == 'hardware' else 'simulation'
+            maps_dir = _mode_map_dir()
             maps_dir.mkdir(parents=True, exist_ok=True)
 
             yaml_path = maps_dir / f"{clean_name}.yaml"
             pgm_path = maps_dir / f"{clean_name}.pgm"
             png_path = maps_dir / f"{clean_name}.png"
 
-            w = ros_node._live_map_width
-            h = ros_node._live_map_height
-            res = float(ros_node._live_map_resolution)
-            ox = float(ros_node._live_map_origin_x)
-            oy = float(ros_node._live_map_origin_y)
-            raw = ros_node._last_raw_occupancy
+            # Apply unknown-safe <4-cell speckle filtering in hardware mode (matches save_hardware_map.sh)
+            raw = _filter_occupancy_speckles(raw_copy) if AMR_MODE == 'hardware' else raw_copy
 
             # 1. Generate PGM data (ROS standard trinary values: free=254, occupied=0, unknown=205)
-            # Row 0 in PGM image is top, but row 0 in OccupancyGrid is bottom, so flip vertically
             pgm_arr = np.full((h, w), 205, dtype=np.uint8)
             pgm_arr[raw == 0] = 254
             pgm_arr[raw > 50] = 0
             pgm_flipped = np.flipud(pgm_arr)
+            Image.fromarray(pgm_flipped, mode='L').save(str(pgm_path))
 
-            pil_pgm = Image.fromarray(pgm_flipped, mode='L')
-            pil_pgm.save(str(pgm_path))
-
-            # 2. Write YAML specification (matching standard Nav2 / map_server)
+            # 2. Write YAML specification (matching Nav2 / map_server & save_hardware_map.sh)
             yaml_content = (
                 f"image: {clean_name}.pgm\n"
                 f"mode: trinary\n"
                 f"resolution: {res:.4f}\n"
-                f"origin: [{ox:.3f}, {oy:.3f}, 0]\n"
+                f"origin: [{ox:.6f}, {oy:.6f}, 0]\n"
                 f"negate: 0\n"
                 f"occupied_thresh: 0.65\n"
-                f"free_thresh: 0.196\n"
+                f"free_thresh: 0.25\n"
             )
             with open(yaml_path, 'w', encoding='utf-8') as f:
                 f.write(yaml_content)
@@ -764,32 +1007,24 @@ class MappingManager:
             png_arr[raw == -1] = [26, 32, 46]     # unknown slate
             png_arr[raw == 0]  = [12, 16, 28]     # free space
             png_arr[raw > 50]  = [0, 212, 255]    # wall / occupied cyan
-            png_flipped = np.flipud(png_arr)
-            pil_png = Image.fromarray(png_flipped)
-            pil_png.save(str(png_path))
+            Image.fromarray(np.flipud(png_arr)).save(str(png_path))
 
-            # 4. Optional background call to map_saver_cli if topic is active
-            if ros_node and ros_node._has_live_map:
-                try:
-                    cmd = (
-                        f"source /opt/ros/jazzy/setup.bash && "
-                        f"source {self.ws_root}/install/setup.bash && "
-                        f"ros2 run nav2_map_server map_saver_cli -f {maps_dir / clean_name} --ros-args -p use_sim_time:=true"
-                    )
-                    subprocess.run(cmd, shell=True, executable='/bin/bash', timeout=2.0, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except Exception:
-                    pass
-
-            # 5. On-disk Verification
+            # 4. On-disk Verification
             yaml_ok = yaml_path.is_file() and yaml_path.stat().st_size > 0
             pgm_ok = pgm_path.is_file() and pgm_path.stat().st_size > 0
-            png_ok = png_path.is_file() and png_path.stat().st_size > 0
-
             if not (yaml_ok and pgm_ok):
                 return {
                     'ok': False,
                     'error': f"Failed to verify saved files on disk: yaml_ok={yaml_ok}, pgm_ok={pgm_ok}"
                 }
+
+            pi_synced = None
+            pi_sync_error = None
+            if AMR_MODE == 'hardware' and 'pi_remote_mgr' in globals():
+                sync_res = pi_remote_mgr.sync_maps_to_pi([yaml_path, pgm_path, png_path], AMR_PI_IP)
+                pi_synced = bool(sync_res.get('ok'))
+                if not pi_synced:
+                    pi_sync_error = sync_res.get('error')
 
             total_cells = w * h
             free_cells = int(np.sum(raw == 0))
@@ -812,7 +1047,10 @@ class MappingManager:
             report = {
                 'verified': True,
                 'map_name': clean_name,
+                'category': category,
                 'status': 'VERIFIED & SAVED',
+                'pi_synced': pi_synced,
+                'pi_sync_error': pi_sync_error,
                 'files': {
                     'yaml': self.saved_paths['yaml'],
                     'pgm': self.saved_paths['pgm'],
@@ -841,6 +1079,14 @@ class MappingManager:
 
     def get_status(self, has_map_data: bool = False, map_info: Optional[dict] = None, ros_node=None) -> dict:
         with self.lock:
+            if self.state == 'MAPPING' and self.proc and self.proc.poll() is not None:
+                log_p = self.active_log_path or '/tmp/amr_mapping.log'
+                tail = SystemLaunchManager._tail_log(log_p)
+                self.state = 'ERROR'
+                self.error_msg = f"Mapping process exited unexpectedly: {tail}"
+
+            external_running = (self.proc is None) and self.is_external_mapping_running()
+
             elapsed = 0.0
             if self.state == 'MAPPING' and self.start_time:
                 elapsed = time.time() - self.start_time
@@ -851,10 +1097,14 @@ class MappingManager:
             secs = int(elapsed % 60)
             elapsed_str = f"{mins:02d}:{secs:02d}"
 
-            if has_map_data and self.state == 'MAPPING':
+            if external_running:
+                map_status_text = "External hardware SLAM session active (terminal launch detected)."
+            elif self.state == 'ERROR' and self.error_msg:
+                map_status_text = self.error_msg
+            elif has_map_data and self.state == 'MAPPING':
                 map_status_text = "Receiving map data... (SLAM Toolbox active)"
             elif self.state == 'MAPPING':
-                map_status_text = "Mapping in progress... Initializing SLAM Toolbox..."
+                map_status_text = self.stage_text or "Mapping in progress... Initializing SLAM Toolbox..."
             elif self.state == 'SAVED':
                 map_status_text = f"Map '{self.saved_map_name or self.map_name}' verified and saved to disk."
             elif self.state == 'STOPPED':
@@ -873,7 +1123,11 @@ class MappingManager:
             }
 
             return {
+                'mode': AMR_MODE,
                 'state': self.state,
+                'external_running': external_running,
+                'error': self.error_msg,
+                'stage_text': self.stage_text,
                 'map_name': self.map_name,
                 'world': getattr(self, 'target_world', 'hospital.world'),
                 'run_explore': getattr(self, 'run_explore', False),
@@ -925,6 +1179,8 @@ class PiRemoteManager:
         self.last_error: Optional[str] = None
         self.last_check_time: float = 0.0
         self.start_time: Optional[float] = None
+        self.clock_synced: Optional[bool] = None
+        self.clock_sync_at: Optional[float] = None
         self._refresh_inflight = False
 
     def _remote_dir_expr(self) -> str:
@@ -1058,6 +1314,8 @@ class PiRemoteManager:
             'pids': list(self.pids),
             'state': eff_state,
             'last_error': self.last_error,
+            'clock_synced': self.clock_synced,
+            'clock_sync_at': round(self.clock_sync_at, 2) if self.clock_sync_at else None,
             'checked_at': round(self.last_check_time, 2) if self.last_check_time else None,
         }
 
@@ -1084,9 +1342,49 @@ class PiRemoteManager:
         try:
             epoch_str = f"{time.time():.6f}"
             res = self._run_ssh(target_ip, f"sudo -n date -s '@{epoch_str}'", timeout=3.5)
+            ok = (res.returncode == 0)
+            with self.lock:
+                self.clock_synced = ok
+                if ok:
+                    self.clock_sync_at = time.time()
+            return ok
+        except Exception:
+            with self.lock:
+                self.clock_synced = False
+            return False
+
+    def clear_remote_slam_tf(self, pi_ip: Optional[str] = None) -> bool:
+        """Stop any remote Pi slam_toolbox / static map->odom publisher so laptop SLAM owns map->odom."""
+        target_ip = (pi_ip or AMR_PI_IP).strip()
+        try:
+            cmd = "pkill -INT -f '[s]lam_toolbox|[a]sync_slam_toolbox_node|[s]tatic_transform_publisher.*map.*odom' 2>/dev/null || true"
+            res = self._run_ssh(target_ip, cmd, timeout=4.0)
             return res.returncode == 0
         except Exception:
             return False
+
+    def sync_maps_to_pi(self, file_paths: List[Path], pi_ip: Optional[str] = None) -> dict:
+        """Copy saved map/graph/place artifacts to amr@<PI_IP>:~/AMR/maps/ via SSH/SCP."""
+        target_ip = (pi_ip or AMR_PI_IP).strip()
+        existing = [str(p) for p in file_paths if p and Path(p).is_file()]
+        if not existing:
+            return {'ok': True, 'count': 0}
+        dir_expr = self._remote_dir_expr()
+        try:
+            mk = self._run_ssh(target_ip, f'mkdir -p {dir_expr}/maps', timeout=4.0)
+            if mk.returncode != 0:
+                return {'ok': False, 'error': self._classify_ssh_error(mk.stderr, mk.returncode)}
+            dest_dir = self.pi_dir.strip().rstrip('/') + '/maps/'
+            cmd = [
+                'scp', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=4', '-o', 'StrictHostKeyChecking=no',
+                *existing, f'{self.pi_user}@{target_ip}:{dest_dir}'
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=12.0)
+            if res.returncode != 0:
+                return {'ok': False, 'error': (res.stderr or '').strip() or f'scp failed ({res.returncode})'}
+            return {'ok': True, 'count': len(existing)}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
 
     def get_logs(self, pi_ip: Optional[str] = None, lines: int = 50) -> dict:
         target_ip = (pi_ip or AMR_PI_IP).strip()
@@ -1247,6 +1545,71 @@ class PiRemoteManager:
 pi_remote_mgr = PiRemoteManager()
 
 
+def _ensure_pi_sensors_ready(
+    auto_start_pi: bool = False,
+    cancel_evt: Optional[threading.Event] = None,
+    stop_check=None,
+    status_cb=None,
+) -> Tuple[bool, Optional[str]]:
+    """Wait for Pi /scan & /odometry/filtered, optionally launching ./start_hardware.sh via SSH."""
+    n = globals().get('node')
+
+    def _aborted() -> bool:
+        return bool((cancel_evt and cancel_evt.is_set()) or (stop_check and stop_check()))
+
+    def _wait_loop(iterations: int, check_pi_health: bool) -> Tuple[bool, Optional[str]]:
+        for idx in range(iterations):
+            if _aborted():
+                return False, 'Cancelled'
+            now = time.time()
+            if (
+                n is not None
+                and (now - getattr(n, '_last_scan_rx_time', 0.0)) < 3.0
+                and (now - getattr(n, '_last_odom_rx_time', 0.0)) < 3.0
+            ):
+                return True, None
+            if check_pi_health and idx > 0 and idx % 8 == 7:
+                pi_st = pi_remote_mgr.check_status(AMR_PI_IP, force=True)
+                if not pi_st.get('remote_running'):
+                    logs = pi_remote_mgr.get_logs(AMR_PI_IP, lines=12).get('logs', '').strip()
+                    tail = " | ".join(logs.splitlines()[-4:]) if logs else "no log output"
+                    return False, f"Pi start_hardware.sh exited before sensors came online: {tail}"
+            if cancel_evt is not None:
+                if cancel_evt.wait(0.5):
+                    return False, 'Cancelled'
+            else:
+                time.sleep(0.5)
+        return False, None
+
+    ok, err = _wait_loop(6, check_pi_health=False)
+    if ok or err:
+        return ok, err
+
+    if not auto_start_pi:
+        return (
+            False,
+            f"Pi sensors (/scan, /odometry/filtered) not detected from {AMR_PI_IP}. "
+            f"Ensure './start_hardware.sh' is running on the Raspberry Pi 5 (or enable Auto-Start Pi via SSH)."
+        )
+
+    if status_cb:
+        status_cb(
+            f'Starting ./start_hardware.sh on Pi ({AMR_PI_IP}) via SSH — '
+            f'keep robot stationary for IMU calibration...'
+        )
+    pi_res = pi_remote_mgr.start_hardware(AMR_PI_IP)
+    if not pi_res.get('ok'):
+        return False, pi_res.get('error') or f"Failed to start hardware on Pi {AMR_PI_IP}"
+
+    ok, err = _wait_loop(56, check_pi_health=True)
+    if ok:
+        return True, None
+    return False, err or (
+        f"Pi sensors (/scan, /odometry/filtered) not detected from {AMR_PI_IP}. "
+        f"IMU/LiDAR did not publish within timeout — check USB/I2C wiring and Pi logs."
+    )
+
+
 class SystemLaunchManager:
     """Manages the full navigation stack lifecycle for both Simulation and Physical Hardware:
        - sim mode: navigation_launch.py (Gazebo + AMCL) + route_runner + bt_manager + graph_visualizer
@@ -1325,6 +1688,12 @@ class SystemLaunchManager:
                     'error': 'An external navigation session is already running. Stop it before launching from the Web UI.'
                 }
 
+            if 'mapping_mgr' in globals() and globals()['mapping_mgr'].is_external_mapping_running():
+                return {
+                    'ok': False,
+                    'error': 'An external hardware mapping session is running. Stop it before launching navigation.'
+                }
+
             self._cancel_event.set()
             cancel_evt = threading.Event()
             self._cancel_event = cancel_evt
@@ -1371,7 +1740,7 @@ class SystemLaunchManager:
     def _sync_graph_fallback(self, map_name: str):
         src_graph = _find_map_file(map_name, ('_graph.json', '.json'))
         if src_graph and src_graph.exists():
-            for d in [_SIM_MAPS_DIR, _HW_MAPS_DIR]:
+            for d in _mode_sync_dirs():
                 if d.exists():
                     dest_graph = d / "warehouse_graph.json"
                     if src_graph.resolve() == dest_graph.resolve():
@@ -1396,7 +1765,8 @@ class SystemLaunchManager:
 
             if 'mapping_mgr' in globals() and globals()['mapping_mgr'] is not None:
                 try:
-                    globals()['mapping_mgr'].stop()
+                    if globals()['mapping_mgr'].state in ('MAPPING', 'ERROR'):
+                        globals()['mapping_mgr'].stop()
                 except Exception as e:
                     logger.warning(f"[SystemLaunchManager] Warning stopping mapping_mgr: {e}")
 
@@ -1413,71 +1783,28 @@ class SystemLaunchManager:
                 self.stage_text = f'1/3 Checking Pi ({AMR_PI_IP}) /scan & /odometry/filtered...'
 
             n = globals().get('node')
-
-            def _wait_for_sensors(iterations: int, check_pi_health: bool = False) -> bool:
-                for idx in range(iterations):
-                    if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
-                        return False
-                    now = time.time()
-                    if (
-                        n is not None
-                        and (now - getattr(n, '_last_scan_rx_time', 0.0)) < 3.0
-                        and (now - getattr(n, '_last_odom_rx_time', 0.0)) < 3.0
-                    ):
-                        return True
-                    if check_pi_health and idx > 0 and idx % 8 == 7:
-                        pi_st = pi_remote_mgr.check_status(AMR_PI_IP, force=True)
-                        if not pi_st.get('remote_running'):
-                            logs = pi_remote_mgr.get_logs(AMR_PI_IP, lines=12).get('logs', '').strip()
-                            tail = " | ".join(logs.splitlines()[-4:]) if logs else "no log output"
-                            raise RuntimeError(
-                                f"Pi start_hardware.sh exited before sensors came online: {tail}"
-                            )
-                    if cancel_evt.wait(0.5):
-                        return False
-                return False
-
-            # Fast attach check first (if Pi is already streaming from manual terminal or earlier start)
-            sensors_ok = _wait_for_sensors(6, check_pi_health=False)
-
-            if not sensors_ok and auto_start_pi:
-                if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
-                    return
-                with self.lock:
-                    self.stage = 1
-                    self.stage_text = (
-                        f'1/3 Starting ./start_hardware.sh on Pi ({AMR_PI_IP}) via SSH — '
-                        f'keep robot stationary for IMU calibration...'
-                    )
-                pi_res = pi_remote_mgr.start_hardware(AMR_PI_IP)
-                if not pi_res.get('ok'):
-                    raise RuntimeError(pi_res.get('error') or f"Failed to start hardware on Pi {AMR_PI_IP}")
-                # Allow time for colcon check, IMU gyro bias calibration (~2s), and YDLIDAR X2 spinup
-                sensors_ok = _wait_for_sensors(56, check_pi_health=True)
-
+            sensors_ok, sensor_err = _ensure_pi_sensors_ready(
+                auto_start_pi=auto_start_pi,
+                cancel_evt=cancel_evt,
+                stop_check=lambda: self.state in ('STOPPING', 'STOPPED'),
+                status_cb=lambda msg: setattr(self, 'stage_text', f'1/3 {msg}'),
+            )
             if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
                 return
-
             if not sensors_ok:
-                hint = (
-                    "IMU/LiDAR did not publish within timeout — check USB/I2C wiring and Pi logs."
-                    if auto_start_pi
-                    else "Ensure './start_hardware.sh' is running on the Raspberry Pi 5 (or enable Auto-Start Pi via SSH)."
-                )
-                raise RuntimeError(
-                    f"Pi sensors (/scan, /odometry/filtered) not detected from {AMR_PI_IP}. {hint}"
-                )
+                raise RuntimeError(sensor_err or f"Pi sensors not ready on {AMR_PI_IP}")
 
             if cancel_evt.is_set():
                 return
 
-            # 2. Best-effort inter-machine clock sync (non-blocking timeout, mirrors start_hardware_nav.sh)
+            # 2. Clear any remote Pi SLAM & sync clock before launching hardware navigation
             with self.lock:
                 if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
                     return
                 self.stage = 2
                 self.stage_text = f'2/3 Syncing Pi clock & launching hardware navigation ({map_name})...'
 
+            pi_remote_mgr.clear_remote_slam_tf(AMR_PI_IP)
             pi_remote_mgr.sync_clock(AMR_PI_IP)
 
             if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
@@ -1904,8 +2231,10 @@ class AmrBridgeNode(Node):
         self.obstacle_cmd_pub = self.create_publisher(Twist,                      '/dynamic_obstacle/cmd_vel', 10)
         self.explore_resume_pub = self.create_publisher(Bool,                     '/explore/resume', 10)
         self.auto_localize_client = self.create_client(Trigger, '/trigger_auto_relocalization') if _STD_SRVS_AVAILABLE else None
+        self._nav_cancel_client = self.create_client(CancelGoal, '/navigate_to_pose/_action/cancel_goal') if _CANCEL_GOAL_AVAILABLE else None
 
         latched_map_qos = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL, reliability=QoSReliabilityPolicy.RELIABLE)
+        explore_status_qos = QoSProfile(depth=10, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL, reliability=QoSReliabilityPolicy.RELIABLE)
 
         # --- Subscribers ---
         self.create_subscription(Odometry,      '/dynamic_obstacle/odom', self._obstacle_odom_cb, 10)
@@ -1928,7 +2257,7 @@ class AmrBridgeNode(Node):
         # Exploration status & frontiers subscriptions
         if _EXPLORE_MSGS_AVAILABLE:
             self.create_subscription(
-                ExploreStatus, '/explore/status', self._explore_status_cb, 10
+                ExploreStatus, '/explore/status', self._explore_status_cb, explore_status_qos
             )
         if _MARKER_MSGS_AVAILABLE:
             self.create_subscription(
@@ -1991,6 +2320,7 @@ class AmrBridgeNode(Node):
         self.frontiers_count: int = 0
 
         # --- Live SLAM map state ---
+        self._map_lock = threading.Lock()
         self._live_map_width = 0
         self._live_map_height = 0
         self._live_map_resolution = 0.05
@@ -2004,7 +2334,7 @@ class AmrBridgeNode(Node):
         self._last_raw_occupancy: Optional[np.ndarray] = None
 
     def reset_simulation_state(self):
-        """Reset all telemetry state, waypoints, and TF buffer for clean new run."""
+        """Reset all telemetry state, live SLAM buffers, waypoints, and TF buffer for a clean run."""
         logger.info("[bridge] Resetting telemetry state and clearing buffers...")
         self.pose = {'x': 0.0, 'y': 0.0, 'yaw': 0.0}
         self.velocity = {'linear': 0.0, 'angular': 0.0}
@@ -2033,6 +2363,21 @@ class AmrBridgeNode(Node):
         self._estop_latched = False
         self.localization_status: Optional[dict] = None
         self._loc_status_rx_time = 0.0
+        self.explore_raw_status = 'idle'
+        self.explore_status_label = 'Not started'
+        self.is_exploring = False
+        self.is_explore_paused = False
+        self.frontiers = []
+        self.frontiers_count = 0
+        with self._map_lock:
+            self._has_live_map = False
+            self._last_map_time = 0.0
+            self._map_msg_count = 0
+            self._live_map_width = 0
+            self._live_map_height = 0
+            self._live_map_b64 = None
+            self._clean_map_b64 = None
+            self._last_raw_occupancy = None
         if self._tf_buffer is not None:
             try:
                 self._tf_buffer.clear()
@@ -2165,6 +2510,17 @@ class AmrBridgeNode(Node):
             self._estop_latched = True
         elif self._estop_latched and msg.data in ('IDLE', 'PLANNING', 'NAVIGATING'):
             self._estop_latched = False
+        if msg.data == 'IDLE' and not self.active_place_nav:
+            self.path_waypoints = []
+        if self.active_place_nav:
+            self.active_place_nav['nav_state'] = msg.data
+            if msg.data == 'IDLE' and self.active_place_nav.get('status') == 'NAVIGATING':
+                tx = self.active_place_nav.get('target_x')
+                ty = self.active_place_nav.get('target_y')
+                if tx is not None and ty is not None:
+                    d = math.hypot(self.pose['x'] - tx, self.pose['y'] - ty)
+                    if d < 0.6:
+                        self.active_place_nav['status'] = 'ARRIVED'
 
     def _loc_status_cb(self, msg):
         try:
@@ -2183,17 +2539,6 @@ class AmrBridgeNode(Node):
             if st in ('MAP_MISMATCH', 'MAP_MISSING', 'SCAN_MISSING'):
                 return loc.get('message') or f'Navigation blocked: localization status is {st}.'
         return None
-        if msg.data == 'IDLE' and not self.active_place_nav:
-            self.path_waypoints = []
-        if self.active_place_nav:
-            self.active_place_nav['nav_state'] = msg.data
-            if msg.data == 'IDLE' and self.active_place_nav.get('status') == 'NAVIGATING':
-                tx = self.active_place_nav.get('target_x')
-                ty = self.active_place_nav.get('target_y')
-                if tx is not None and ty is not None:
-                    d = math.hypot(self.pose['x'] - tx, self.pose['y'] - ty)
-                    if d < 0.6:
-                        self.active_place_nav['status'] = 'ARRIVED'
 
     def _path_cb(self, msg):
         self.path_waypoints = [
@@ -2273,20 +2618,17 @@ class AmrBridgeNode(Node):
     def _map_cb(self, msg: OccupancyGrid):
         """Callback for live /map occupancy grid (from SLAM Toolbox or map_server)."""
         try:
-            self._live_map_width = msg.info.width
-            self._live_map_height = msg.info.height
-            self._live_map_resolution = msg.info.resolution
-            self._live_map_origin_x = msg.info.origin.position.x
-            self._live_map_origin_y = msg.info.origin.position.y
-            self._has_live_map = True
-            self._last_map_time = time.time()
-            self._map_msg_count += 1
-
             w = msg.info.width
             h = msg.info.height
+            res = msg.info.resolution
+            ox = msg.info.origin.position.x
+            oy = msg.info.origin.position.y
+            raw_copy = None
+            clean_b64 = None
+
             if w > 0 and h > 0 and len(msg.data) == w * h:
                 raw_data = np.array(msg.data, dtype=np.int8).reshape((h, w))
-                self._last_raw_occupancy = raw_data.copy()
+                raw_copy = raw_data.copy()
 
                 # -1 = unknown (dark slate), 0 = free (deep blue/black), >50 = occupied (cyan)
                 rgb = np.zeros((h, w, 3), dtype=np.uint8)
@@ -2296,15 +2638,23 @@ class AmrBridgeNode(Node):
                 rgb = np.flipud(rgb)
                 pil_img = Image.fromarray(rgb)
 
-                # Save clean map image (without dynamic markers or robot dot)
                 clean_buf = io.BytesIO()
                 pil_img.save(clean_buf, format='PNG')
-                self._clean_map_b64 = base64.b64encode(clean_buf.getvalue()).decode()
+                clean_b64 = base64.b64encode(clean_buf.getvalue()).decode()
 
-                # Dynamic elements (robot pose, frontiers) are rendered cleanly in real time
-                # by the web dashboard SVG overlay. Keeping the live map base clean prevents
-                # duplicate/stale robot circles.
-                self._live_map_b64 = self._clean_map_b64
+            with self._map_lock:
+                self._live_map_width = w
+                self._live_map_height = h
+                self._live_map_resolution = res
+                self._live_map_origin_x = ox
+                self._live_map_origin_y = oy
+                self._has_live_map = True
+                self._last_map_time = time.time()
+                self._map_msg_count += 1
+                if raw_copy is not None and clean_b64 is not None:
+                    self._last_raw_occupancy = raw_copy
+                    self._clean_map_b64 = clean_b64
+                    self._live_map_b64 = clean_b64
         except Exception as e:
             self.get_logger().error(f"Error processing /map: {e}")
 
@@ -2330,13 +2680,15 @@ class AmrBridgeNode(Node):
             return {'ok': False, 'error': str(e)}
 
     def publish_cmd_vel(self, linear: float, angular: float):
-        if self._estop_latched and (abs(linear) > 1e-4 or abs(angular) > 1e-4):
+        if (self._estop_latched or self.nav_state == 'ESTOP') and (abs(linear) > 1e-4 or abs(angular) > 1e-4):
             return False
         lin = float(linear)
         ang = float(angular)
         if AMR_MODE == 'hardware':
-            lin = max(-HW_TELEOP_LIMITS['max_linear'], min(HW_TELEOP_LIMITS['max_linear'], lin))
-            ang = max(-HW_TELEOP_LIMITS['max_angular'], min(HW_TELEOP_LIMITS['max_angular'], ang))
+            limits = _active_teleop_limits()
+            min_lin = -limits.get('max_reverse_linear', limits['max_linear'])
+            lin = max(min_lin, min(limits['max_linear'], lin))
+            ang = max(-limits['max_angular'], min(limits['max_angular'], ang))
         t = Twist()
         t.linear.x  = lin
         t.angular.z = ang
@@ -2374,8 +2726,23 @@ class AmrBridgeNode(Node):
         self.estop_pub.publish(b)
         if active:
             self.nav_state = 'ESTOP'
-            if 'mapping_mgr' in globals() and globals()['mapping_mgr'] is not None and getattr(globals()['mapping_mgr'], 'run_explore', False):
-                self.publish_explore_resume(False)
+            try:
+                self.cmd_pub.publish(Twist())
+            except Exception:
+                pass
+            mm = globals().get('mapping_mgr')
+            if mm is not None and (getattr(mm, 'run_explore', False) or getattr(mm, 'state', None) == 'MAPPING'):
+                mm.pause_auto_explore(ros_node=self)
+            try:
+                self.publish_goal_sequence([])
+            except Exception:
+                pass
+            if _CANCEL_GOAL_AVAILABLE and getattr(self, '_nav_cancel_client', None) is not None:
+                try:
+                    if self._nav_cancel_client.service_is_ready():
+                        self._nav_cancel_client.call_async(CancelGoal.Request())
+                except Exception:
+                    pass
         elif self.nav_state == 'ESTOP':
             self.nav_state = 'IDLE'
 
@@ -2536,10 +2903,10 @@ class AmrBridgeNode(Node):
         # Pre-cache graph for active map
         self.get_graph_data(target_name)
 
-        # Synchronize active graph to warehouse_graph.json for ROS2 route_runner fallback
+        # Synchronize active graph to mode-appropriate directory for ROS2 route_runner fallback
         src_graph = _find_map_file(target_name, ('_graph.json', '.json'))
         if src_graph and src_graph.exists():
-            for d in [_SIM_MAPS_DIR, _HW_MAPS_DIR]:
+            for d in _mode_sync_dirs():
                 if d.exists():
                     dest_graph = d / "warehouse_graph.json"
                     if src_graph.resolve() == dest_graph.resolve():
@@ -2593,28 +2960,36 @@ class AmrBridgeNode(Node):
         return {'nodes': [], 'edges': [], 'places': [], 'total_nodes': 0, 'total_edges': 0, 'map_name': target_name}
 
     def get_live_map_info(self) -> dict:
-        return {
-            'width': self._live_map_width,
-            'height': self._live_map_height,
-            'resolution': float(self._live_map_resolution),
-            'origin_x': float(self._live_map_origin_x),
-            'origin_y': float(self._live_map_origin_y),
-            'msg_count': self._map_msg_count,
-            'last_update': round(self._last_map_time, 2)
-        }
+        with self._map_lock:
+            return {
+                'width': self._live_map_width,
+                'height': self._live_map_height,
+                'resolution': float(self._live_map_resolution),
+                'origin_x': float(self._live_map_origin_x),
+                'origin_y': float(self._live_map_origin_y),
+                'msg_count': self._map_msg_count,
+                'last_update': round(self._last_map_time, 2)
+            }
 
     def get_live_map_image_b64(self, clean: bool = False) -> Optional[str]:
-        if clean and self._clean_map_b64:
-            return self._clean_map_b64
-        return self._live_map_b64
+        with self._map_lock:
+            if clean and self._clean_map_b64:
+                return self._clean_map_b64
+            return self._live_map_b64
 
     def get_map_verification_data(self) -> dict:
-        if not self._has_live_map or self._last_raw_occupancy is None:
-            return {'has_map': False, 'error': 'No map data available yet'}
-        w = self._live_map_width
-        h = self._live_map_height
-        res = float(self._live_map_resolution)
-        raw = self._last_raw_occupancy
+        with self._map_lock:
+            if not self._has_live_map or self._last_raw_occupancy is None:
+                return {'has_map': False, 'error': 'No map data available yet'}
+            w = self._live_map_width
+            h = self._live_map_height
+            res = float(self._live_map_resolution)
+            ox = float(self._live_map_origin_x)
+            oy = float(self._live_map_origin_y)
+            raw = self._last_raw_occupancy.copy()
+            clean_b64 = self._clean_map_b64
+            live_b64 = self._live_map_b64
+            msg_count = self._map_msg_count
 
         total_cells = w * h
         free_cells = int(np.sum(raw == 0))
@@ -2635,8 +3010,8 @@ class AmrBridgeNode(Node):
             'width': w,
             'height': h,
             'resolution': res,
-            'origin_x': round(float(self._live_map_origin_x), 3),
-            'origin_y': round(float(self._live_map_origin_y), 3),
+            'origin_x': round(ox, 3),
+            'origin_y': round(oy, 3),
             'real_width_m': round(w * res, 2),
             'real_height_m': round(h * res, 2),
             'total_cells': total_cells,
@@ -2651,9 +3026,9 @@ class AmrBridgeNode(Node):
             'has_obstacles': has_obstacles,
             'is_valid': is_valid,
             'health_status': 'PASS' if is_valid else 'WARNING',
-            'clean_image_b64': self._clean_map_b64,
-            'overlay_image_b64': self._live_map_b64,
-            'map_msg_count': self._map_msg_count
+            'clean_image_b64': clean_b64,
+            'overlay_image_b64': live_b64,
+            'map_msg_count': msg_count
         }
 
     # -------- Snapshot --------
@@ -2694,6 +3069,12 @@ class AmrBridgeNode(Node):
             and (scan_alive or map_tf_locked or (now - getattr(self, '_last_amcl_rx_time', 0.0)) < 5.0)
         )
         teleop_limits = HW_TELEOP_LIMITS if AMR_MODE == 'hardware' else SIM_TELEOP_LIMITS
+        mapping_limits = HW_MAPPING_TELEOP_LIMITS if AMR_MODE == 'hardware' else SIM_TELEOP_LIMITS
+        pi_ssh_snap = (
+            pi_remote_mgr.get_cached_status(sensors_ready=(scan_alive and odom_alive))
+            if (AMR_MODE == 'hardware' and 'pi_remote_mgr' in globals())
+            else None
+        )
 
         return {
             'mode':            AMR_MODE,
@@ -2701,6 +3082,7 @@ class AmrBridgeNode(Node):
             'use_sim_time':    self.use_sim_time,
             'estop_active':    bool(self._estop_latched or self.nav_state == 'ESTOP'),
             'limits':          teleop_limits,
+            'mapping_limits':  mapping_limits,
             'nav_limits':      HW_NAV_LIMITS if AMR_MODE == 'hardware' else None,
             'hardware_link': {
                 'pi_ip':               AMR_PI_IP,
@@ -2711,7 +3093,9 @@ class AmrBridgeNode(Node):
                 'amcl_localized':      amcl_alive or map_tf_locked,
                 'external_nav_active': external_nav_active,
                 'loc_verified':        bool(self.localization_status.get('verified', True)) if self.localization_status else (amcl_alive or map_tf_locked),
-                'pi_ssh':              pi_remote_mgr.get_cached_status(sensors_ready=(scan_alive and odom_alive)) if (AMR_MODE == 'hardware' and 'pi_remote_mgr' in globals()) else None,
+                'clock_synced':        pi_ssh_snap.get('clock_synced') if pi_ssh_snap else None,
+                'clock_sync_at':       pi_ssh_snap.get('clock_sync_at') if pi_ssh_snap else None,
+                'pi_ssh':              pi_ssh_snap,
             },
             'localization_status': self.localization_status,
             'pose':            self.pose,
@@ -2845,11 +3229,17 @@ class SystemStopRequest(BaseModel):
     stop_pi: Optional[bool] = None
 
 class StartMappingRequest(BaseModel):
-    map_name: str = 'hospital_map'
-    world: str = 'hospital.world'
+    map_name: Optional[str] = None
+    world: Optional[str] = 'hospital.world'
     run_explore: bool = False
     headless: bool = True
     use_rviz: bool = False
+    auto_start_pi: bool = False
+    stop_pi_on_stop: bool = False
+
+
+class MappingStopRequest(BaseModel):
+    stop_pi: Optional[bool] = None
 
 class GuiLaunchRequest(BaseModel):
     app: str = "rviz"  # "rviz" | "gazebo"
@@ -2926,6 +3316,7 @@ async def get_mode():
         'pi_ip': AMR_PI_IP,
         'use_sim_time': (AMR_MODE == 'sim'),
         'teleop_limits': HW_TELEOP_LIMITS if AMR_MODE == 'hardware' else SIM_TELEOP_LIMITS,
+        'mapping_limits': HW_MAPPING_TELEOP_LIMITS if AMR_MODE == 'hardware' else SIM_TELEOP_LIMITS,
         'nav_limits': HW_NAV_LIMITS if AMR_MODE == 'hardware' else None,
     }
 
@@ -2986,12 +3377,12 @@ async def get_active_map():
 @app.post('/api/map/active')
 async def post_active_map(req: SetActiveMapRequest):
     if not node:
-        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+        return JSONResponse({'ok': False, 'error': 'ROS node not ready'}, status_code=503)
     try:
         node.set_active_map(req.map_name)
         return {'ok': True, 'active_map': node.active_map_name}
     except Exception as e:
-        return JSONResponse({'error': str(e)}, status_code=400)
+        return JSONResponse({'ok': False, 'error': str(e)}, status_code=400)
 
 @app.get('/api/map')
 async def get_map(map_name: Optional[str] = None, clean: bool = False):
@@ -3125,31 +3516,40 @@ async def get_mapping_status():
 
 @app.post('/api/mapping/start')
 async def post_mapping_start(req: StartMappingRequest = StartMappingRequest()):
-    target_name = (req.map_name or mapping_mgr.map_name or 'hospital_map').strip()
-    mapping_mgr.map_name = target_name
-    if node:
-        node.active_map_name = target_name
-    mapping_mgr.start(
+    target_name = (req.map_name or mapping_mgr.map_name or _default_mapping_name_for_mode(AMR_MODE)).strip()
+    res = mapping_mgr.start(
         map_name=target_name,
         world=req.world,
         run_explore=req.run_explore,
         headless=req.headless,
-        use_rviz=req.use_rviz
+        use_rviz=req.use_rviz,
+        auto_start_pi=req.auto_start_pi,
+        stop_pi_on_stop=req.stop_pi_on_stop,
     )
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
-    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
+    status_payload = mapping_mgr.get_status(has_map, map_info, ros_node=node)
+    if not res.get('ok'):
+        return JSONResponse(
+            {'ok': False, 'error': res.get('error', 'Failed to start mapping'), 'mapping': status_payload},
+            status_code=int(res.get('status_code', 500)),
+        )
+    if node:
+        node.active_map_name = target_name
+    return {'ok': True, 'mapping': status_payload}
 
 @app.post('/api/mapping/stop')
-async def post_mapping_stop():
-    mapping_mgr.stop()
+async def post_mapping_stop(req: Optional[MappingStopRequest] = Body(default=None)):
+    stop_pi = req.stop_pi if req is not None else None
+    stop_res = mapping_mgr.stop(stop_pi=stop_pi)
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
-    return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
+    return {'ok': True, 'pi_stopped': bool(stop_res.get('pi_stopped')), 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
 
 @app.post('/api/mapping/redo')
-async def post_mapping_redo():
-    mapping_mgr.redo()
+async def post_mapping_redo(req: Optional[MappingStopRequest] = Body(default=None)):
+    stop_pi = req.stop_pi if req is not None else None
+    mapping_mgr.redo(stop_pi=stop_pi)
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
     return {'ok': True, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
@@ -3157,16 +3557,22 @@ async def post_mapping_redo():
 @app.post('/api/mapping/explore/start')
 async def post_explore_start():
     if node is None:
-        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
-    ok = mapping_mgr.start_auto_explore(ros_node=node)
+        return JSONResponse({'ok': False, 'error': 'ROS node not ready'}, status_code=503)
+    res = mapping_mgr.start_auto_explore(ros_node=node)
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
-    return {'ok': ok, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
+    status_payload = mapping_mgr.get_status(has_map, map_info, ros_node=node)
+    if not res.get('ok'):
+        return JSONResponse(
+            {'ok': False, 'error': res.get('error', 'Failed to start auto-explore'), 'mapping': status_payload},
+            status_code=int(res.get('status_code', 400)),
+        )
+    return {'ok': True, 'mapping': status_payload}
 
 @app.post('/api/mapping/explore/pause')
 async def post_explore_pause():
     if node is None:
-        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
+        return JSONResponse({'ok': False, 'error': 'ROS node not ready'}, status_code=503)
     ok = mapping_mgr.pause_auto_explore(ros_node=node)
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
@@ -3175,11 +3581,17 @@ async def post_explore_pause():
 @app.post('/api/mapping/explore/resume')
 async def post_explore_resume():
     if node is None:
-        return JSONResponse({'error': 'ROS node not ready'}, status_code=503)
-    ok = mapping_mgr.resume_auto_explore(ros_node=node)
+        return JSONResponse({'ok': False, 'error': 'ROS node not ready'}, status_code=503)
+    res = mapping_mgr.resume_auto_explore(ros_node=node)
     has_map = node._has_live_map if node else False
     map_info = node.get_live_map_info() if node else {}
-    return {'ok': ok, 'mapping': mapping_mgr.get_status(has_map, map_info, ros_node=node)}
+    status_payload = mapping_mgr.get_status(has_map, map_info, ros_node=node)
+    if not res.get('ok'):
+        return JSONResponse(
+            {'ok': False, 'error': res.get('error', 'Failed to resume auto-explore'), 'mapping': status_payload},
+            status_code=int(res.get('status_code', 409)),
+        )
+    return {'ok': True, 'mapping': status_payload}
 
 @app.get('/api/mapping/live_map')
 async def get_mapping_live_map(clean: bool = False):
@@ -3240,14 +3652,16 @@ async def get_saved_maps():
             continue
         for yaml_file in sorted(maps_dir.glob("*.yaml")):
             name = yaml_file.stem
-            if name in seen_names:
+            # Deduplicate only if exact same name already added in active mode's primary list,
+            # or allow distinct (category, name) entries; keep unique name within each category
+            if (category, name) in seen_names:
                 continue
-            seen_names.add(name)
+            seen_names.add((category, name))
 
-            pgm_file = _find_map_file(name, ('.pgm',)) or (maps_dir / f"{name}.pgm")
-            png_file = _find_map_file(name, ('.png',)) or (maps_dir / f"{name}.png")
-            graph_file = _find_map_file(name, ('_graph.json',)) or (maps_dir / f"{name}_graph.json")
-            places_file = _find_map_file(name, ('_places.json',)) or (maps_dir / f"{name}_places.json")
+            pgm_file = maps_dir / f"{name}.pgm"
+            png_file = maps_dir / f"{name}.png"
+            graph_file = maps_dir / f"{name}_graph.json"
+            places_file = maps_dir / f"{name}_places.json"
             meta = get_map_metadata_by_name(name)
 
             node_count = 0
@@ -3315,12 +3729,13 @@ async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
             step_corridor=req.step_corridor,
             step_medium=req.step_medium,
             step_open=req.step_open,
+            sync_default=False,
         )
 
-        # Update install & map directories so downstream ROS nodes immediately see the graph
+        # Update mode-appropriate directories so downstream ROS nodes see the extracted graph without cross-polluting sim/hw
         json_p = Path(report['json_path'])
-        install_maps_dir = _WORKSPACE_ROOT / "install" / "agv_description" / "share" / "agv_description" / "maps"
-        for sync_dir in [install_maps_dir, _SIM_MAPS_DIR, _HW_MAPS_DIR]:
+        vis_p = Path(report['vis_path']) if report.get('vis_path') else None
+        for sync_dir in _mode_sync_dirs():
             if sync_dir.exists() and json_p.exists():
                 dest_named = sync_dir / json_p.name
                 if json_p.resolve() != dest_named.resolve():
@@ -3334,6 +3749,13 @@ async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
                         shutil.copy2(json_p, dest_wh)
                     except Exception as e:
                         print(f"[bridge] Note: Could not copy warehouse_graph.json to {sync_dir}: {e}")
+
+        if AMR_MODE == 'hardware' and 'pi_remote_mgr' in globals():
+            sync_files = [p for p in (json_p, vis_p) if p and p.exists()]
+            sync_res = pi_remote_mgr.sync_maps_to_pi(sync_files, AMR_PI_IP)
+            report['pi_synced'] = bool(sync_res.get('ok'))
+            if not sync_res.get('ok'):
+                report['pi_sync_error'] = sync_res.get('error')
 
         # Update in-memory graph cache in node
         if node:
@@ -3679,6 +4101,7 @@ async def post_plan_route(req: PlanRouteRequest):
             })
 
         tot_dist = round(dist[req.goal_node], 2)
+        cruise_v = HW_NAV_LIMITS['cruise_linear_speed'] if AMR_MODE == 'hardware' else 0.4
         return {
             'ok': True,
             'start_node': req.start_node,
@@ -3687,7 +4110,7 @@ async def post_plan_route(req: PlanRouteRequest):
             'waypoints': waypoints,
             'total_distance_m': tot_dist,
             'hop_count': len(path) - 1,
-            'est_time_sec': round(tot_dist / 0.4, 1),
+            'est_time_sec': round(tot_dist / max(0.05, cruise_v), 1),
             'min_clearance_m': round(min(clearances), 3) if clearances else 0.0
         }
     except Exception as e:
@@ -3738,8 +4161,9 @@ async def post_save_named_places(req: SavePlacesRequest):
         json.dump(places_data, f, indent=2)
     saved_files.append(str(places_file.relative_to(_WORKSPACE_ROOT)))
 
-    # 2. Inject places into corresponding <target_name>_graph.json (wherever it exists)
-    for d in _get_map_search_dirs():
+    # 2. Inject places into corresponding <target_name>_graph.json in mode-appropriate dirs
+    sync_paths: List[Path] = [places_file]
+    for d in _mode_sync_dirs():
         target_graph = d / f"{target_name}_graph.json"
         if target_graph.exists():
             try:
@@ -3750,8 +4174,14 @@ async def post_save_named_places(req: SavePlacesRequest):
                     with open(target_graph, 'w', encoding='utf-8') as f:
                         json.dump(raw_graph, f, indent=2)
                     saved_files.append(str(target_graph.relative_to(_WORKSPACE_ROOT)))
+                    sync_paths.append(target_graph)
             except Exception as e:
                 logger.error(f"Error injecting places into {target_graph}: {e}")
+
+    pi_synced = None
+    if AMR_MODE == 'hardware' and 'pi_remote_mgr' in globals():
+        pi_res = pi_remote_mgr.sync_maps_to_pi(sync_paths, AMR_PI_IP)
+        pi_synced = bool(pi_res.get('ok'))
 
     if node and hasattr(node, '_cached_graphs') and target_name in node._cached_graphs:
         node._cached_graphs[target_name]['places'] = places_data
@@ -3764,6 +4194,7 @@ async def post_save_named_places(req: SavePlacesRequest):
         'map_name': target_name,
         'count': len(places_data),
         'places': places_data,
+        'pi_synced': pi_synced,
         'saved_files': list(set(saved_files))
     }
 
@@ -4143,10 +4574,11 @@ async def post_gui_launch(req: GuiLaunchRequest):
         script = _WORKSPACE_ROOT / "view_gazebo.sh"
         cmd = f"/bin/bash {script}"
     else:
+        is_mapping_now = (mapping_mgr.state == 'MAPPING' or mapping_mgr.is_external_mapping_running())
         if AMR_MODE == 'hardware':
-            mode_arg = req.mode or ("hw_explore" if mapping_mgr.state == 'MAPPING' else "hw_nav")
+            mode_arg = req.mode or ("hw_explore" if is_mapping_now else "hw_nav")
         else:
-            mode_arg = req.mode or ("explore" if mapping_mgr.state == 'MAPPING' else "nav")
+            mode_arg = req.mode or ("explore" if is_mapping_now else "nav")
         script = _WORKSPACE_ROOT / "view_rviz.sh"
         cmd = f"/bin/bash {script} {mode_arg}"
 
