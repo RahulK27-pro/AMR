@@ -836,11 +836,45 @@ class MappingManager:
                 return {'ok': True}
 
             if AMR_MODE == 'hardware':
-                return {
-                    'ok': False,
-                    'status_code': 400,
-                    'error': 'Hardware Auto-Explore requires selecting Auto-Explore mode before clicking Start Mapping so the speed-capped Nav2 + Collision Monitor stack launches safely.'
-                }
+                _configure_dds_environment('hardware', AMR_PI_IP)
+                dds_uri = os.environ.get('CYCLONEDDS_URI', '')
+                log_dir = self.ws_root / "run_logs"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                hw_exp_log = log_dir / f"hardware_explore_{time.strftime('%Y%m%d_%H%M%S')}.log"
+                cmd = (
+                    "unset ROS_LOCALHOST_ONLY && "
+                    "export ROS_DOMAIN_ID=7 && "
+                    "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && "
+                    + (f"export CYCLONEDDS_URI=\"{dds_uri}\" && " if dds_uri else "")
+                    + "source /opt/ros/jazzy/setup.bash && "
+                    + f"source {self.ws_root}/install/setup.bash && "
+                    + "ros2 launch agv_description hardware_mapping.launch.py "
+                    + "launch_slam:=false use_rviz:=false run_explore:=true use_sim_time:=false"
+                )
+                try:
+                    self.explore_log = open(hw_exp_log, 'a')
+                    sub_env = os.environ.copy()
+                    sub_env.pop('ROS_LOCALHOST_ONLY', None)
+                    sub_env['ROS_DOMAIN_ID'] = '7'
+                    sub_env['RMW_IMPLEMENTATION'] = 'rmw_cyclonedds_cpp'
+                    if dds_uri:
+                        sub_env['CYCLONEDDS_URI'] = dds_uri
+                    self.explore_proc = subprocess.Popen(
+                        cmd,
+                        shell=True,
+                        executable='/bin/bash',
+                        cwd=str(self.ws_root),
+                        preexec_fn=os.setsid,
+                        stdout=self.explore_log,
+                        stderr=subprocess.STDOUT,
+                        env=sub_env,
+                    )
+                    logger.info("[MappingManager] Dynamically launched speed-capped HW Nav2 + Collision Monitor + explore_lite!")
+                    return {'ok': True}
+                except Exception as e:
+                    self.run_explore = False
+                    logger.error(f"[MappingManager] Failed to launch HW explore stack: {e}")
+                    return {'ok': False, 'status_code': 500, 'error': str(e)}
 
             domain_id = os.environ.get('ROS_DOMAIN_ID', '7')
             rmw_impl = os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')

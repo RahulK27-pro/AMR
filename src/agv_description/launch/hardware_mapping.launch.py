@@ -69,6 +69,10 @@ def generate_launch_description():
         'run_explore', default_value='false',
         description='Whether to launch speed-capped Nav2 + explore_lite for hardware exploration'
     )
+    declare_launch_slam = DeclareLaunchArgument(
+        'launch_slam', default_value='true',
+        description='Whether to launch slam_toolbox (set false when attaching Nav2 + explore_lite dynamically)'
+    )
     declare_explore_params = DeclareLaunchArgument(
         'explore_params_file', default_value=default_explore_params,
         description='Full path to hardware exploration Nav2/explore_lite yaml file'
@@ -79,6 +83,7 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     rviz_config = LaunchConfiguration('rviz_config')
     run_explore = LaunchConfiguration('run_explore')
+    launch_slam = LaunchConfiguration('launch_slam')
     explore_params_file = LaunchConfiguration('explore_params_file')
 
     # 1. SLAM Toolbox (Include official online_async_launch.py with Lifecycle Management & Autostart)
@@ -86,6 +91,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(pkg_slam, 'launch', 'online_async_launch.py')
         ),
+        condition=IfCondition(launch_slam),
         launch_arguments={
             'slam_params_file': slam_params_file,
             'use_sim_time': use_sim_time,
@@ -213,6 +219,7 @@ def generate_launch_description():
         declare_use_rviz,
         declare_rviz_config,
         declare_run_explore,
+        declare_launch_slam,
         declare_explore_params,
         LogInfo(msg="================================================================"),
         LogInfo(msg="  Starting AMR Physical Hardware SLAM Mapping Session           "),

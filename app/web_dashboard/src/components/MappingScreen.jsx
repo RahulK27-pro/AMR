@@ -239,7 +239,8 @@ export default function MappingScreen({
       // Note: We deliberately do NOT update liveMap.meta here from m.map_info.
       // In SLAM Toolbox, the map boundary dynamically expands. The map metadata
       // must remain strictly bound to the currently decoded image to avoid projection jumps.
-      if (m.run_explore != null) {
+      // Only overwrite local runExplore selection from telemetry while actively MAPPING
+      if (m.state === 'MAPPING' && m.run_explore != null) {
         setRunExplore(Boolean(m.run_explore));
       }
       if (m.is_saved != null) {
@@ -468,6 +469,7 @@ export default function MappingScreen({
   }, [isEstopActive]);
 
   const applyExploreModeSwitch = useCallback(async (enableExplore) => {
+    setSaveErrorMsg(null);
     setRunExplore(enableExplore);
     if (status === 'MAPPING') {
       setIsProcessing(true);
