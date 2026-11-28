@@ -296,12 +296,63 @@ export default function ControlPanel({
   const externalRunning = Boolean(systemStatus?.external_running);
   const isStackOnline = systemState === 'RUNNING' || externalRunning;
   const hwLink = telemetry?.hardware_link;
+  const piSsh = hwLink?.pi_ssh;
   const [isSystemLoading, setIsSystemLoading] = useState(false);
+  const [isPiLoading, setIsPiLoading] = useState(false);
+  const [piLogOpen, setPiLogOpen] = useState(false);
+  const [piLogsText, setPiLogsText] = useState('');
+  const [autoStartPi, setAutoStartPi] = useState(() => {
+    const saved = localStorage.getItem('amr_auto_start_pi');
+    return saved === null ? true : saved === 'true';
+  });
+  const [stopPiOnStop, setStopPiOnStop] = useState(() => {
+    return localStorage.getItem('amr_stop_pi_on_stop') === 'true';
+  });
+
+  const handleToggleAutoStartPi = (checked) => {
+    setAutoStartPi(checked);
+    localStorage.setItem('amr_auto_start_pi', String(checked));
+  };
+
+  const handleToggleStopPiOnStop = (checked) => {
+    setStopPiOnStop(checked);
+    localStorage.setItem('amr_stop_pi_on_stop', String(checked));
+  };
+
+  const handleStartPiHardware = async () => {
+    setIsPiLoading(true);
+    try {
+      await bridge.startPiHardware();
+    } finally {
+      setIsPiLoading(false);
+    }
+  };
+
+  const handleStopPiHardware = async () => {
+    setIsPiLoading(true);
+    try {
+      await bridge.stopPiHardware();
+    } finally {
+      setIsPiLoading(false);
+    }
+  };
+
+  const handleTogglePiLogs = async () => {
+    const next = !piLogOpen;
+    setPiLogOpen(next);
+    if (next) {
+      const res = await bridge.getPiLogs(60);
+      setPiLogsText(res?.ok ? (res.logs || '(empty log)') : `Error: ${res?.error || 'Could not read Pi log'}`);
+    }
+  };
 
   const handleStartNavigationSystem = async () => {
     setIsSystemLoading(true);
     try {
-      await bridge.startNavigationSystem(activeMap);
+      await bridge.startNavigationSystem(activeMap, '', {
+        autoStartPi: mode === 'hardware' ? autoStartPi : false,
+        stopPiOnStop: mode === 'hardware' ? stopPiOnStop : false,
+      });
     } catch (err) {
       bridge.emitEvent('critical', `Failed to start navigation system: ${err.message}`);
     } finally {
@@ -312,7 +363,9 @@ export default function ControlPanel({
   const handleStopNavigationSystem = async () => {
     setIsSystemLoading(true);
     try {
-      await bridge.stopNavigationSystem();
+      await bridge.stopNavigationSystem({
+        stopPi: mode === 'hardware' ? stopPiOnStop : false,
+      });
     } catch (err) {
       bridge.emitEvent('critical', `Failed to stop navigation system: ${err.message}`);
     } finally {
@@ -369,8 +422,28 @@ export default function ControlPanel({
                   <span className="text-dim" style={{ textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.04em' }}>
                     Pi 5 ({piIp}):
                   </span>
-                  <span style={{ color: hwLink?.sensors_ready ? '#10b981' : '#f59e0b', fontSize: 11, fontWeight: 700 }}>
-                    {hwLink?.sensors_ready ? 'Sensors Streaming' : 'Run ./start_hardware.sh on Pi'}
+                  <span
+                    style={{
+                      color: hwLink?.sensors_ready
+                        ? '#10b981'
+                        : piSsh?.state === 'STARTING'
+                        ? '#38bdf8'
+                        : piSsh?.ssh_ready
+                        ? '#f59e0b'
+                        : '#f87171',
+                      fontSize: 11,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {hwLink?.sensors_ready
+                      ? 'Sensors Streaming'
+                      : piSsh?.state === 'STARTING'
+                      ? 'Booting Pi Stack (Hold Still)...'
+                      : piSsh?.remote_running
+                      ? 'Pi Booting Sensors...'
+                      : piSsh?.ssh_ready
+                      ? 'SSH Ready (Pi Standby)'
+                      : 'Run ./start_hardware.sh on Pi'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -384,6 +457,110 @@ export default function ControlPanel({
                     {' · '}
                     {telemetry?.nav_limits?.use_bt ? 'BT On' : 'BT Off'}
                   </span>
+                </div>
+
+                {/* Optional SSH Pi Hardware Controls */}
+                <div
+                  style={{
+                    marginTop: 6,
+                    marginBottom: 6,
+                    padding: '6px 8px',
+                    borderRadius: 5,
+                    border: '1px solid var(--border)',
+                    background: 'var(--bg-surface)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                    <span className="text-dim" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                      Pi Bringup (SSH)
+                    </span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {hwLink?.sensors_ready || piSsh?.remote_running ? (
+                        <button
+                          id="btn-stop-pi-ssh"
+                          type="button"
+                          className="btn btn--outline"
+                          disabled={isPiLoading || isSystemLoading}
+                          onClick={handleStopPiHardware}
+                          style={{ padding: '3px 8px', fontSize: 10, borderColor: '#ef4444', color: '#f87171' }}
+                          title="Stop ./start_hardware.sh and Pi hardware nodes cleanly over SSH"
+                        >
+                          {isPiLoading ? 'Stopping…' : 'Stop Pi'}
+                        </button>
+                      ) : (
+                        <button
+                          id="btn-start-pi-ssh"
+                          type="button"
+                          className="btn btn--outline"
+                          disabled={isPiLoading || isSystemLoading || piSsh?.state === 'STARTING' || (piSsh && piSsh.ssh_ready === false)}
+                          onClick={handleStartPiHardware}
+                          style={{ padding: '3px 8px', fontSize: 10, borderColor: '#10b981', color: '#34d399' }}
+                          title="Start ./start_hardware.sh on Pi in background via SSH"
+                        >
+                          {isPiLoading || piSsh?.state === 'STARTING' ? 'Starting…' : 'Start Pi'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        onClick={handleTogglePiLogs}
+                        style={{ padding: '3px 6px', fontSize: 10 }}
+                        title="View recent Pi ./start_hardware.sh console log"
+                      >
+                        {piLogOpen ? 'Hide Log' : 'Pi Log'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 11, color: 'var(--text-secondary)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+                      <input
+                        id="chk-auto-start-pi"
+                        type="checkbox"
+                        checked={autoStartPi}
+                        onChange={(e) => handleToggleAutoStartPi(e.target.checked)}
+                      />
+                      <span>Auto-start Pi on Nav Launch</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+                      <input
+                        id="chk-stop-pi-on-stop"
+                        type="checkbox"
+                        checked={stopPiOnStop}
+                        onChange={(e) => handleToggleStopPiOnStop(e.target.checked)}
+                      />
+                      <span>Stop Pi on Stop</span>
+                    </label>
+                  </div>
+
+                  {piSsh?.last_error && !hwLink?.sensors_ready && (
+                    <div style={{ fontSize: 10, color: '#fbbf24' }}>
+                      {piSsh.last_error}
+                    </div>
+                  )}
+
+                  {piLogOpen && (
+                    <pre
+                      style={{
+                        margin: 0,
+                        maxHeight: 120,
+                        overflowY: 'auto',
+                        padding: 6,
+                        borderRadius: 4,
+                        background: 'rgba(0,0,0,0.35)',
+                        fontSize: 10,
+                        lineHeight: 1.35,
+                        color: 'var(--text-secondary)',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {piLogsText || 'Loading...'}
+                    </pre>
+                  )}
                 </div>
               </>
             )}
@@ -450,7 +627,9 @@ export default function ControlPanel({
             {!externalRunning && systemState === 'STOPPED' && (
               <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
                 {mode === 'hardware'
-                  ? 'Launches AMCL, Auto-Localizer & MPPI (assumes ./start_hardware.sh is running on Pi).'
+                  ? autoStartPi
+                    ? '1-Click Launch: SSH-starts ./start_hardware.sh on Pi (if needed), then starts AMCL & MPPI.'
+                    : 'Launches AMCL, Auto-Localizer & MPPI (assumes ./start_hardware.sh is running on Pi).'
                   : 'Launches Gazebo simulation, Route Runner & BT Manager.'}
               </div>
             )}

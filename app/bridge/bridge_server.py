@@ -32,6 +32,7 @@ import json
 import math
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -132,6 +133,8 @@ def _configure_dds_environment(mode: str, pi_ip: str):
 
 
 AMR_MODE, AMR_PI_IP = _parse_runtime_args()
+AMR_PI_USER = os.environ.get("AMR_PI_USER", "amr").strip() or "amr"
+AMR_PI_DIR = os.environ.get("AMR_PI_DIR", "~/AMR").strip() or "~/AMR"
 _configure_dds_environment(AMR_MODE, AMR_PI_IP)
 _PENDING_REEXEC: Optional[Tuple[str, str]] = None
 _UVICORN_SERVER: Optional[Any] = None
@@ -181,7 +184,7 @@ try:
 except ImportError:
     _TF2_AVAILABLE = False
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
@@ -891,6 +894,359 @@ class MappingManager:
 mapping_mgr = MappingManager(_WORKSPACE_ROOT)
 
 
+class PiRemoteManager:
+    """Optional passwordless-SSH controller for Raspberry Pi ./start_hardware.sh bringup."""
+
+    _PROC_PGREP_PATTERN = (
+        r"[h]ardware_bringup\.launch\.py|"
+        r"[a]mr_hardware_drive_node|"
+        r"[a]mr_imu_node|"
+        r"[a]mr_lidar_node"
+    )
+    _STOP_PGREP_PATTERN = (
+        r"[h]ardware_bringup\.launch\.py|"
+        r"[a]mr_hardware_drive_node|"
+        r"[a]mr_imu_node|"
+        r"[a]mr_lidar_node|"
+        r"[e]kf_node|"
+        r"[r]obot_state_publisher"
+    )
+
+    def __init__(self, pi_user: str = AMR_PI_USER, pi_dir: str = AMR_PI_DIR):
+        self.pi_user = pi_user
+        self.pi_dir = pi_dir
+        self.lock = threading.Lock()
+        self.state = 'STOPPED'  # 'STOPPED' | 'STARTING' | 'RUNNING' | 'STOPPING' | 'ERROR'
+        self.ssh_ready = False
+        self.reachable = False
+        self.remote_running = False
+        self.managed_pid: Optional[int] = None
+        self.pids: List[str] = []
+        self.last_error: Optional[str] = None
+        self.last_check_time: float = 0.0
+        self.start_time: Optional[float] = None
+        self._refresh_inflight = False
+
+    def _remote_dir_expr(self) -> str:
+        raw = self.pi_dir.strip()
+        if raw == "~":
+            return "$HOME"
+        if raw.startswith("~/"):
+            return f"$HOME/{shlex.quote(raw[2:])}"
+        return shlex.quote(raw)
+
+    def _run_ssh(self, pi_ip: str, remote_cmd: str, timeout: float = 5.0) -> subprocess.CompletedProcess:
+        cmd = [
+            'ssh',
+            '-o', 'BatchMode=yes',
+            '-o', 'ConnectTimeout=3',
+            '-o', 'StrictHostKeyChecking=no',
+            f'{self.pi_user}@{pi_ip}',
+            remote_cmd,
+        ]
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+    @staticmethod
+    def _classify_ssh_error(stderr: str, returncode: int) -> str:
+        msg = (stderr or '').strip()
+        low = msg.lower()
+        if 'permission denied' in low or 'publickey' in low:
+            return (
+                f"Passwordless SSH key auth failed for {AMR_PI_USER}@{AMR_PI_IP}. "
+                f"Run ssh-copy-id {AMR_PI_USER}@{AMR_PI_IP} first."
+            )
+        if 'timed out' in low or 'no route to host' in low or 'network is unreachable' in low:
+            return f"Raspberry Pi ({AMR_PI_IP}) is unreachable on the network."
+        if 'connection refused' in low:
+            return f"SSH port refused on Raspberry Pi ({AMR_PI_IP})."
+        return msg or f"SSH command failed (exit code {returncode})."
+
+    def check_status(self, pi_ip: Optional[str] = None, force: bool = False) -> dict:
+        target_ip = (pi_ip or AMR_PI_IP).strip()
+        now = time.time()
+        with self.lock:
+            if not force and (now - self.last_check_time) < 3.5:
+                return self._snapshot_locked(target_ip)
+
+        dir_expr = self._remote_dir_expr()
+        probe_script = (
+            f'PI_DIR={dir_expr}; '
+            f'PID_FILE="$PI_DIR/run_logs/pi_hardware.pid"; '
+            f'MANAGED=""; '
+            f'if [ -f "$PID_FILE" ]; then '
+            f'  MP=$(cat "$PID_FILE" 2>/dev/null || true); '
+            f'  if [ -n "$MP" ] && kill -0 "$MP" 2>/dev/null; then MANAGED="$MP"; fi; '
+            f'fi; '
+            f'PIDS=$(pgrep -f {shlex.quote(self._PROC_PGREP_PATTERN)} 2>/dev/null | tr "\\n" "," || true); '
+            f'SCRIPT_OK=0; [ -x "$PI_DIR/start_hardware.sh" ] && SCRIPT_OK=1; '
+            f'echo "SSH_OK=1|SCRIPT_OK=$SCRIPT_OK|MANAGED=$MANAGED|PIDS=$PIDS"'
+        )
+        try:
+            res = self._run_ssh(target_ip, probe_script, timeout=4.5)
+        except subprocess.TimeoutExpired:
+            with self.lock:
+                self.reachable = False
+                self.ssh_ready = False
+                self.remote_running = False
+                self.pids = []
+                self.managed_pid = None
+                self.last_check_time = time.time()
+                self.last_error = f"SSH connection to {self.pi_user}@{target_ip} timed out."
+                return self._snapshot_locked(target_ip)
+        except Exception as e:
+            with self.lock:
+                self.reachable = False
+                self.ssh_ready = False
+                self.remote_running = False
+                self.last_check_time = time.time()
+                self.last_error = f"SSH check error: {e}"
+                return self._snapshot_locked(target_ip)
+
+        with self.lock:
+            self.last_check_time = time.time()
+            if res.returncode != 0:
+                err = self._classify_ssh_error(res.stderr, res.returncode)
+                self.reachable = 'timed out' not in err.lower() and 'unreachable' not in err.lower()
+                self.ssh_ready = False
+                self.remote_running = False
+                self.pids = []
+                self.managed_pid = None
+                self.last_error = err
+                return self._snapshot_locked(target_ip)
+
+            self.reachable = True
+            self.ssh_ready = True
+            line = (res.stdout or '').strip().splitlines()[-1] if (res.stdout or '').strip() else ''
+            parsed: Dict[str, str] = {}
+            for part in line.split('|'):
+                if '=' in part:
+                    k, v = part.split('=', 1)
+                    parsed[k.strip()] = v.strip()
+
+            pids = [p for p in parsed.get('PIDS', '').split(',') if p.strip().isdigit()]
+            mp_str = parsed.get('MANAGED', '')
+            self.pids = pids
+            self.managed_pid = int(mp_str) if mp_str.isdigit() else None
+            self.remote_running = bool(pids or self.managed_pid)
+            if parsed.get('SCRIPT_OK') == '0':
+                self.last_error = f"start_hardware.sh not found or not executable in {self.pi_dir} on {target_ip}."
+            elif self.last_error and 'ssh' in self.last_error.lower():
+                self.last_error = None
+
+            if self.remote_running:
+                if self.state != 'STARTING':
+                    self.state = 'RUNNING'
+            elif self.state in ('RUNNING', 'STOPPING'):
+                self.state = 'STOPPED'
+                self.start_time = None
+
+            return self._snapshot_locked(target_ip)
+
+    def _snapshot_locked(self, pi_ip: Optional[str] = None, sensors_ready: bool = False) -> dict:
+        eff_state = self.state
+        if sensors_ready and eff_state != 'STOPPING':
+            eff_state = 'RUNNING'
+        return {
+            'ok': True,
+            'pi_ip': (pi_ip or AMR_PI_IP).strip(),
+            'pi_user': self.pi_user,
+            'pi_dir': self.pi_dir,
+            'reachable': self.reachable,
+            'ssh_ready': self.ssh_ready,
+            'remote_running': self.remote_running,
+            'managed_pid': self.managed_pid,
+            'pids': list(self.pids),
+            'state': eff_state,
+            'last_error': self.last_error,
+            'checked_at': round(self.last_check_time, 2) if self.last_check_time else None,
+        }
+
+    def get_cached_status(self, sensors_ready: bool = False) -> dict:
+        need_bg = False
+        with self.lock:
+            snap = self._snapshot_locked(AMR_PI_IP, sensors_ready=sensors_ready)
+            if AMR_MODE == 'hardware' and not self._refresh_inflight and (time.time() - self.last_check_time) > 5.0:
+                self._refresh_inflight = True
+                need_bg = True
+
+        if need_bg:
+            def _bg():
+                try:
+                    self.check_status(AMR_PI_IP, force=True)
+                finally:
+                    with self.lock:
+                        self._refresh_inflight = False
+            threading.Thread(target=_bg, daemon=True).start()
+        return snap
+
+    def sync_clock(self, pi_ip: Optional[str] = None) -> bool:
+        target_ip = (pi_ip or AMR_PI_IP).strip()
+        try:
+            epoch_str = f"{time.time():.6f}"
+            res = self._run_ssh(target_ip, f"sudo -n date -s '@{epoch_str}'", timeout=3.5)
+            return res.returncode == 0
+        except Exception:
+            return False
+
+    def get_logs(self, pi_ip: Optional[str] = None, lines: int = 50) -> dict:
+        target_ip = (pi_ip or AMR_PI_IP).strip()
+        safe_lines = max(5, min(int(lines), 300))
+        dir_expr = self._remote_dir_expr()
+        cmd = (
+            f'LOG_FILE={dir_expr}/run_logs/pi_hardware_latest.log; '
+            f'if [ -f "$LOG_FILE" ]; then tail -n {safe_lines} "$LOG_FILE"; '
+            f'else echo "(no pi_hardware_latest.log found on Pi yet)"; fi'
+        )
+        try:
+            res = self._run_ssh(target_ip, cmd, timeout=4.5)
+            if res.returncode != 0:
+                return {'ok': False, 'error': self._classify_ssh_error(res.stderr, res.returncode), 'logs': ''}
+            return {'ok': True, 'pi_ip': target_ip, 'logs': res.stdout}
+        except Exception as e:
+            return {'ok': False, 'error': str(e), 'logs': ''}
+
+    def start_hardware(self, pi_ip: Optional[str] = None) -> dict:
+        target_ip = (pi_ip or AMR_PI_IP).strip()
+        status = self.check_status(target_ip, force=True)
+        if not status.get('ssh_ready'):
+            return {'ok': False, 'error': status.get('last_error') or f"SSH not ready for {target_ip}", **status}
+        if status.get('remote_running'):
+            with self.lock:
+                self.state = 'RUNNING'
+                self.last_error = None
+            return {
+                'ok': True,
+                'already_running': True,
+                'message': f"Pi hardware stack is already running on {target_ip}.",
+                **self.check_status(target_ip, force=True),
+            }
+
+        laptop_ip = _detect_local_ip_for_peer(target_ip)
+        arg_str = shlex.quote(laptop_ip) if laptop_ip else ""
+        dir_expr = self._remote_dir_expr()
+        launch_script = (
+            f'PI_DIR={dir_expr}; '
+            f'if [ ! -x "$PI_DIR/start_hardware.sh" ]; then '
+            f'  echo "MISSING_SCRIPT:$PI_DIR/start_hardware.sh" >&2; exit 2; '
+            f'fi; '
+            f'mkdir -p "$PI_DIR/run_logs"; '
+            f'rm -f "$PI_DIR/run_logs/pi_hardware.pid"; '
+            f'cd "$PI_DIR"; '
+            f'setsid nohup ./start_hardware.sh {arg_str} </dev/null > "$PI_DIR/run_logs/pi_hardware_latest.log" 2>&1 & '
+            f'BG_PID=$!; '
+            f'echo "$BG_PID" > "$PI_DIR/run_logs/pi_hardware.pid"; '
+            f'sleep 0.9; '
+            f'if kill -0 "$BG_PID" 2>/dev/null; then '
+            f'  echo "STARTED_PID=$BG_PID"; exit 0; '
+            f'else '
+            f'  echo "EARLY_EXIT"; tail -n 15 "$PI_DIR/run_logs/pi_hardware_latest.log" 2>/dev/null || true; exit 3; '
+            f'fi'
+        )
+
+        with self.lock:
+            self.state = 'STARTING'
+            self.start_time = time.time()
+            self.last_error = None
+
+        logger.info(f"[PiRemoteManager] Starting ./start_hardware.sh {laptop_ip} on {self.pi_user}@{target_ip}...")
+        try:
+            res = self._run_ssh(target_ip, launch_script, timeout=10.0)
+        except Exception as e:
+            with self.lock:
+                self.state = 'ERROR'
+                self.last_error = f"Failed launching start_hardware.sh via SSH: {e}"
+                return {'ok': False, 'error': self.last_error, **self._snapshot_locked(target_ip)}
+
+        if res.returncode != 0:
+            detail = (res.stdout or res.stderr or '').strip()
+            with self.lock:
+                self.state = 'ERROR'
+                self.last_error = f"Pi start_hardware.sh failed: {detail or f'exit {res.returncode}'}"
+                return {'ok': False, 'error': self.last_error, **self._snapshot_locked(target_ip)}
+
+        pid_match = re.search(r'STARTED_PID=(\d+)', res.stdout or '')
+        with self.lock:
+            self.managed_pid = int(pid_match.group(1)) if pid_match else None
+            self.remote_running = True
+            self.state = 'STARTING'
+            self.last_check_time = time.time()
+            return {
+                'ok': True,
+                'already_running': False,
+                'laptop_ip': laptop_ip,
+                'message': f"Launched ./start_hardware.sh {laptop_ip} on Pi ({target_ip}). Calibrating IMU & LiDAR...",
+                **self._snapshot_locked(target_ip),
+            }
+
+    def stop_hardware(self, pi_ip: Optional[str] = None) -> dict:
+        target_ip = (pi_ip or AMR_PI_IP).strip()
+        with self.lock:
+            self.state = 'STOPPING'
+
+        # Zero /cmd_vel immediately from bridge side before tearing down Pi drive node
+        n = globals().get('node')
+        if n is not None:
+            try:
+                n.publish_cmd_vel(0.0, 0.0)
+            except Exception:
+                pass
+
+        dir_expr = self._remote_dir_expr()
+        stop_script = (
+            f'PI_DIR={dir_expr}; '
+            f'PID_FILE="$PI_DIR/run_logs/pi_hardware.pid"; '
+            f'if [ -f "$PID_FILE" ]; then '
+            f'  MP=$(cat "$PID_FILE" 2>/dev/null || true); '
+            f'  if [ -n "$MP" ] && kill -0 "$MP" 2>/dev/null; then '
+            f'    kill -INT -"$MP" 2>/dev/null || kill -INT "$MP" 2>/dev/null || true; '
+            f'  fi; '
+            f'fi; '
+            f'pkill -INT -f {shlex.quote(self._STOP_PGREP_PATTERN)} 2>/dev/null || true; '
+            f'for _ in 1 2 3 4 5; do '
+            f'  if ! pgrep -f {shlex.quote(self._STOP_PGREP_PATTERN)} >/dev/null 2>&1; then break; fi; '
+            f'  sleep 0.4; '
+            f'done; '
+            f'if pgrep -f {shlex.quote(self._STOP_PGREP_PATTERN)} >/dev/null 2>&1; then '
+            f'  pkill -TERM -f {shlex.quote(self._STOP_PGREP_PATTERN)} 2>/dev/null || true; '
+            f'  sleep 0.6; '
+            f'fi; '
+            f'if pgrep -f {shlex.quote(self._STOP_PGREP_PATTERN)} >/dev/null 2>&1; then '
+            f'  pkill -KILL -f {shlex.quote(self._STOP_PGREP_PATTERN)} 2>/dev/null || true; '
+            f'fi; '
+            f'rm -f "$PID_FILE"; '
+            f'echo "STOPPED_OK"'
+        )
+        try:
+            res = self._run_ssh(target_ip, stop_script, timeout=10.0)
+        except Exception as e:
+            with self.lock:
+                self.state = 'ERROR'
+                self.last_error = f"SSH stop error: {e}"
+                return {'ok': False, 'error': self.last_error, **self._snapshot_locked(target_ip)}
+
+        with self.lock:
+            if res.returncode != 0:
+                self.state = 'ERROR'
+                self.last_error = self._classify_ssh_error(res.stderr, res.returncode)
+                return {'ok': False, 'error': self.last_error, **self._snapshot_locked(target_ip)}
+            self.state = 'STOPPED'
+            self.remote_running = False
+            self.managed_pid = None
+            self.pids = []
+            self.start_time = None
+            self.last_error = None
+            self.last_check_time = time.time()
+            logger.info(f"[PiRemoteManager] Stopped Pi hardware stack on {target_ip}.")
+            return {
+                'ok': True,
+                'message': f"Stopped Pi hardware stack on {target_ip}.",
+                **self._snapshot_locked(target_ip),
+            }
+
+
+pi_remote_mgr = PiRemoteManager()
+
+
 class SystemLaunchManager:
     """Manages the full navigation stack lifecycle for both Simulation and Physical Hardware:
        - sim mode: navigation_launch.py (Gazebo + AMCL) + route_runner + bt_manager + graph_visualizer
@@ -913,6 +1269,7 @@ class SystemLaunchManager:
         self.graph_log = None
         self.active_log_path: Optional[str] = None
         self.error_msg: Optional[str] = None
+        self._stop_pi_on_stop: bool = False
         self.lock = threading.Lock()
         self._cancel_event = threading.Event()
         self._worker_thread: Optional[threading.Thread] = None
@@ -949,7 +1306,15 @@ class SystemLaunchManager:
                 return True
         return False
 
-    def start(self, map_name: Optional[str] = None, world: Optional[str] = None, headless: bool = True, use_rviz: bool = False) -> dict:
+    def start(
+        self,
+        map_name: Optional[str] = None,
+        world: Optional[str] = None,
+        headless: bool = True,
+        use_rviz: bool = False,
+        auto_start_pi: bool = False,
+        stop_pi_on_stop: bool = False,
+    ) -> dict:
         with self.lock:
             if self.state in ('STARTING', 'RUNNING'):
                 return {'ok': False, 'error': f'System is already {self.state.lower()}'}
@@ -966,6 +1331,7 @@ class SystemLaunchManager:
 
             target_map = (map_name or self.active_map or _default_map_for_mode(AMR_MODE)).strip()
             self.active_map = target_map
+            self._stop_pi_on_stop = bool(stop_pi_on_stop) if AMR_MODE == 'hardware' else False
             self.state = 'STARTING'
             self.stage = 1
             if AMR_MODE == 'hardware':
@@ -986,12 +1352,18 @@ class SystemLaunchManager:
                 except Exception as e:
                     logger.warning(f"[SystemLaunchManager] Node reset warning: {e}")
 
-            target_fn = self._start_hardware_sequence if AMR_MODE == 'hardware' else self._start_sequence
-            self._worker_thread = threading.Thread(
-                target=target_fn,
-                args=(cancel_evt, target_map, world, headless, use_rviz),
-                daemon=True
-            )
+            if AMR_MODE == 'hardware':
+                self._worker_thread = threading.Thread(
+                    target=self._start_hardware_sequence,
+                    args=(cancel_evt, target_map, world, headless, use_rviz, bool(auto_start_pi)),
+                    daemon=True
+                )
+            else:
+                self._worker_thread = threading.Thread(
+                    target=self._start_sequence,
+                    args=(cancel_evt, target_map, world, headless, use_rviz),
+                    daemon=True
+                )
             self._worker_thread.start()
 
             return {'ok': True, 'state': self.state, 'map_name': target_map, 'mode': AMR_MODE}
@@ -1009,7 +1381,15 @@ class SystemLaunchManager:
                     except Exception as e:
                         logger.warning(f"[SystemLaunchManager] Sync graph warning: {e}")
 
-    def _start_hardware_sequence(self, cancel_evt: threading.Event, map_name: str, world: Optional[str], headless: bool = True, use_rviz: bool = False):
+    def _start_hardware_sequence(
+        self,
+        cancel_evt: threading.Event,
+        map_name: str,
+        world: Optional[str],
+        headless: bool = True,
+        use_rviz: bool = False,
+        auto_start_pi: bool = False,
+    ):
         try:
             if cancel_evt.is_set():
                 return
@@ -1025,29 +1405,67 @@ class SystemLaunchManager:
 
             self._sync_graph_fallback(map_name)
 
-            # 1. Verify Pi sensors (/scan & /odometry/filtered) are streaming (assumes ./start_hardware.sh is running on Pi)
+            # 1. Verify Pi sensors (/scan & /odometry/filtered), optionally SSH-starting ./start_hardware.sh
             with self.lock:
                 if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
                     return
                 self.stage = 1
                 self.stage_text = f'1/3 Checking Pi ({AMR_PI_IP}) /scan & /odometry/filtered...'
 
-            sensors_ok = False
             n = globals().get('node')
-            for _ in range(8):
+
+            def _wait_for_sensors(iterations: int, check_pi_health: bool = False) -> bool:
+                for idx in range(iterations):
+                    if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
+                        return False
+                    now = time.time()
+                    if (
+                        n is not None
+                        and (now - getattr(n, '_last_scan_rx_time', 0.0)) < 3.0
+                        and (now - getattr(n, '_last_odom_rx_time', 0.0)) < 3.0
+                    ):
+                        return True
+                    if check_pi_health and idx > 0 and idx % 8 == 7:
+                        pi_st = pi_remote_mgr.check_status(AMR_PI_IP, force=True)
+                        if not pi_st.get('remote_running'):
+                            logs = pi_remote_mgr.get_logs(AMR_PI_IP, lines=12).get('logs', '').strip()
+                            tail = " | ".join(logs.splitlines()[-4:]) if logs else "no log output"
+                            raise RuntimeError(
+                                f"Pi start_hardware.sh exited before sensors came online: {tail}"
+                            )
+                    if cancel_evt.wait(0.5):
+                        return False
+                return False
+
+            # Fast attach check first (if Pi is already streaming from manual terminal or earlier start)
+            sensors_ok = _wait_for_sensors(6, check_pi_health=False)
+
+            if not sensors_ok and auto_start_pi:
                 if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
                     return
-                now = time.time()
-                if n is not None and (now - getattr(n, '_last_scan_rx_time', 0.0)) < 3.0 and (now - getattr(n, '_last_odom_rx_time', 0.0)) < 3.0:
-                    sensors_ok = True
-                    break
-                if cancel_evt.wait(0.5):
-                    return
+                with self.lock:
+                    self.stage = 1
+                    self.stage_text = (
+                        f'1/3 Starting ./start_hardware.sh on Pi ({AMR_PI_IP}) via SSH — '
+                        f'keep robot stationary for IMU calibration...'
+                    )
+                pi_res = pi_remote_mgr.start_hardware(AMR_PI_IP)
+                if not pi_res.get('ok'):
+                    raise RuntimeError(pi_res.get('error') or f"Failed to start hardware on Pi {AMR_PI_IP}")
+                # Allow time for colcon check, IMU gyro bias calibration (~2s), and YDLIDAR X2 spinup
+                sensors_ok = _wait_for_sensors(56, check_pi_health=True)
+
+            if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
+                return
 
             if not sensors_ok:
+                hint = (
+                    "IMU/LiDAR did not publish within timeout — check USB/I2C wiring and Pi logs."
+                    if auto_start_pi
+                    else "Ensure './start_hardware.sh' is running on the Raspberry Pi 5 (or enable Auto-Start Pi via SSH)."
+                )
                 raise RuntimeError(
-                    f"Pi sensors (/scan, /odometry/filtered) not detected from {AMR_PI_IP}. "
-                    f"Ensure './start_hardware.sh' is running on the Raspberry Pi 5 first."
+                    f"Pi sensors (/scan, /odometry/filtered) not detected from {AMR_PI_IP}. {hint}"
                 )
 
             if cancel_evt.is_set():
@@ -1060,18 +1478,7 @@ class SystemLaunchManager:
                 self.stage = 2
                 self.stage_text = f'2/3 Syncing Pi clock & launching hardware navigation ({map_name})...'
 
-            try:
-                epoch_str = f"{time.time():.6f}"
-                subprocess.run(
-                    [
-                        'ssh', '-o', 'ConnectTimeout=2', '-o', 'BatchMode=yes',
-                        '-o', 'StrictHostKeyChecking=no', f'amr@{AMR_PI_IP}',
-                        f"sudo date -s '@{epoch_str}'"
-                    ],
-                    capture_output=True, text=True, timeout=3.5
-                )
-            except Exception:
-                pass
+            pi_remote_mgr.sync_clock(AMR_PI_IP)
 
             if cancel_evt.is_set() or self.state in ('STOPPING', 'STOPPED'):
                 return
@@ -1348,12 +1755,21 @@ class SystemLaunchManager:
                 logger.error(f"[SystemLaunchManager] Startup failed: {e}")
                 self._cleanup_processes()
 
-    def stop(self) -> dict:
+    def stop(self, stop_pi: Optional[bool] = None) -> dict:
         self._cancel_event.set()
         with self.lock:
             self.state = 'STOPPING'
             self.stage_text = 'Stopping navigation stack...'
             self._cleanup_processes()
+            should_stop_pi = (
+                AMR_MODE == 'hardware'
+                and (stop_pi if stop_pi is not None else self._stop_pi_on_stop)
+            )
+            self._stop_pi_on_stop = False
+            pi_stop_res = None
+            if should_stop_pi:
+                self.stage_text = 'Stopping Raspberry Pi hardware stack via SSH...'
+                pi_stop_res = pi_remote_mgr.stop_hardware(AMR_PI_IP)
             self.state = 'STOPPED'
             self.stage = 0
             self.stage_text = 'Stopped'
@@ -1364,7 +1780,7 @@ class SystemLaunchManager:
                 except Exception as e:
                     logger.warning(f"[SystemLaunchManager] Node reset warning: {e}")
             logger.info("[SystemLaunchManager] System stopped successfully.")
-            return {'ok': True, 'state': self.state}
+            return {'ok': True, 'state': self.state, 'pi_stopped': bool(pi_stop_res and pi_stop_res.get('ok'))}
 
     def _cleanup_processes(self):
         for proc, name in [
@@ -2295,6 +2711,7 @@ class AmrBridgeNode(Node):
                 'amcl_localized':      amcl_alive or map_tf_locked,
                 'external_nav_active': external_nav_active,
                 'loc_verified':        bool(self.localization_status.get('verified', True)) if self.localization_status else (amcl_alive or map_tf_locked),
+                'pi_ssh':              pi_remote_mgr.get_cached_status(sensors_ready=(scan_alive and odom_alive)) if (AMR_MODE == 'hardware' and 'pi_remote_mgr' in globals()) else None,
             },
             'localization_status': self.localization_status,
             'pose':            self.pose,
@@ -2420,6 +2837,12 @@ class SystemStartRequest(BaseModel):
     world: Optional[str] = None
     headless: bool = True
     use_rviz: bool = False
+    auto_start_pi: bool = False
+    stop_pi_on_stop: bool = False
+
+
+class SystemStopRequest(BaseModel):
+    stop_pi: Optional[bool] = None
 
 class StartMappingRequest(BaseModel):
     map_name: str = 'hospital_map'
@@ -3633,7 +4056,14 @@ async def post_system_start(req: SystemStartRequest = SystemStartRequest()):
     curr_map = (req.map_name or (node.active_map_name if node else None) or _default_map_for_mode(AMR_MODE)).strip()
     if node and not _find_map_file(curr_map, ('.yaml', '_graph.json', '.png', '.pgm')):
         return JSONResponse({'ok': False, 'error': f"Map '{curr_map}' not found on disk."}, status_code=404)
-    res = system_mgr.start(map_name=curr_map, world=req.world, headless=req.headless, use_rviz=req.use_rviz)
+    res = system_mgr.start(
+        map_name=curr_map,
+        world=req.world,
+        headless=req.headless,
+        use_rviz=req.use_rviz,
+        auto_start_pi=req.auto_start_pi,
+        stop_pi_on_stop=req.stop_pi_on_stop,
+    )
     if res.get('ok') and node:
         try:
             node.set_active_map(curr_map)
@@ -3643,15 +4073,48 @@ async def post_system_start(req: SystemStartRequest = SystemStartRequest()):
 
 
 @app.post('/api/system/stop')
-async def post_system_stop():
-    """Stop the full AMR navigation stack cleanly."""
-    return system_mgr.stop()
+async def post_system_stop(req: Optional[SystemStopRequest] = Body(default=None)):
+    """Stop the full AMR navigation stack cleanly (optionally stops Pi hardware stack via SSH)."""
+    stop_pi = req.stop_pi if req is not None else None
+    return system_mgr.stop(stop_pi=stop_pi)
 
 
 @app.get('/api/system/status')
 async def get_system_status():
     """Get current lifecycle status of the navigation stack."""
     return system_mgr.get_status()
+
+
+@app.get('/api/hardware/pi/status')
+async def get_pi_hardware_status(force: bool = True):
+    """Check Raspberry Pi SSH reachability and ./start_hardware.sh process state."""
+    return pi_remote_mgr.check_status(AMR_PI_IP, force=force)
+
+
+@app.post('/api/hardware/pi/start')
+async def post_pi_hardware_start():
+    """Optionally start ./start_hardware.sh on the Raspberry Pi via passwordless SSH."""
+    if AMR_MODE != 'hardware':
+        return JSONResponse({'ok': False, 'error': 'Switch to HARDWARE mode before starting Pi hardware.'}, status_code=400)
+    res = pi_remote_mgr.start_hardware(AMR_PI_IP)
+    status_code = 200 if res.get('ok') else 500
+    return JSONResponse(res, status_code=status_code)
+
+
+@app.post('/api/hardware/pi/stop')
+async def post_pi_hardware_stop():
+    """Stop ./start_hardware.sh and its hardware ROS 2 nodes cleanly on the Raspberry Pi via SSH."""
+    if AMR_MODE != 'hardware':
+        return JSONResponse({'ok': False, 'error': 'Switch to HARDWARE mode before stopping Pi hardware.'}, status_code=400)
+    res = pi_remote_mgr.stop_hardware(AMR_PI_IP)
+    status_code = 200 if res.get('ok') else 500
+    return JSONResponse(res, status_code=status_code)
+
+
+@app.get('/api/hardware/pi/logs')
+async def get_pi_hardware_logs(lines: int = 60):
+    """Fetch recent lines of ~/AMR/run_logs/pi_hardware_latest.log from the Raspberry Pi."""
+    return pi_remote_mgr.get_logs(AMR_PI_IP, lines=lines)
 
 
 @app.post('/api/gui/launch')

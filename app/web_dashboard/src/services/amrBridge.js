@@ -601,13 +601,20 @@ class AmrBridgeService {
 
   // ---- Full Navigation System Lifecycle (1-Click Start/Stop) ----
 
-  async startNavigationSystem(mapName = '', world = '') {
+  async startNavigationSystem(mapName = '', world = '', options = {}) {
+    const autoStartPi = Boolean(options?.autoStartPi);
+    const stopPiOnStop = Boolean(options?.stopPiOnStop);
     this.emitEvent('info', `Starting autonomous navigation stack on map "${mapName}"...`);
     try {
       const res = await fetch(`${this.baseUrl}/api/system/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ map_name: mapName, world: world || null }),
+        body: JSON.stringify({
+          map_name: mapName,
+          world: world || null,
+          auto_start_pi: autoStartPi,
+          stop_pi_on_stop: stopPiOnStop,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.ok) {
@@ -623,16 +630,23 @@ class AmrBridgeService {
     }
   }
 
-  async stopNavigationSystem() {
+  async stopNavigationSystem(options = {}) {
     this.emitEvent('warn', 'Stopping autonomous navigation stack...');
     try {
+      const payload = options?.stopPi !== undefined ? { stop_pi: Boolean(options.stopPi) } : {};
       const res = await fetch(`${this.baseUrl}/api/system/stop`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.ok) {
-        this.emitEvent('info', 'Navigation stack stopped successfully.');
+        this.emitEvent(
+          'info',
+          data?.pi_stopped
+            ? 'Navigation stack and Pi hardware stack stopped cleanly.'
+            : 'Navigation stack stopped successfully.'
+        );
         return { ok: true, data };
       }
       return { ok: false, error: data?.error || 'Failed to stop navigation system' };
@@ -643,6 +657,38 @@ class AmrBridgeService {
 
   async getSystemStatus() {
     return this._get('/api/system/status');
+  }
+
+  // ---- Optional Raspberry Pi SSH Hardware Bringup ----
+
+  async getPiStatus(force = true) {
+    return this._get(`/api/hardware/pi/status?force=${force ? 'true' : 'false'}`);
+  }
+
+  async startPiHardware() {
+    this.emitEvent('info', 'Starting ./start_hardware.sh on Raspberry Pi via SSH...');
+    const res = await this._postJson('/api/hardware/pi/start', {});
+    if (res.ok) {
+      this.emitEvent('success', res.message || 'Pi hardware bringup started via SSH.');
+    } else {
+      this.emitEvent('critical', res.error || 'Failed to start Pi hardware stack');
+    }
+    return res;
+  }
+
+  async stopPiHardware() {
+    this.emitEvent('warn', 'Stopping Raspberry Pi hardware stack via SSH...');
+    const res = await this._postJson('/api/hardware/pi/stop', {});
+    if (res.ok) {
+      this.emitEvent('info', res.message || 'Pi hardware stack stopped.');
+    } else {
+      this.emitEvent('critical', res.error || 'Failed to stop Pi hardware stack');
+    }
+    return res;
+  }
+
+  async getPiLogs(lines = 50) {
+    return this._get(`/api/hardware/pi/logs?lines=${Number(lines) || 50}`);
   }
 }
 

@@ -186,13 +186,27 @@ export default function StatusBar({
               marginLeft: 4,
               padding: '1px 6px',
               borderRadius: 8,
-              background: hwLink.sensors_ready ? 'rgba(16, 185, 129, 0.16)' : 'rgba(245, 158, 11, 0.16)',
-              color: hwLink.sensors_ready ? '#34d399' : '#fbbf24',
+              background: hwLink.sensors_ready
+                ? 'rgba(16, 185, 129, 0.16)'
+                : hwLink.pi_ssh?.state === 'STARTING'
+                ? 'rgba(56, 189, 248, 0.18)'
+                : 'rgba(245, 158, 11, 0.16)',
+              color: hwLink.sensors_ready
+                ? '#34d399'
+                : hwLink.pi_ssh?.state === 'STARTING'
+                ? '#38bdf8'
+                : '#fbbf24',
               fontWeight: 700,
             }}
-            title={`Pi ${piIp} | /scan: ${hwLink.scan_alive ? 'OK' : 'NO'} | /odom: ${hwLink.odom_alive ? 'OK' : 'NO'} | TF: ${hwLink.map_tf_locked ? 'OK' : 'NO'}`}
+            title={`Pi ${piIp} | SSH: ${hwLink.pi_ssh?.ssh_ready ? 'OK' : 'NO'} | /scan: ${hwLink.scan_alive ? 'OK' : 'NO'} | /odom: ${hwLink.odom_alive ? 'OK' : 'NO'} | TF: ${hwLink.map_tf_locked ? 'OK' : 'NO'}`}
           >
-            {hwLink.sensors_ready ? 'PI OK' : 'WAIT PI'}
+            {hwLink.sensors_ready
+              ? 'PI OK'
+              : hwLink.pi_ssh?.state === 'STARTING'
+              ? 'PI BOOT'
+              : hwLink.pi_ssh?.ssh_ready
+              ? 'SSH OK'
+              : 'WAIT PI'}
           </span>
         )}
       </div>
