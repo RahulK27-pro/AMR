@@ -1,0 +1,44 @@
+[
+  {
+    "id": "place_1795846794972",
+    "name": "Near Cupboard",
+    "node_id": "N15",
+    "type": "place",
+    "x": -0.114,
+    "y": -0.32,
+    "px": 45,
+    "py": 25,
+    "theta": 0.0,
+    "icon": "\ud83d\udccd",
+    "color": "#06b6d4",
+    "description": ""
+  },
+  {
+    "id": "place_1795846831235",
+    "name": "Chair",
+    "node_id": "N47",
+    "type": "place",
+    "x": 0.886,
+    "y": -2.07,
+    "px": 65,
+    "py": 60,
+    "theta": 0.0,
+    "icon": "\ud83d\udccd",
+    "color": "#06b6d4",
+    "description": ""
+  },
+  {
+    "id": "place_1795846921822",
+    "name": "Bed",
+    "node_id": "N27",
+    "type": "place",
+    "x": 1.136,
+    "y": -0.82,
+    "px": 70,
+    "py": 35,
+    "theta": 0.0,
+    "icon": "\ud83d\udccd",
+    "color": "#06b6d4",
+    "description": ""
+  }
+]

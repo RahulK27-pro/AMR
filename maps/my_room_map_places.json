@@ -1,0 +1,16 @@
+[
+  {
+    "id": "place_1795843706283",
+    "name": "near cupboard",
+    "node_id": "N11",
+    "type": "place",
+    "x": -1.154,
+    "y": -0.618,
+    "px": 16,
+    "py": 40,
+    "theta": 0.0,
+    "icon": "\ud83d\udccd",
+    "color": "#06b6d4",
+    "description": ""
+  }
+]
