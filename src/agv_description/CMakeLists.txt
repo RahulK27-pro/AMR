@@ -32,6 +32,8 @@ install(DIRECTORY
   maps
   models
   DESTINATION share/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE
+  PATTERN "*.pyc" EXCLUDE
 )
 
 # Install executable Python & shell scripts to lib and share

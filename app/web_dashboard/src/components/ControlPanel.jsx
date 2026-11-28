@@ -443,7 +443,7 @@ export default function ControlPanel({
                       ? 'Pi Booting Sensors...'
                       : piSsh?.ssh_ready
                       ? 'SSH Ready (Pi Standby)'
-                      : 'Run ./start_hardware.sh on Pi'}
+                      : 'Run ./scripts/hardware/start_hardware.sh on Pi'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -486,7 +486,7 @@ export default function ControlPanel({
                           disabled={isPiLoading || isSystemLoading}
                           onClick={handleStopPiHardware}
                           style={{ padding: '3px 8px', fontSize: 10, borderColor: '#ef4444', color: '#f87171' }}
-                          title="Stop ./start_hardware.sh and Pi hardware nodes cleanly over SSH"
+                          title="Stop ./scripts/hardware/start_hardware.sh and Pi hardware nodes cleanly over SSH"
                         >
                           {isPiLoading ? 'Stopping…' : 'Stop Pi'}
                         </button>
@@ -498,7 +498,7 @@ export default function ControlPanel({
                           disabled={isPiLoading || isSystemLoading || piSsh?.state === 'STARTING' || (piSsh && piSsh.ssh_ready === false)}
                           onClick={handleStartPiHardware}
                           style={{ padding: '3px 8px', fontSize: 10, borderColor: '#10b981', color: '#34d399' }}
-                          title="Start ./start_hardware.sh on Pi in background via SSH"
+                          title="Start ./scripts/hardware/start_hardware.sh on Pi in background via SSH"
                         >
                           {isPiLoading || piSsh?.state === 'STARTING' ? 'Starting…' : 'Start Pi'}
                         </button>
@@ -508,7 +508,7 @@ export default function ControlPanel({
                         className="btn btn--ghost"
                         onClick={handleTogglePiLogs}
                         style={{ padding: '3px 6px', fontSize: 10 }}
-                        title="View recent Pi ./start_hardware.sh console log"
+                        title="View recent Pi ./scripts/hardware/start_hardware.sh console log"
                       >
                         {piLogOpen ? 'Hide Log' : 'Pi Log'}
                       </button>
@@ -628,8 +628,8 @@ export default function ControlPanel({
               <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
                 {mode === 'hardware'
                   ? autoStartPi
-                    ? '1-Click Launch: SSH-starts ./start_hardware.sh on Pi (if needed), then starts AMCL & MPPI.'
-                    : 'Launches AMCL, Auto-Localizer & MPPI (assumes ./start_hardware.sh is running on Pi).'
+                    ? '1-Click Launch: SSH-starts ./scripts/hardware/start_hardware.sh on Pi (if needed), then starts AMCL & MPPI.'
+                    : 'Launches AMCL, Auto-Localizer & MPPI (assumes ./scripts/hardware/start_hardware.sh is running on Pi).'
                   : 'Launches Gazebo simulation, Route Runner & BT Manager.'}
               </div>
             )}
@@ -705,7 +705,7 @@ export default function ControlPanel({
                   className="btn btn--outline"
                   style={{ flex: 1, fontSize: 11, padding: '6px 8px', borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
                   onClick={() => bridge.launchGui('gazebo')}
-                  title="Open Gazebo Harmonic 3D window (or run ./view_gazebo.sh in terminal)"
+                  title="Open Gazebo Harmonic 3D window (or run ./scripts/sim/view_gazebo.sh in terminal)"
                 >
                   🖥️ Gazebo 3D
                 </button>
@@ -715,7 +715,7 @@ export default function ControlPanel({
                 className="btn btn--outline"
                 style={{ flex: 1, fontSize: 11, padding: '6px 8px', borderColor: 'rgba(168, 85, 247, 0.4)', color: '#c084fc' }}
                 onClick={() => bridge.launchGui('rviz', mode === 'hardware' ? 'hw_nav' : 'nav')}
-                title="Open RViz2 Navigation window (or run ./view_rviz.sh in terminal)"
+                title="Open RViz2 Navigation window (or run ./scripts/sim/view_rviz.sh in terminal)"
               >
                 🗺️ RViz2 {mode === 'hardware' ? '(Hardware)' : 'Nav'}
               </button>

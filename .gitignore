@@ -2,7 +2,6 @@
 build/
 install/
 log/
-logs/
 .colcon/
 circling_bug_bag/
 
@@ -31,8 +30,16 @@ htmlcov/
 # Runtime map synchronizer output
 warehouse_graph.json
 
-# Navigation run logs (auto-generated CSVs, .log files, symlinks)
-run_logs/
+# Navigation & hardware run logs (auto-generated CSVs, .log files, symlinks)
+logs/
+hardware_test_report.json
+nohup.out
+
+# LaTeX build intermediates
+reports/*.aux
+reports/*.log
+reports/*.toc
+reports/*.out
 
 # Offline ML training virtual environment & raw datasets
 .venv_ml/

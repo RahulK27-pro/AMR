@@ -60,13 +60,13 @@ export AMR_PI_IP="$AMR_PI_IP"
 
 if [ "$AMR_MODE" = "hardware" ]; then
     unset ROS_LOCALHOST_ONLY
-    if [ -f "$WS_ROOT/env_hardware.sh" ]; then
-        source "$WS_ROOT/env_hardware.sh" "$AMR_PI_IP"
+    if [ -f "$WS_ROOT/scripts/hardware/env_hardware.sh" ]; then
+        source "$WS_ROOT/scripts/hardware/env_hardware.sh" "$AMR_PI_IP"
     else
         export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-7}"
         export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
-        if [ -f "$WS_ROOT/cyclonedds.xml" ]; then
-            export CYCLONEDDS_URI="file://$WS_ROOT/cyclonedds.xml"
+        if [ -f "$WS_ROOT/config/cyclonedds.xml" ]; then
+            export CYCLONEDDS_URI="file://$WS_ROOT/config/cyclonedds.xml"
         fi
     fi
 else

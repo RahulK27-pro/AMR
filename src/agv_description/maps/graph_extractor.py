@@ -64,7 +64,12 @@ def extract_graph(
     dir_name = os.path.dirname(map_yaml_str)
     if not dir_name:
         dir_name = '.'
-    image_path = os.path.join(dir_name, image_name)
+    image_path = os.path.normpath(os.path.join(dir_name, image_name))
+    if not os.path.exists(image_path) and os.path.basename(os.path.normpath(dir_name)) == 'yaml':
+        base_dir = os.path.dirname(os.path.normpath(dir_name))
+        alt_pgm = os.path.join(base_dir, 'pgm', os.path.basename(image_name))
+        if os.path.exists(alt_pgm):
+            image_path = alt_pgm
 
     map_base_name = os.path.splitext(os.path.basename(map_yaml_str))[0]
 
@@ -310,15 +315,26 @@ def extract_graph(
                 })
                 exported_edges.add(edge_rev)
 
+    norm_dir = os.path.normpath(dir_name)
+    if os.path.basename(norm_dir) == 'yaml':
+        base_map_dir = os.path.dirname(norm_dir)
+        default_json_dir = os.path.join(base_map_dir, 'json') if base_map_dir else 'json'
+        default_png_dir = os.path.join(base_map_dir, 'png') if base_map_dir else 'png'
+    else:
+        default_json_dir = dir_name
+        default_png_dir = dir_name
+
     # Save target JSON
-    json_path = output_json or os.path.join(dir_name, f"{map_base_name}_graph.json")
+    json_path = output_json or os.path.join(default_json_dir, f"{map_base_name}_graph.json")
+    os.makedirs(os.path.dirname(json_path) or '.', exist_ok=True)
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(json_graph, f, indent=4)
     print(f"Graph exported to {json_path}")
 
     # Only overwrite warehouse_graph.json when explicitly requested (prevents cross-map pollution)
     if sync_default:
-        default_graph_path = os.path.join(dir_name, "warehouse_graph.json")
+        default_graph_path = os.path.join(default_json_dir, "warehouse_graph.json")
+        os.makedirs(os.path.dirname(default_graph_path) or '.', exist_ok=True)
         try:
             with open(default_graph_path, 'w', encoding='utf-8') as f:
                 json.dump(json_graph, f, indent=4)
@@ -340,7 +356,8 @@ def extract_graph(
         pt = (candidate_nodes[u][0], candidate_nodes[u][1])
         cv2.circle(vis_img, pt, 2, (0, 0, 255), -1)
 
-    vis_path = output_vis or os.path.join(dir_name, f"{map_base_name}_graph_vis.png")
+    vis_path = output_vis or os.path.join(default_png_dir, f"{map_base_name}_graph_vis.png")
+    os.makedirs(os.path.dirname(vis_path) or '.', exist_ok=True)
     cv2.imwrite(vis_path, vis_img)
     print(f"Visualization saved to {vis_path}")
 

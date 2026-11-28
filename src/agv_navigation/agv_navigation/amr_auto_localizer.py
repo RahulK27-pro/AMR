@@ -36,7 +36,8 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger, Empty
 from nav2_msgs.srv import SetInitialPose
 from tf2_ros import Buffer, TransformListener
-from ament_index_python.packages import get_package_share_directory
+
+from agv_navigation.map_paths import resolve_map_image_from_yaml, resolve_map_yaml
 
 
 def euler_to_quaternion(yaw: float):
@@ -161,32 +162,10 @@ class AMRAutoLocalizer(Node):
 
     def _load_static_map_file(self):
         """Loads static map YAML and constructs initial likelihood field before /map topic arrives."""
-        candidates = []
-        ws_root = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main')
-        ws_root_maps = os.path.join(ws_root, 'maps')
-        ws_pkg_maps = os.path.join(ws_root, 'src', 'agv_description', 'maps')
-
-        if self.map_name:
-            candidates.append(os.path.join(ws_root_maps, f'{self.map_name}.yaml'))
-            candidates.append(os.path.join(ws_pkg_maps, f'{self.map_name}.yaml'))
-
-        try:
-            pkg_share = get_package_share_directory('agv_description')
-            if self.map_name:
-                candidates.append(os.path.join(pkg_share, 'maps', f'{self.map_name}.yaml'))
-            candidates.append(os.path.join(pkg_share, 'maps', 'final_map.yaml'))
-            candidates.append(os.path.join(pkg_share, 'maps', 'prakash_room.yaml'))
-        except Exception:
-            pass
-
-        candidates.append(os.path.join(ws_root_maps, 'final_map.yaml'))
-        candidates.append(os.path.join(ws_root_maps, 'prakash_room.yaml'))
-
-        yaml_path = None
-        for c in candidates:
-            if os.path.exists(c):
-                yaml_path = c
-                break
+        yaml_path = resolve_map_yaml(
+            self.map_name,
+            fallbacks=('final_map', 'prakash_room'),
+        )
 
         if not yaml_path:
             return
@@ -194,11 +173,9 @@ class AMRAutoLocalizer(Node):
         try:
             with open(yaml_path, 'r') as f:
                 meta = yaml.safe_load(f)
-            pgm_file = meta.get('image', '')
-            if not os.path.isabs(pgm_file):
-                pgm_file = os.path.join(os.path.dirname(yaml_path), pgm_file)
+            pgm_file = resolve_map_image_from_yaml(yaml_path, meta)
 
-            if not os.path.exists(pgm_file):
+            if not pgm_file or not os.path.exists(pgm_file):
                 return
 
             img = Image.open(pgm_file)

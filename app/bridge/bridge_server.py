@@ -91,7 +91,8 @@ def _detect_local_ip_for_peer(peer_ip: str) -> str:
 def _write_cyclonedds_xml(ws_root: Path, pi_ip: str) -> Path:
     local_ip = _detect_local_ip_for_peer(pi_ip)
     net_iface_xml = f'<NetworkInterface address="{local_ip}"/>' if local_ip else '<NetworkInterface autodetermine="true"/>'
-    xml_path = ws_root / "cyclonedds.xml"
+    xml_path = ws_root / "config" / "cyclonedds.xml"
+    xml_path.parent.mkdir(parents=True, exist_ok=True)
     xml_body = (
         '<?xml version="1.0" encoding="UTF-8" ?>\n'
         '<CycloneDDS xmlns="https://cdds.io/config">\n'
@@ -207,9 +208,9 @@ _APP_MAPS_DIR   = _WORKSPACE_ROOT / "app" / "src" / "agv_description" / "maps"
 _DARK_CACHE_DIR = Path("/tmp/amr_map_dark_cache")
 
 # Floorplan image and graph defaults
-_MAP_PNG_PATH       = _SIM_MAPS_DIR / "warehouse_map.png"
-_MAP_PNG_GRAPH_PATH = _SIM_MAPS_DIR / "warehouse_map_graph_vis.png"
-_GRAPH_JSON_PATH    = _SIM_MAPS_DIR / "warehouse_map_graph.json"
+_MAP_PNG_PATH       = _SIM_MAPS_DIR / "png" / "warehouse_map.png"
+_MAP_PNG_GRAPH_PATH = _SIM_MAPS_DIR / "png" / "warehouse_map_graph_vis.png"
+_GRAPH_JSON_PATH    = _SIM_MAPS_DIR / "json" / "warehouse_map_graph.json"
 
 # Calibrated Speed Profiles (matching teleop_wasd.py & hardware_navigation.launch.py)
 SIM_TELEOP_LIMITS = {
@@ -307,6 +308,46 @@ def _default_mapping_name_for_mode(mode: str) -> str:
     return 'hardware_map' if mode == 'hardware' else 'hospital_map'
 
 
+_FORMAT_SUBDIRS = {
+    '.yaml': 'yaml',
+    '.yml': 'yaml',
+    '.pgm': 'pgm',
+    '.png': 'png',
+    '.json': 'json',
+}
+
+
+def _resolve_in_map_dir(base_dir: Path, filename: str) -> Optional[Path]:
+    ext = Path(filename).suffix.lower()
+    sub = _FORMAT_SUBDIRS.get(ext)
+    candidates = [base_dir / sub / filename] if sub else []
+    candidates.append(base_dir / filename)
+    for cand in candidates:
+        if cand.exists():
+            return cand
+    return None
+
+
+def _target_in_map_dir(base_dir: Path, filename: str) -> Path:
+    ext = Path(filename).suffix.lower()
+    sub = _FORMAT_SUBDIRS.get(ext)
+    if sub and ((base_dir / sub).is_dir() or base_dir in (_HW_MAPS_DIR, _SIM_MAPS_DIR)):
+        return base_dir / sub / filename
+    return base_dir / filename
+
+
+def _iter_yaml_files(base_dir: Path) -> List[Path]:
+    found: List[Path] = []
+    seen = set()
+    for search_dir in (base_dir / "yaml", base_dir):
+        if search_dir.is_dir():
+            for yf in sorted(search_dir.glob("*.yaml")):
+                if yf.stem not in seen:
+                    seen.add(yf.stem)
+                    found.append(yf)
+    return found
+
+
 def _get_map_search_dirs(mode: Optional[str] = None) -> List[Path]:
     active_mode = mode or AMR_MODE
     if active_mode == 'hardware':
@@ -320,19 +361,18 @@ def _find_map_file(map_name: str, suffixes: Tuple[str, ...], mode: Optional[str]
     target = map_name.strip()
     for d in _get_map_search_dirs(mode):
         for suf in suffixes:
-            cand = d / f"{target}{suf}"
-            if cand.exists():
+            cand = _resolve_in_map_dir(d, f"{target}{suf}")
+            if cand is not None:
                 return cand
     return None
 
 
 def _get_primary_map_dir(map_name: str) -> Path:
-    yaml_p = _find_map_file(map_name, ('.yaml',))
-    if yaml_p is not None:
-        return yaml_p.parent
-    graph_p = _find_map_file(map_name, ('_graph.json', '.json'))
-    if graph_p is not None:
-        return graph_p.parent
+    for suf in (('.yaml',), ('_graph.json', '.json')):
+        found = _find_map_file(map_name, suf)
+        if found is not None:
+            parent = found.parent
+            return parent.parent if parent.name in ('yaml', 'pgm', 'png', 'json') else parent
     return _HW_MAPS_DIR if AMR_MODE == 'hardware' else _SIM_MAPS_DIR
 
 
@@ -342,7 +382,7 @@ def _default_map_for_mode(mode: str) -> str:
             if _find_map_file(candidate, ('.yaml', '_graph.json'), mode='hardware'):
                 return candidate
         if _HW_MAPS_DIR.exists():
-            yamls = sorted(_HW_MAPS_DIR.glob('*.yaml'))
+            yamls = _iter_yaml_files(_HW_MAPS_DIR)
             if yamls:
                 return yamls[0].stem
     return 'hospital_map'
@@ -377,7 +417,7 @@ def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
             yaml_path = _find_map_file('hospital_map', ('.yaml',))
         else:
             for d in _get_map_search_dirs():
-                matches = list(d.glob(f"*{target}*.yaml"))
+                matches = [yf for yf in _iter_yaml_files(d) if target in yf.stem]
                 if matches:
                     yaml_path = matches[0]
                     break
@@ -399,7 +439,7 @@ def get_map_metadata_by_name(map_name: Optional[str] = None) -> dict:
                     ox = float(orig[0])
                     oy = float(orig[1])
                 img_name = ydata.get('image', f"{target}.png")
-                img_file = yaml_path.parent / img_name
+                img_file = (yaml_path.parent / img_name).resolve()
                 if not img_file.exists():
                     img_file = _find_map_file(target, ('.png', '.pgm')) or img_file
                 if not img_file.exists():
@@ -471,27 +511,27 @@ def resolve_map_image_path(map_name: Optional[str] = None, theme: str = 'dark') 
 
     if theme == 'light':
         for d in search_dirs:
-            lp = d / f"{target}_light.png"
-            if lp.exists():
+            lp = _resolve_in_map_dir(d, f"{target}_light.png")
+            if lp is not None:
                 return lp
 
     # 1. Direct png file
     for d in search_dirs:
-        dp = d / f"{target}.png"
-        if dp.exists():
+        dp = _resolve_in_map_dir(d, f"{target}.png")
+        if dp is not None:
             if theme == 'dark' and target != 'hospital_map':
                 return _synthesize_dark_map_png(dp, target)
             return dp
 
     # 2. Check yaml
     for d in search_dirs:
-        yaml_path = d / f"{target}.yaml"
-        if yaml_path.exists():
+        yaml_path = _resolve_in_map_dir(d, f"{target}.yaml")
+        if yaml_path is not None:
             try:
                 with open(yaml_path, 'r', encoding='utf-8') as f:
                     yd = yaml.safe_load(f)
                 if isinstance(yd, dict) and 'image' in yd:
-                    im_path = d / yd['image']
+                    im_path = (yaml_path.parent / yd['image']).resolve()
                     if im_path.suffix.lower() == '.pgm' and im_path.exists():
                         cached_png = _convert_pgm_to_cached_png(im_path, target)
                         if cached_png is not None:
@@ -503,8 +543,8 @@ def resolve_map_image_path(map_name: Optional[str] = None, theme: str = 'dark') 
 
     # 3. If .pgm exists, convert to png in cache
     for d in search_dirs:
-        pgm_path = d / f"{target}.pgm"
-        if pgm_path.exists():
+        pgm_path = _resolve_in_map_dir(d, f"{target}.pgm")
+        if pgm_path is not None:
             cached_png = _convert_pgm_to_cached_png(pgm_path, target)
             if cached_png is not None:
                 return _synthesize_dark_map_png(cached_png, target) if (theme == 'dark' and target != 'hospital_map') else cached_png
@@ -745,7 +785,7 @@ class MappingManager:
 
         _configure_dds_environment('hardware', AMR_PI_IP)
         dds_uri = os.environ.get('CYCLONEDDS_URI', '')
-        log_dir = self.ws_root / "run_logs"
+        log_dir = self.ws_root / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         ts = time.strftime('%Y%m%d_%H%M%S')
         log_path = log_dir / f"hardware_mapping_{ts}.log"
@@ -838,7 +878,7 @@ class MappingManager:
             if AMR_MODE == 'hardware':
                 _configure_dds_environment('hardware', AMR_PI_IP)
                 dds_uri = os.environ.get('CYCLONEDDS_URI', '')
-                log_dir = self.ws_root / "run_logs"
+                log_dir = self.ws_root / "logs"
                 log_dir.mkdir(parents=True, exist_ok=True)
                 hw_exp_log = log_dir / f"hardware_explore_{time.strftime('%Y%m%d_%H%M%S')}.log"
                 cmd = (
@@ -1007,11 +1047,12 @@ class MappingManager:
 
             category = 'hardware' if AMR_MODE == 'hardware' else 'simulation'
             maps_dir = _mode_map_dir()
-            maps_dir.mkdir(parents=True, exist_ok=True)
-
-            yaml_path = maps_dir / f"{clean_name}.yaml"
-            pgm_path = maps_dir / f"{clean_name}.pgm"
-            png_path = maps_dir / f"{clean_name}.png"
+            yaml_path = _target_in_map_dir(maps_dir, f"{clean_name}.yaml")
+            pgm_path = _target_in_map_dir(maps_dir, f"{clean_name}.pgm")
+            png_path = _target_in_map_dir(maps_dir, f"{clean_name}.png")
+            yaml_path.parent.mkdir(parents=True, exist_ok=True)
+            pgm_path.parent.mkdir(parents=True, exist_ok=True)
+            png_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Apply unknown-safe <4-cell speckle filtering in hardware mode (matches save_hardware_map.sh)
             raw = _filter_occupancy_speckles(raw_copy) if AMR_MODE == 'hardware' else raw_copy
@@ -1024,8 +1065,9 @@ class MappingManager:
             Image.fromarray(pgm_flipped, mode='L').save(str(pgm_path))
 
             # 2. Write YAML specification (matching Nav2 / map_server & save_hardware_map.sh)
+            image_ref = f"../pgm/{clean_name}.pgm" if yaml_path.parent.name == "yaml" else f"{clean_name}.pgm"
             yaml_content = (
-                f"image: {clean_name}.pgm\n"
+                f"image: {image_ref}\n"
                 f"mode: trinary\n"
                 f"resolution: {res:.4f}\n"
                 f"origin: [{ox:.6f}, {oy:.6f}, 0]\n"
@@ -1261,14 +1303,14 @@ class PiRemoteManager:
         dir_expr = self._remote_dir_expr()
         probe_script = (
             f'PI_DIR={dir_expr}; '
-            f'PID_FILE="$PI_DIR/run_logs/pi_hardware.pid"; '
+            f'PID_FILE="$PI_DIR/logs/pi_hardware.pid"; '
             f'MANAGED=""; '
             f'if [ -f "$PID_FILE" ]; then '
             f'  MP=$(cat "$PID_FILE" 2>/dev/null || true); '
             f'  if [ -n "$MP" ] && kill -0 "$MP" 2>/dev/null; then MANAGED="$MP"; fi; '
             f'fi; '
             f'PIDS=$(pgrep -f {shlex.quote(self._PROC_PGREP_PATTERN)} 2>/dev/null | tr "\\n" "," || true); '
-            f'SCRIPT_OK=0; [ -x "$PI_DIR/start_hardware.sh" ] && SCRIPT_OK=1; '
+            f'SCRIPT_OK=0; ([ -x "$PI_DIR/scripts/hardware/start_hardware.sh" ] || [ -x "$PI_DIR/start_hardware.sh" ]) && SCRIPT_OK=1; '
             f'echo "SSH_OK=1|SCRIPT_OK=$SCRIPT_OK|MANAGED=$MANAGED|PIDS=$PIDS"'
         )
         try:
@@ -1319,7 +1361,7 @@ class PiRemoteManager:
             self.managed_pid = int(mp_str) if mp_str.isdigit() else None
             self.remote_running = bool(pids or self.managed_pid)
             if parsed.get('SCRIPT_OK') == '0':
-                self.last_error = f"start_hardware.sh not found or not executable in {self.pi_dir} on {target_ip}."
+                self.last_error = f"start_hardware.sh not found or not executable in {self.pi_dir}/scripts/hardware (or {self.pi_dir}) on {target_ip}."
             elif self.last_error and 'ssh' in self.last_error.lower():
                 self.last_error = None
 
@@ -1398,24 +1440,36 @@ class PiRemoteManager:
             return False
 
     def sync_maps_to_pi(self, file_paths: List[Path], pi_ip: Optional[str] = None) -> dict:
-        """Copy saved map/graph/place artifacts to amr@<PI_IP>:~/AMR/maps/ via SSH/SCP."""
+        """Copy saved map/graph/place artifacts to amr@<PI_IP>:~/AMR/maps/{yaml,pgm,png,json}/ via SSH/SCP."""
         target_ip = (pi_ip or AMR_PI_IP).strip()
-        existing = [str(p) for p in file_paths if p and Path(p).is_file()]
+        existing = [Path(p) for p in file_paths if p and Path(p).is_file()]
         if not existing:
             return {'ok': True, 'count': 0}
+
+        grouped: Dict[str, List[str]] = {}
+        for p in existing:
+            sub = p.parent.name if p.parent.name in ('yaml', 'pgm', 'png', 'json') else _FORMAT_SUBDIRS.get(p.suffix.lower(), '')
+            grouped.setdefault(sub, []).append(str(p))
+
         dir_expr = self._remote_dir_expr()
         try:
-            mk = self._run_ssh(target_ip, f'mkdir -p {dir_expr}/maps', timeout=4.0)
+            mkdir_targets = ' '.join(
+                f'{dir_expr}/maps/{sub}' if sub else f'{dir_expr}/maps'
+                for sub in grouped.keys()
+            )
+            mk = self._run_ssh(target_ip, f'mkdir -p {mkdir_targets}', timeout=4.0)
             if mk.returncode != 0:
                 return {'ok': False, 'error': self._classify_ssh_error(mk.stderr, mk.returncode)}
-            dest_dir = self.pi_dir.strip().rstrip('/') + '/maps/'
-            cmd = [
-                'scp', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=4', '-o', 'StrictHostKeyChecking=no',
-                *existing, f'{self.pi_user}@{target_ip}:{dest_dir}'
-            ]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=12.0)
-            if res.returncode != 0:
-                return {'ok': False, 'error': (res.stderr or '').strip() or f'scp failed ({res.returncode})'}
+            pi_maps_base = self.pi_dir.strip().rstrip('/') + '/maps'
+            for sub, paths in grouped.items():
+                dest_dir = f'{pi_maps_base}/{sub}/' if sub else f'{pi_maps_base}/'
+                cmd = [
+                    'scp', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=4', '-o', 'StrictHostKeyChecking=no',
+                    *paths, f'{self.pi_user}@{target_ip}:{dest_dir}'
+                ]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=12.0)
+                if res.returncode != 0:
+                    return {'ok': False, 'error': (res.stderr or '').strip() or f'scp failed ({res.returncode})'}
             return {'ok': True, 'count': len(existing)}
         except Exception as e:
             return {'ok': False, 'error': str(e)}
@@ -1425,7 +1479,7 @@ class PiRemoteManager:
         safe_lines = max(5, min(int(lines), 300))
         dir_expr = self._remote_dir_expr()
         cmd = (
-            f'LOG_FILE={dir_expr}/run_logs/pi_hardware_latest.log; '
+            f'LOG_FILE={dir_expr}/logs/pi_hardware_latest.log; '
             f'if [ -f "$LOG_FILE" ]; then tail -n {safe_lines} "$LOG_FILE"; '
             f'else echo "(no pi_hardware_latest.log found on Pi yet)"; fi'
         )
@@ -1458,20 +1512,25 @@ class PiRemoteManager:
         dir_expr = self._remote_dir_expr()
         launch_script = (
             f'PI_DIR={dir_expr}; '
-            f'if [ ! -x "$PI_DIR/start_hardware.sh" ]; then '
-            f'  echo "MISSING_SCRIPT:$PI_DIR/start_hardware.sh" >&2; exit 2; '
+            f'START_SCRIPT=""; '
+            f'if [ -x "$PI_DIR/scripts/hardware/start_hardware.sh" ]; then '
+            f'  START_SCRIPT="$PI_DIR/scripts/hardware/start_hardware.sh"; '
+            f'elif [ -x "$PI_DIR/start_hardware.sh" ]; then '
+            f'  START_SCRIPT="$PI_DIR/start_hardware.sh"; '
+            f'else '
+            f'  echo "MISSING_SCRIPT:$PI_DIR/scripts/hardware/start_hardware.sh" >&2; exit 2; '
             f'fi; '
-            f'mkdir -p "$PI_DIR/run_logs"; '
-            f'rm -f "$PI_DIR/run_logs/pi_hardware.pid"; '
+            f'mkdir -p "$PI_DIR/logs"; '
+            f'rm -f "$PI_DIR/logs/pi_hardware.pid"; '
             f'cd "$PI_DIR"; '
-            f'setsid nohup ./start_hardware.sh {arg_str} </dev/null > "$PI_DIR/run_logs/pi_hardware_latest.log" 2>&1 & '
+            f'setsid nohup "$START_SCRIPT" {arg_str} </dev/null > "$PI_DIR/logs/pi_hardware_latest.log" 2>&1 & '
             f'BG_PID=$!; '
-            f'echo "$BG_PID" > "$PI_DIR/run_logs/pi_hardware.pid"; '
+            f'echo "$BG_PID" > "$PI_DIR/logs/pi_hardware.pid"; '
             f'sleep 0.9; '
             f'if kill -0 "$BG_PID" 2>/dev/null; then '
             f'  echo "STARTED_PID=$BG_PID"; exit 0; '
             f'else '
-            f'  echo "EARLY_EXIT"; tail -n 15 "$PI_DIR/run_logs/pi_hardware_latest.log" 2>/dev/null || true; exit 3; '
+            f'  echo "EARLY_EXIT"; tail -n 15 "$PI_DIR/logs/pi_hardware_latest.log" 2>/dev/null || true; exit 3; '
             f'fi'
         )
 
@@ -1526,7 +1585,7 @@ class PiRemoteManager:
         dir_expr = self._remote_dir_expr()
         stop_script = (
             f'PI_DIR={dir_expr}; '
-            f'PID_FILE="$PI_DIR/run_logs/pi_hardware.pid"; '
+            f'PID_FILE="$PI_DIR/logs/pi_hardware.pid"; '
             f'if [ -f "$PID_FILE" ]; then '
             f'  MP=$(cat "$PID_FILE" 2>/dev/null || true); '
             f'  if [ -n "$MP" ] && kill -0 "$MP" 2>/dev/null; then '
@@ -1776,7 +1835,8 @@ class SystemLaunchManager:
         if src_graph and src_graph.exists():
             for d in _mode_sync_dirs():
                 if d.exists():
-                    dest_graph = d / "warehouse_graph.json"
+                    dest_graph = _target_in_map_dir(d, "warehouse_graph.json")
+                    dest_graph.parent.mkdir(parents=True, exist_ok=True)
                     if src_graph.resolve() == dest_graph.resolve():
                         continue
                     try:
@@ -1851,8 +1911,8 @@ class SystemLaunchManager:
                 except Exception:
                     pass
 
-            # Prepare run_logs file
-            log_dir = self.ws_root / "run_logs"
+            # Prepare logs file
+            log_dir = self.ws_root / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             ts = time.strftime('%Y%m%d_%H%M%S')
             launch_log_path = log_dir / f"hardware_nav_{ts}.log"
@@ -2942,7 +3002,8 @@ class AmrBridgeNode(Node):
         if src_graph and src_graph.exists():
             for d in _mode_sync_dirs():
                 if d.exists():
-                    dest_graph = d / "warehouse_graph.json"
+                    dest_graph = _target_in_map_dir(d, "warehouse_graph.json")
+                    dest_graph.parent.mkdir(parents=True, exist_ok=True)
                     if src_graph.resolve() == dest_graph.resolve():
                         continue
                     try:
@@ -3684,7 +3745,7 @@ async def get_saved_maps():
     for maps_dir, category in search_dirs:
         if not maps_dir.exists():
             continue
-        for yaml_file in sorted(maps_dir.glob("*.yaml")):
+        for yaml_file in _iter_yaml_files(maps_dir):
             name = yaml_file.stem
             # Deduplicate only if exact same name already added in active mode's primary list,
             # or allow distinct (category, name) entries; keep unique name within each category
@@ -3692,10 +3753,10 @@ async def get_saved_maps():
                 continue
             seen_names.add((category, name))
 
-            pgm_file = maps_dir / f"{name}.pgm"
-            png_file = maps_dir / f"{name}.png"
-            graph_file = maps_dir / f"{name}_graph.json"
-            places_file = maps_dir / f"{name}_places.json"
+            pgm_file = _resolve_in_map_dir(maps_dir, f"{name}.pgm") or (maps_dir / "pgm" / f"{name}.pgm")
+            png_file = _resolve_in_map_dir(maps_dir, f"{name}.png") or (maps_dir / "png" / f"{name}.png")
+            graph_file = _resolve_in_map_dir(maps_dir, f"{name}_graph.json") or (maps_dir / "json" / f"{name}_graph.json")
+            places_file = _resolve_in_map_dir(maps_dir, f"{name}_places.json") or (maps_dir / "json" / f"{name}_places.json")
             meta = get_map_metadata_by_name(name)
 
             node_count = 0
@@ -3771,13 +3832,15 @@ async def post_extract_graph(req: ExtractGraphRequest = ExtractGraphRequest()):
         vis_p = Path(report['vis_path']) if report.get('vis_path') else None
         for sync_dir in _mode_sync_dirs():
             if sync_dir.exists() and json_p.exists():
-                dest_named = sync_dir / json_p.name
+                dest_named = _target_in_map_dir(sync_dir, json_p.name)
+                dest_named.parent.mkdir(parents=True, exist_ok=True)
                 if json_p.resolve() != dest_named.resolve():
                     try:
                         shutil.copy2(json_p, dest_named)
                     except Exception as e:
                         print(f"[bridge] Note: Could not copy {json_p.name} to {sync_dir}: {e}")
-                dest_wh = sync_dir / "warehouse_graph.json"
+                dest_wh = _target_in_map_dir(sync_dir, "warehouse_graph.json")
+                dest_wh.parent.mkdir(parents=True, exist_ok=True)
                 if json_p.resolve() != dest_wh.resolve():
                     try:
                         shutil.copy2(json_p, dest_wh)
@@ -4159,9 +4222,13 @@ async def get_named_places(map_name: Optional[str] = None):
 
     candidates = []
     for d in _get_map_search_dirs():
-        candidates.append(d / f"{target_name}_places.json")
+        p = _resolve_in_map_dir(d, f"{target_name}_places.json")
+        if p is not None:
+            candidates.append(p)
     for d in _get_map_search_dirs():
-        candidates.append(d / f"{target_name}_graph.json")
+        g = _resolve_in_map_dir(d, f"{target_name}_graph.json")
+        if g is not None:
+            candidates.append(g)
 
     for cand in candidates:
         if cand.exists():
@@ -4189,8 +4256,9 @@ async def post_save_named_places(req: SavePlacesRequest):
 
     saved_files = []
 
-    # 1. Save dedicated <target_name>_places.json in primary map dir
-    places_file = maps_dir / f"{target_name}_places.json"
+    # 1. Save dedicated <target_name>_places.json in primary map dir (json/ subdir when structured)
+    places_file = _target_in_map_dir(maps_dir, f"{target_name}_places.json")
+    places_file.parent.mkdir(parents=True, exist_ok=True)
     with open(places_file, 'w', encoding='utf-8') as f:
         json.dump(places_data, f, indent=2)
     saved_files.append(str(places_file.relative_to(_WORKSPACE_ROOT)))
@@ -4198,7 +4266,7 @@ async def post_save_named_places(req: SavePlacesRequest):
     # 2. Inject places into corresponding <target_name>_graph.json in mode-appropriate dirs
     sync_paths: List[Path] = [places_file]
     for d in _mode_sync_dirs():
-        target_graph = d / f"{target_name}_graph.json"
+        target_graph = _resolve_in_map_dir(d, f"{target_name}_graph.json") or _target_in_map_dir(d, f"{target_name}_graph.json")
         if target_graph.exists():
             try:
                 with open(target_graph, 'r', encoding='utf-8') as f:
@@ -4578,7 +4646,7 @@ async def post_pi_hardware_stop():
 
 @app.get('/api/hardware/pi/logs')
 async def get_pi_hardware_logs(lines: int = 60):
-    """Fetch recent lines of ~/AMR/run_logs/pi_hardware_latest.log from the Raspberry Pi."""
+    """Fetch recent lines of ~/AMR/logs/pi_hardware_latest.log from the Raspberry Pi."""
     return pi_remote_mgr.get_logs(AMR_PI_IP, lines=lines)
 
 
@@ -4605,7 +4673,7 @@ async def post_gui_launch(req: GuiLaunchRequest):
     env['MESA_GL_VERSION_OVERRIDE'] = '4.5'
 
     if target_app in ('gazebo', 'gz'):
-        script = _WORKSPACE_ROOT / "view_gazebo.sh"
+        script = _WORKSPACE_ROOT / "scripts" / "sim" / "view_gazebo.sh"
         cmd = f"/bin/bash {script}"
     else:
         is_mapping_now = (mapping_mgr.state == 'MAPPING' or mapping_mgr.is_external_mapping_running())
@@ -4613,7 +4681,7 @@ async def post_gui_launch(req: GuiLaunchRequest):
             mode_arg = req.mode or ("hw_explore" if is_mapping_now else "hw_nav")
         else:
             mode_arg = req.mode or ("explore" if is_mapping_now else "nav")
-        script = _WORKSPACE_ROOT / "view_rviz.sh"
+        script = _WORKSPACE_ROOT / "scripts" / "sim" / "view_rviz.sh"
         cmd = f"/bin/bash {script} {mode_arg}"
 
     logger.info(f"[bridge] Launching GUI: {cmd}")

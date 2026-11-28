@@ -5,7 +5,7 @@ import bridge from '../services/amrBridge';
 const SIM_MAX_LINEAR = 0.8;
 const SIM_MAX_ANGULAR = 1.8;
 
-// Physical Hardware Teleop Limits (1:1 parity with teleop_wasd.py / ./teleop_hardware.sh)
+// Physical Hardware Teleop Limits (1:1 parity with teleop_wasd.py / ./scripts/hardware/teleop_hardware.sh)
 const HW_MIN_LINEAR = 0.04;
 const HW_MAX_LINEAR = 0.45;
 const HW_DEF_LINEAR = 0.18;

@@ -27,6 +27,7 @@ from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
 
+from agv_navigation.map_paths import resolve_map_image_from_yaml, resolve_map_yaml
 from agv_navigation.ml_perception.kalman_tracker import KalmanTracker
 from agv_navigation.ml_perception.lidar_clustering import (
     CLASS_CLUTTER,
@@ -114,24 +115,20 @@ class DatasetTrainerAgent(Node):
         )
 
     def _load_initial_map(self):
-        candidates = [
-            os.path.join(self.ws_root, "src", "agv_description", "maps", f"{self.map_name}.yaml"),
-            os.path.join(self.ws_root, "maps", f"{self.map_name}.yaml"),
-        ]
-        for yp in candidates:
-            if os.path.exists(yp):
-                try:
-                    with open(yp, "r") as f:
-                        meta = yaml.safe_load(f)
-                    img_p = meta.get("image", "")
-                    if not os.path.isabs(img_p):
-                        img_p = os.path.join(os.path.dirname(yp), img_p)
-                    arr = np.flipud(np.array(Image.open(img_p).convert("L")))
-                    orig = meta.get("origin", [0.0, 0.0, 0.0])
-                    self.map_ctx.update(arr < 50, float(meta.get("resolution", 0.05)), float(orig[0]), float(orig[1]))
-                    return
-                except Exception:
-                    pass
+        yp = resolve_map_yaml(self.map_name, fallbacks=('hospital_map', 'warehouse_map'), ws_root=self.ws_root)
+        if not yp:
+            return
+        try:
+            with open(yp, "r") as f:
+                meta = yaml.safe_load(f)
+            img_p = resolve_map_image_from_yaml(yp, meta)
+            if not img_p:
+                return
+            arr = np.flipud(np.array(Image.open(img_p).convert("L")))
+            orig = meta.get("origin", [0.0, 0.0, 0.0])
+            self.map_ctx.update(arr < 50, float(meta.get("resolution", 0.05)), float(orig[0]), float(orig[1]))
+        except Exception:
+            pass
 
     def _map_cb(self, msg: OccupancyGrid):
         w, h = msg.info.width, msg.info.height

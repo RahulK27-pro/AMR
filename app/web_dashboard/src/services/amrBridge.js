@@ -690,7 +690,7 @@ class AmrBridgeService {
   }
 
   async startPiHardware() {
-    this.emitEvent('info', 'Starting ./start_hardware.sh on Raspberry Pi via SSH...');
+    this.emitEvent('info', 'Starting ./scripts/hardware/start_hardware.sh on Raspberry Pi via SSH...');
     const res = await this._postJson('/api/hardware/pi/start', {});
     if (res.ok) {
       this.emitEvent('success', res.message || 'Pi hardware bringup started via SSH.');

@@ -18,8 +18,8 @@
 
 set -e
 
-MAP_DIR="$HOME/maps"
-MAP_NAME="warehouse_map"
+MAP_NAME="${1:-warehouse_map}"
+MAP_DIR="${2:-$HOME/maps}"
 
 echo "══════════════════════════════════════════"
 echo "  AGV Map Saver"
@@ -50,22 +50,39 @@ mkdir -p "$MAP_DIR"
 echo "[INFO] Saving map — this may take a few seconds..."
 echo ""
 
-# Save via nav2_map_server — all ros-args must be in ONE --ros-args group
-ros2 run nav2_map_server map_saver_cli \
-    --ros-args \
-    -p use_sim_time:=true \
-    -p save_map_timeout:=10.0 \
-    -- -f "$MAP_DIR/$MAP_NAME"
+if [ -d "$MAP_DIR/yaml" ] && [ -d "$MAP_DIR/pgm" ]; then
+    YAML_OUT="$MAP_DIR/yaml/$MAP_NAME"
+    ros2 run nav2_map_server map_saver_cli \
+        --ros-args \
+        -p use_sim_time:=true \
+        -p save_map_timeout:=10.0 \
+        -- -f "$YAML_OUT"
+    if [ -f "${YAML_OUT}.pgm" ]; then
+        mv "${YAML_OUT}.pgm" "$MAP_DIR/pgm/${MAP_NAME}.pgm"
+        sed -i "s|^image:.*|image: ../pgm/${MAP_NAME}.pgm|" "${YAML_OUT}.yaml"
+    fi
+    OUT_PGM="$MAP_DIR/pgm/${MAP_NAME}.pgm"
+    OUT_YAML="${YAML_OUT}.yaml"
+else
+    # Save via nav2_map_server — all ros-args must be in ONE --ros-args group
+    ros2 run nav2_map_server map_saver_cli \
+        --ros-args \
+        -p use_sim_time:=true \
+        -p save_map_timeout:=10.0 \
+        -- -f "$MAP_DIR/$MAP_NAME"
+    OUT_PGM="$MAP_DIR/${MAP_NAME}.pgm"
+    OUT_YAML="$MAP_DIR/${MAP_NAME}.yaml"
+fi
 
 echo ""
 echo "══════════════════════════════════════════"
 echo "  ✅  Map saved successfully!"
 echo "══════════════════════════════════════════"
-echo "  PGM image : $MAP_DIR/${MAP_NAME}.pgm"
-echo "  YAML meta : $MAP_DIR/${MAP_NAME}.yaml"
+echo "  PGM image : $OUT_PGM"
+echo "  YAML meta : $OUT_YAML"
 echo ""
 echo "  View the map:"
-echo "    eog $MAP_DIR/${MAP_NAME}.pgm"
+echo "    eog $OUT_PGM"
 echo ""
 echo "  Next steps:"
 echo "  1. Verify the map looks complete in the image viewer"

@@ -64,45 +64,58 @@ def launch_setup(context, *args, **kwargs):
     lookahead_d = float(LaunchConfiguration('lookahead_dist').perform(context).strip() or 0.25)
 
     # ── 1. Resolve Map YAML File ──────────────────────────────────────
+    def _resolve_in_map_dir(base_dir, filename):
+        ext = os.path.splitext(filename)[1].lower()
+        sub = {'.yaml': 'yaml', '.pgm': 'pgm', '.png': 'png', '.json': 'json'}.get(ext)
+        checks = [os.path.join(base_dir, sub, filename)] if sub else []
+        checks.append(os.path.join(base_dir, filename))
+        for p in checks:
+            if os.path.exists(p):
+                return p
+        return None
+
     if os.path.isabs(map_input) and os.path.exists(map_input):
         map_yaml_file = map_input
+    elif os.path.exists(os.path.join(ws_dir, map_input)):
+        map_yaml_file = os.path.join(ws_dir, map_input)
     else:
         clean_map = map_input[:-5] if map_input.endswith('.yaml') else map_input
-        candidates = [
-            os.path.join(ws_root_maps, f'{clean_map}.yaml'),
-            os.path.join(ws_pkg_maps, f'{clean_map}.yaml'),
-            os.path.join(pkg_agv, 'maps', f'{clean_map}.yaml'),
-            os.path.join(ws_root_maps, 'prakash_room.yaml'),
-            os.path.join(ws_root_maps, 'final_map.yaml'),
-            os.path.join(ws_root_maps, 'my_clean_warehouse11_map.yaml'),
-        ]
+        clean_map = os.path.basename(clean_map)
         map_yaml_file = None
-        for c in candidates:
-            if os.path.exists(c):
-                map_yaml_file = c
+        for root_dir in [ws_root_maps, ws_pkg_maps, os.path.join(pkg_agv, 'maps')]:
+            cand = _resolve_in_map_dir(root_dir, f'{clean_map}.yaml')
+            if cand:
+                map_yaml_file = cand
                 break
+        if map_yaml_file is None:
+            for fb in ('prakash_room.yaml', 'final_map.yaml', 'my_clean_warehouse11_map.yaml'):
+                cand = _resolve_in_map_dir(ws_root_maps, fb)
+                if cand:
+                    map_yaml_file = cand
+                    break
 
         if map_yaml_file is None:
-            raise FileNotFoundError(f"Could not locate map YAML matching '{map_input}'. Checked: {candidates}")
+            raise FileNotFoundError(
+                f"Could not locate map YAML matching '{map_input}' under {ws_root_maps}, {ws_pkg_maps}, or {pkg_agv}/maps"
+            )
 
     map_stem = os.path.splitext(os.path.basename(map_yaml_file))[0]
     map_dir = os.path.dirname(map_yaml_file)
+    map_base_dir = os.path.dirname(map_dir) if os.path.basename(map_dir) == 'yaml' else map_dir
 
     # ── 2. Ensure Topological Graph Exists (Auto-extract if missing) ──
-    graph_candidates = [
-        os.path.join(map_dir, f'{map_stem}_graph.json'),
-        os.path.join(ws_root_maps, f'{map_stem}_graph.json'),
-        os.path.join(ws_pkg_maps, f'{map_stem}_graph.json'),
-        os.path.join(pkg_agv, 'maps', f'{map_stem}_graph.json'),
-    ]
-    graph_file = None
-    for gc in graph_candidates:
-        if os.path.exists(gc):
-            graph_file = gc
-            break
+    graph_file = _resolve_in_map_dir(map_base_dir, f'{map_stem}_graph.json')
+    if graph_file is None:
+        for root_dir in [ws_root_maps, ws_pkg_maps, os.path.join(pkg_agv, 'maps')]:
+            cand = _resolve_in_map_dir(root_dir, f'{map_stem}_graph.json')
+            if cand:
+                graph_file = cand
+                break
 
     if graph_file is None:
-        target_graph_out = os.path.join(ws_root_maps, f'{map_stem}_graph.json')
+        json_out_dir = os.path.join(ws_root_maps, 'json') if os.path.isdir(os.path.join(ws_root_maps, 'json')) else ws_root_maps
+        os.makedirs(json_out_dir, exist_ok=True)
+        target_graph_out = os.path.join(json_out_dir, f'{map_stem}_graph.json')
         print(f"[HW_NAV] Topological graph for '{map_stem}' not found. Auto-generating roadmap via graph_extractor.py...")
         extractor_script = os.path.join(ws_pkg_maps, 'graph_extractor.py')
         if not os.path.exists(extractor_script):
@@ -120,11 +133,12 @@ def launch_setup(context, *args, **kwargs):
         except Exception as e:
             print(f"[HW_NAV] ⚠️ Graph auto-extraction error: {e}")
 
-    # Synchronize graph to target map directories for route_runner & graph_visualizer
+    # Ensure graph is available under ws_root_maps/json/ without duplicating hardware graphs into src/agv_description/maps/
     if graph_file and os.path.exists(graph_file):
-        for t_dir in [ws_pkg_maps, os.path.join(pkg_agv, 'maps'), ws_root_maps]:
-            if os.path.exists(t_dir):
-                target_named = os.path.join(t_dir, f'{map_stem}_graph.json')
+        hw_json_dir = os.path.join(ws_root_maps, 'json') if os.path.isdir(os.path.join(ws_root_maps, 'json')) else ws_root_maps
+        if os.path.exists(hw_json_dir):
+            target_named = os.path.join(hw_json_dir, f'{map_stem}_graph.json')
+            if os.path.abspath(graph_file) != os.path.abspath(target_named):
                 if not os.path.exists(target_named) or os.path.getmtime(graph_file) > os.path.getmtime(target_named):
                     try:
                         shutil.copy2(graph_file, target_named)

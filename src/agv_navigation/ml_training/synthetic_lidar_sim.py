@@ -16,6 +16,7 @@ from PIL import Image
 from scipy.spatial import KDTree
 import yaml
 
+from agv_navigation.map_paths import iter_map_yamls, resolve_map_image_from_yaml
 from agv_navigation.ml_perception.kalman_tracker import KalmanTracker
 from agv_navigation.ml_perception.lidar_clustering import (
     CLASS_CLUTTER,
@@ -28,10 +29,7 @@ from agv_navigation.ml_perception.lidar_clustering import (
 
 def load_workspace_maps(ws_root: str) -> List[Dict]:
     """Load occupancy maps (occ boolean grid, resolution, origin) from workspace."""
-    yaml_files = sorted(
-        glob.glob(os.path.join(ws_root, "src", "agv_description", "maps", "*.yaml"))
-        + glob.glob(os.path.join(ws_root, "maps", "*.yaml"))
-    )
+    yaml_files = iter_map_yamls(ws_root)
     loaded = []
     seen_names = set()
     for yf in yaml_files:
@@ -41,10 +39,8 @@ def load_workspace_maps(ws_root: str) -> List[Dict]:
         try:
             with open(yf, "r") as f:
                 meta = yaml.safe_load(f)
-            img_path = meta.get("image", "")
-            if not os.path.isabs(img_path):
-                img_path = os.path.join(os.path.dirname(yf), img_path)
-            if not os.path.exists(img_path):
+            img_path = resolve_map_image_from_yaml(yf, meta)
+            if not img_path or not os.path.exists(img_path):
                 continue
             arr = np.flipud(np.array(Image.open(img_path).convert("L")))
             occ = arr < 50

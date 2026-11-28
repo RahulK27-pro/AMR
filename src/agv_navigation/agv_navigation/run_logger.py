@@ -12,9 +12,9 @@ Dedicated Real-Time Navigation & Localization Telemetry Logger for AMR:
      - /planned_path (Active roadmap path)
      - /agv_state (Navigation FSM state: IDLE, PLANNING, NAVIGATING, YIELDING, DETOURING, ARRIVED)
   2. Logs real-time 10 Hz telemetry to:
-     - CSV file: run_logs/navigation_run_<timestamp>.csv
-     - Human-readable milestone log: run_logs/navigation_run_<timestamp>.log
-     - Symlinks: run_logs/latest_run.csv and run_logs/latest_run.log
+     - CSV file: logs/navigation_run_<timestamp>.csv
+     - Human-readable milestone log: logs/navigation_run_<timestamp>.log
+     - Symlinks: logs/latest_run.csv and logs/latest_run.log
 """
 
 import os
@@ -49,8 +49,8 @@ class AMRRunLogger(Node):
             self.declare_parameter('use_sim_time', False)
 
         # Prepare log directory
-        workspace_root = os.path.expanduser('~/AMR/AMR-main')
-        self.log_dir = os.path.join(workspace_root, 'run_logs')
+        workspace_root = os.environ.get('AMR_WS', os.path.expanduser('~/AMR/AMR-main'))
+        self.log_dir = os.path.join(workspace_root, 'logs')
         os.makedirs(self.log_dir, exist_ok=True)
 
         timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')

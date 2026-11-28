@@ -1424,7 +1424,7 @@ export default function MappingScreen({
                   <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <label className="mapping-label">Map Name</label>
                     <span className="text-dim text-xs" style={{ fontFamily: 'var(--font-mono)' }}>
-                      {mapDirPrefix}{mapName || '...'}.yaml
+                      {mapDirPrefix}yaml/{mapName || '...'}.yaml
                     </span>
                   </div>
                   <input
@@ -1476,7 +1476,7 @@ export default function MappingScreen({
                           ? 'Booting Pi (Hold Still)...'
                           : piSsh?.ssh_ready
                           ? 'SSH Ready'
-                          : 'Start ./start_hardware.sh on Pi'}
+                          : 'Start ./scripts/hardware/start_hardware.sh on Pi'}
                       </span>
                     </div>
 
@@ -1849,7 +1849,7 @@ export default function MappingScreen({
                         className="btn btn--outline"
                         style={{ flex: 1, fontSize: 11, padding: '7px 8px', borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38bdf8' }}
                         onClick={() => handleLaunchGui('gazebo')}
-                        title="Open Gazebo Harmonic 3D window (or run ./view_gazebo.sh in terminal)"
+                        title="Open Gazebo Harmonic 3D window (or run ./scripts/sim/view_gazebo.sh in terminal)"
                       >
                         🖥️ Gazebo 3D
                       </button>
@@ -1859,15 +1859,15 @@ export default function MappingScreen({
                       className="btn btn--outline"
                       style={{ flex: 1, fontSize: 11, padding: '7px 8px', borderColor: 'rgba(168, 85, 247, 0.4)', color: '#c084fc' }}
                       onClick={() => handleLaunchGui('rviz')}
-                      title="Open RViz2 SLAM Map window (or run ./view_rviz.sh in terminal)"
+                      title="Open RViz2 SLAM Map window (or run ./scripts/sim/view_rviz.sh in terminal)"
                     >
                       🗺️ RViz2 {mode === 'hardware' ? 'HW Mapping' : 'SLAM'}
                     </button>
                   </div>
                   <div className="text-dim text-mono" style={{ fontSize: 10, marginTop: 4, textAlign: 'center' }}>
                     {mode === 'hardware'
-                      ? <>Terminal: <code style={{ color: '#c084fc' }}>./view_rviz.sh hw_explore</code></>
-                      : <>Terminal commands: <code style={{ color: '#38bdf8' }}>./view_gazebo.sh</code> | <code style={{ color: '#c084fc' }}>./view_rviz.sh</code></>}
+                      ? <>Terminal: <code style={{ color: '#c084fc' }}>./scripts/sim/view_rviz.sh hw_explore</code></>
+                      : <>Terminal commands: <code style={{ color: '#38bdf8' }}>./scripts/sim/view_gazebo.sh</code> | <code style={{ color: '#c084fc' }}>./scripts/sim/view_rviz.sh</code></>}
                   </div>
                 </div>
               </div>
@@ -2247,7 +2247,7 @@ export default function MappingScreen({
                     </div>
 
                     <div className="text-dim text-xs">
-                      Target Location: <span className="text-mono" style={{ color: 'var(--accent-cyan)' }}>{mapDirPrefix}{mapName}.yaml</span>
+                      Target Location: <span className="text-mono" style={{ color: 'var(--accent-cyan)' }}>{mapDirPrefix}yaml/{mapName}.yaml</span>
                     </div>
 
                     {saveErrorMsg && (
@@ -2284,13 +2284,13 @@ export default function MappingScreen({
                       </div>
                       <div className="saved-files-list">
                         <div className="saved-file-item">
-                          📄 {savedReport?.files?.yaml || `${mapDirPrefix}${mapName}.yaml`}
+                          📄 {savedReport?.files?.yaml || `${mapDirPrefix}yaml/${mapName}.yaml`}
                         </div>
                         <div className="saved-file-item">
-                          🖼️ {savedReport?.files?.pgm || `${mapDirPrefix}${mapName}.pgm`}
+                          🖼️ {savedReport?.files?.pgm || `${mapDirPrefix}pgm/${mapName}.pgm`}
                         </div>
                         <div className="saved-file-item">
-                          🖼️ {savedReport?.files?.png || `${mapDirPrefix}${mapName}.png`}
+                          🖼️ {savedReport?.files?.png || `${mapDirPrefix}png/${mapName}.png`}
                         </div>
                         {mode === 'hardware' && savedReport?.pi_synced !== undefined && (
                           <div className="saved-file-item" style={{ color: savedReport.pi_synced ? '#10b981' : '#fbbf24' }}>
@@ -2386,7 +2386,7 @@ export default function MappingScreen({
                   )}
                 </select>
                 <span className="text-dim text-xs">
-                  Active target: <code className="text-mono" style={{ color: 'var(--accent-cyan)' }}>{mapDirPrefix}{selectedMapForGraph || mapName}.yaml</code>
+                  Active target: <code className="text-mono" style={{ color: 'var(--accent-cyan)' }}>{mapDirPrefix}yaml/{selectedMapForGraph || mapName}.yaml</code>
                 </span>
               </div>
 
@@ -2590,10 +2590,10 @@ export default function MappingScreen({
 
                     <div className="saved-files-list mt-xs">
                       <div className="saved-file-item">
-                        📄 {extractedGraphReport.json_path || `${mapDirPrefix}${selectedMapForGraph}_graph.json`}
+                        📄 {extractedGraphReport.json_path || `${mapDirPrefix}json/${selectedMapForGraph}_graph.json`}
                       </div>
                       <div className="saved-file-item">
-                        🖼️ {extractedGraphReport.vis_path || `${mapDirPrefix}${selectedMapForGraph}_graph_vis.png`}
+                        🖼️ {extractedGraphReport.vis_path || `${mapDirPrefix}png/${selectedMapForGraph}_graph_vis.png`}
                       </div>
                       {mode === 'hardware' && extractedGraphReport.pi_synced !== undefined && (
                         <div className="saved-file-item" style={{ color: extractedGraphReport.pi_synced ? '#10b981' : '#fbbf24' }}>
@@ -3193,16 +3193,16 @@ export default function MappingScreen({
                     {/* Files Verified List */}
                     <div className="saved-files-list" style={{ marginTop: 8 }}>
                       <div className="saved-file-item">
-                        📄 {mapDirPrefix}{selectedMapForGraph || mapName}.yaml
+                        📄 {mapDirPrefix}yaml/{selectedMapForGraph || mapName}.yaml
                       </div>
                       <div className="saved-file-item">
-                        🖼️ {mapDirPrefix}{selectedMapForGraph || mapName}.pgm
+                        🖼️ {mapDirPrefix}pgm/{selectedMapForGraph || mapName}.pgm
                       </div>
                       <div className="saved-file-item">
-                        🕸️ {mapDirPrefix}{selectedMapForGraph || mapName}_graph.json
+                        🕸️ {mapDirPrefix}json/{selectedMapForGraph || mapName}_graph.json
                       </div>
                       <div className="saved-file-item">
-                        🏷️ {mapDirPrefix}{selectedMapForGraph || mapName}_places.json ({namedPlaces.length} stations)
+                        🏷️ {mapDirPrefix}json/{selectedMapForGraph || mapName}_places.json ({namedPlaces.length} stations)
                       </div>
                     </div>
 

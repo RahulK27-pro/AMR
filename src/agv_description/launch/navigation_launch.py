@@ -51,7 +51,18 @@ def launch_setup(context, *args, **kwargs):
             break
 
     ws_maps_dir = os.path.join(ws_dir, 'src', 'agv_description', 'maps')
+    ws_root_maps_dir = os.path.join(ws_dir, 'maps')
     ws_worlds_dir = os.path.join(ws_dir, 'src', 'agv_description', 'worlds')
+
+    def _resolve_in_map_dir(base_dir, filename):
+        ext = os.path.splitext(filename)[1].lower()
+        sub = {'.yaml': 'yaml', '.pgm': 'pgm', '.png': 'png', '.json': 'json'}.get(ext)
+        checks = [os.path.join(base_dir, sub, filename)] if sub else []
+        checks.append(os.path.join(base_dir, filename))
+        for p in checks:
+            if os.path.exists(p):
+                return p
+        return None
 
     # Read user arguments
     map_input = LaunchConfiguration('map').perform(context).strip()
@@ -62,24 +73,23 @@ def launch_setup(context, *args, **kwargs):
     # ── 1. Resolve Map YAML File ──────────────────────────────────────
     if os.path.isabs(map_input) and os.path.exists(map_input):
         map_yaml_file = map_input
+    elif os.path.exists(os.path.join(ws_dir, map_input)):
+        map_yaml_file = os.path.join(ws_dir, map_input)
     else:
         clean_map = map_input[:-5] if map_input.endswith('.yaml') else map_input
-        candidates = [
-            os.path.join(pkg_agv, 'maps', f'{clean_map}.yaml'),
-            os.path.join(ws_maps_dir, f'{clean_map}.yaml'),
-            os.path.join(pkg_agv, 'maps', 'hospital_map.yaml'),
-            os.path.join(ws_maps_dir, 'hospital_map.yaml'),
-            os.path.join(pkg_agv, 'maps', 'warehouse_map.yaml'),
-            os.path.join(ws_maps_dir, 'warehouse_map.yaml'),
-        ]
+        clean_map = os.path.basename(clean_map)
         map_yaml_file = None
-        for c in candidates:
-            if os.path.exists(c):
-                map_yaml_file = c
+        for target_fname in (f'{clean_map}.yaml', 'hospital_map.yaml', 'warehouse_map.yaml'):
+            for root_dir in (os.path.join(pkg_agv, 'maps'), ws_maps_dir, ws_root_maps_dir):
+                cand = _resolve_in_map_dir(root_dir, target_fname)
+                if cand:
+                    map_yaml_file = cand
+                    break
+            if map_yaml_file is not None:
                 break
 
         if map_yaml_file is None:
-            map_yaml_file = candidates[0]
+            map_yaml_file = os.path.join(pkg_agv, 'maps', 'yaml', f'{clean_map}.yaml')
 
     map_stem = os.path.splitext(os.path.basename(map_yaml_file))[0]
 
@@ -122,18 +132,22 @@ def launch_setup(context, *args, **kwargs):
                 break
 
     # ── 3. Synchronize Active Graph Roadmap for route_runner/bt_manager ─
-    src_graph = os.path.join(ws_maps_dir, f'{map_stem}_graph.json')
-    if not os.path.exists(src_graph):
-        src_graph = os.path.join(pkg_agv, 'maps', f'{map_stem}_graph.json')
+    src_graph = None
+    for root_dir in (ws_maps_dir, os.path.join(pkg_agv, 'maps'), ws_root_maps_dir):
+        cand = _resolve_in_map_dir(root_dir, f'{map_stem}_graph.json')
+        if cand:
+            src_graph = cand
+            break
 
-    if os.path.exists(src_graph):
+    if src_graph and os.path.exists(src_graph):
         for target_dir in [ws_maps_dir, os.path.join(pkg_agv, 'maps')]:
-            dest_graph = os.path.join(target_dir, 'warehouse_graph.json')
-            try:
-                if os.path.exists(target_dir):
+            if os.path.exists(target_dir):
+                json_dir = os.path.join(target_dir, 'json') if os.path.isdir(os.path.join(target_dir, 'json')) else target_dir
+                dest_graph = os.path.join(json_dir, 'warehouse_graph.json')
+                try:
                     shutil.copy2(src_graph, dest_graph)
-            except Exception as e:
-                print(f"[navigation_launch] Notice: Could not sync graph to {dest_graph}: {e}")
+                except Exception as e:
+                    print(f"[navigation_launch] Notice: Could not sync graph to {dest_graph}: {e}")
 
     # ── Log Configuration ─────────────────────────────────────────────
     print("=" * 65)

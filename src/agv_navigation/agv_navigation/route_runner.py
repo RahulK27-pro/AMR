@@ -21,6 +21,11 @@ from scipy.spatial import KDTree
 from scipy.ndimage import binary_dilation
 from PIL import Image
 
+from agv_navigation.map_paths import (
+    resolve_graph_json,
+    resolve_map_image_from_yaml,
+    resolve_map_yaml,
+)
 from agv_navigation.ml_perception import (
     CLASS_CLUTTER,
     CLASS_NAMES,
@@ -88,41 +93,13 @@ class RouteRunner(Node):
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, latched_map_qos)
         self.loc_status_sub = self.create_subscription(String, '/localization_status', self._localization_status_callback, latched_map_qos)
 
-        candidates = []
-        if map_name_param and os.path.isabs(map_name_param) and os.path.exists(map_name_param):
-            candidates.append(map_name_param)
-
-        ws_root = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main')
-        ws_root_maps = os.path.join(ws_root, 'maps')
-        ws_maps = os.path.join(ws_root, 'src', 'agv_description', 'maps')
-
-        if map_name_param:
-            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}_graph.json'))
-            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}.json'))
-            candidates.append(os.path.join(ws_maps, f'{map_name_param}_graph.json'))
-
-        try:
-            pkg_share = get_package_share_directory('agv_description')
-            if map_name_param:
-                candidates.append(os.path.join(pkg_share, 'maps', f'{map_name_param}_graph.json'))
-            candidates.append(os.path.join(pkg_share, 'maps', 'warehouse_graph.json'))
-            candidates.append(os.path.join(pkg_share, 'maps', 'warehouse_map_graph.json'))
-            candidates.append(os.path.join(pkg_share, 'maps', 'warehouse_01_graph.json'))
-        except Exception:
-            pass
-
-        candidates.append(os.path.join(ws_maps, 'warehouse_graph.json'))
-        candidates.append(os.path.join(ws_maps, 'warehouse_map_graph.json'))
-        candidates.append(os.path.join(ws_maps, 'warehouse_01_graph.json'))
-
-        self.map_path = None
-        for c in candidates:
-            if os.path.exists(c):
-                self.map_path = c
-                break
+        self.map_path = resolve_graph_json(
+            map_name_param,
+            fallbacks=('warehouse_graph', 'warehouse_map_graph', 'warehouse_01_graph'),
+        )
 
         if not self.map_path:
-            raise FileNotFoundError(f"Could not find valid graph file in {candidates}")
+            raise FileNotFoundError(f"Could not find valid graph file for '{map_name_param}'")
 
         with open(self.map_path, 'r') as f:
             raw_data = json.load(f)
@@ -447,35 +424,10 @@ class RouteRunner(Node):
 
     def _load_static_map_file(self, map_name_param):
         """Loads static map YAML and PGM file to construct a binary wall mask."""
-        candidates = []
-        if map_name_param and os.path.isabs(map_name_param) and os.path.exists(map_name_param):
-            candidates.append(map_name_param)
-
-        ws_root = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main')
-        ws_root_maps = os.path.join(ws_root, 'maps')
-        ws_maps = os.path.join(ws_root, 'src', 'agv_description', 'maps')
-
-        if map_name_param:
-            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}.yaml'))
-            candidates.append(os.path.join(ws_maps, f'{map_name_param}.yaml'))
-
-        try:
-            pkg_share = get_package_share_directory('agv_description')
-            if map_name_param:
-                candidates.append(os.path.join(pkg_share, 'maps', f'{map_name_param}.yaml'))
-            candidates.append(os.path.join(pkg_share, 'maps', 'hospital_map.yaml'))
-            candidates.append(os.path.join(pkg_share, 'maps', 'warehouse_map.yaml'))
-        except Exception:
-            pass
-
-        candidates.append(os.path.join(ws_maps, 'hospital_map.yaml'))
-        candidates.append(os.path.join(ws_maps, 'warehouse_map.yaml'))
-
-        yaml_path = None
-        for c in candidates:
-            if os.path.exists(c):
-                yaml_path = c
-                break
+        yaml_path = resolve_map_yaml(
+            map_name_param,
+            fallbacks=('hospital_map', 'warehouse_map'),
+        )
 
         if not yaml_path:
             self.get_logger().warn("[MAP_MASK] No static map YAML found, waiting for /map topic...")
@@ -484,12 +436,10 @@ class RouteRunner(Node):
         try:
             with open(yaml_path, 'r') as f:
                 meta = yaml.safe_load(f)
-            pgm_file = meta.get('image', '')
-            if not os.path.isabs(pgm_file):
-                pgm_file = os.path.join(os.path.dirname(yaml_path), pgm_file)
+            pgm_file = resolve_map_image_from_yaml(yaml_path, meta)
 
-            if not os.path.exists(pgm_file):
-                self.get_logger().warn(f"[MAP_MASK] PGM file not found at {pgm_file}")
+            if not pgm_file or not os.path.exists(pgm_file):
+                self.get_logger().warn(f"[MAP_MASK] PGM file not found for {yaml_path}")
                 return
 
             img = Image.open(pgm_file)

@@ -1,12 +1,13 @@
 import rclpy
 from rclpy.node import Node
-from ament_index_python.packages import get_package_share_directory
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 from nav_msgs.msg import Path
 import json
 import os
 import math
+
+from agv_navigation.map_paths import resolve_graph_json
 
 class GraphVisualizer(Node):
     def __init__(self):
@@ -21,45 +22,13 @@ class GraphVisualizer(Node):
         self.declare_parameter('map_name', 'warehouse_01')
         map_name_param = self.get_parameter('map_name').get_parameter_value().string_value or 'warehouse_01'
 
-        candidates = []
-        if map_name_param and os.path.isabs(map_name_param) and os.path.exists(map_name_param):
-            candidates.append(map_name_param)
-
-        ws_root = os.path.join(os.environ.get('HOME', ''), 'AMR', 'AMR-main')
-        ws_root_maps = os.path.join(ws_root, 'maps')
-        ws_maps = os.path.join(ws_root, 'src', 'agv_description', 'maps')
-
-        if map_name_param:
-            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}_graph.json'))
-            candidates.append(os.path.join(ws_root_maps, f'{map_name_param}.json'))
-            candidates.append(os.path.join(ws_maps, f'{map_name_param}_graph.json'))
-
-        try:
-            pkg_share = get_package_share_directory('agv_description')
-            candidates.extend([
-                os.path.join(pkg_share, 'maps', f'{map_name_param}_graph.json'),
-                os.path.join(pkg_share, 'maps', 'warehouse_graph.json'),
-                os.path.join(pkg_share, 'maps', 'warehouse_01_graph.json'),
-                os.path.join(pkg_share, 'maps', 'warehouse_map_graph.json'),
-            ])
-        except Exception:
-            pass
-
-        candidates.extend([
-            os.path.join(ws_maps, f'{map_name_param}_graph.json'),
-            os.path.join(ws_maps, 'warehouse_graph.json'),
-            os.path.join(ws_maps, 'warehouse_01_graph.json'),
-            os.path.join(ws_maps, 'warehouse_map_graph.json'),
-        ])
-
-        self.map_path = None
-        for c in candidates:
-            if os.path.exists(c):
-                self.map_path = c
-                break
+        self.map_path = resolve_graph_json(
+            map_name_param,
+            fallbacks=('warehouse_graph', 'warehouse_01_graph', 'warehouse_map_graph'),
+        )
 
         if not self.map_path:
-            raise FileNotFoundError(f"Could not find valid graph file in {candidates}")
+            raise FileNotFoundError(f"Could not find valid graph file for '{map_name_param}'")
 
         with open(self.map_path, 'r') as f:
             raw_data = json.load(f)

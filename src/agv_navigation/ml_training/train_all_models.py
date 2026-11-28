@@ -3,7 +3,7 @@
 
 1. Combines 80% live Gazebo closed-loop evasion captures (+ sim augmentation if needed)
    with 20% hardware-domain data (real hardware .npz captures + physical SLAM maps
-   with empirical YDLIDAR X2 beam sparsity and hardware kinematics from run_logs/).
+   with empirical YDLIDAR X2 beam sparsity and hardware kinematics from logs/).
 2. Evaluates all candidate classifiers (RandomForest, ExtraTrees, HistGradientBoosting,
    1D-CNN, CompactMLP-64-32, CompactMLP-96-48, CompactMLP-128-64) across all classes.
 3. Evaluates all trajectory predictors (ConstantVelocityKF, PureGRU-32, KalmanResidualGRU-32,
@@ -30,6 +30,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 import yaml
 
+from agv_navigation.map_paths import resolve_asset_in_root, resolve_map_image_from_yaml
 from agv_navigation.ml_perception.kalman_tracker import KalmanTracker
 from agv_navigation.ml_perception.lidar_clustering import (
     CLASS_CLUTTER,
@@ -71,9 +72,9 @@ class FlexMLP(nn.Module):
 
 
 def _extract_hardware_beam_dropout(ws_root: str) -> float:
-    """Measure real YDLIDAR X2 dropout rate from physical run_logs/navigation_run_*.csv."""
+    """Measure real YDLIDAR X2 dropout rate from physical logs/navigation_run_*.csv."""
     beams = []
-    for f in sorted(glob.glob(os.path.join(ws_root, "run_logs", "navigation_run_*.csv")))[-8:]:
+    for f in sorted(glob.glob(os.path.join(ws_root, "logs", "navigation_run_*.csv")))[-8:]:
         try:
             with open(f, "r") as fh:
                 for row in csv.DictReader(fh):
@@ -91,17 +92,18 @@ def _extract_hardware_beam_dropout(ws_root: str) -> float:
 def _load_hardware_maps(ws_root: str) -> List[Dict]:
     """Load real physical SLAM maps scanned with the YDLIDAR X2 robot."""
     hw_names = ["prakash_room", "hardware_map", "final_map", "my_room_map", "my_next_map"]
+    hw_root = os.path.join(ws_root, "maps")
     loaded = []
     for name in hw_names:
-        yf = os.path.join(ws_root, "maps", f"{name}.yaml")
-        if not os.path.exists(yf):
+        yf = resolve_asset_in_root(hw_root, f"{name}.yaml")
+        if not yf:
             continue
         try:
             with open(yf, "r") as f:
                 meta = yaml.safe_load(f)
-            img_p = meta.get("image", "")
-            if not os.path.isabs(img_p):
-                img_p = os.path.join(os.path.dirname(yf), img_p)
+            img_p = resolve_map_image_from_yaml(yf, meta)
+            if not img_p:
+                continue
             arr = np.flipud(np.array(Image.open(img_p).convert("L")))
             orig = meta.get("origin", [0.0, 0.0, 0.0])
             loaded.append(
